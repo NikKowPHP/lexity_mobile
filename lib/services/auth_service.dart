@@ -21,25 +21,46 @@ class AuthService {
   }
 
   Future<void> saveToken(String token) async {
-    _logger.info('Saving auth token');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', token);
+    _logger.info('AuthService: Saving auth token');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', token);
+      _logger.info('AuthService: Token saved successfully');
+    } catch (e, stackTrace) {
+      _logger.error('AuthService: Error saving token', e, stackTrace);
+      rethrow;
+    }
   }
 
   Future<String?> getToken() async {
-    _logger.info('Retrieving auth token');
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_token');
+    _logger.info('AuthService: Retrieving auth token');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      _logger.info(
+        'AuthService: Token retrieved: ${token != null ? "found" : "not found"}',
+      );
+      return token;
+    } catch (e, stackTrace) {
+      _logger.error('AuthService: Error retrieving token', e, stackTrace);
+      rethrow;
+    }
   }
 
   Future<void> clearToken() async {
-    _logger.info('Clearing auth token');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
+    _logger.info('AuthService: Clearing auth token');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_token');
+      _logger.info('AuthService: Token cleared successfully');
+    } catch (e, stackTrace) {
+      _logger.error('AuthService: Error clearing token', e, stackTrace);
+      rethrow;
+    }
   }
 
   Future<bool> login(String email, String password) async {
-    _logger.info('Attempting login for user: $email');
+    _logger.info('AuthService: Attempting login for user: $email');
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/auth/login'),
@@ -47,30 +68,45 @@ class AuthService {
         body: jsonEncode({'email': email, 'password': password}),
       );
 
-      _logger.debug('Login response status: ${response.statusCode}');
+      _logger.debug(
+        'AuthService: Login response status: ${response.statusCode}',
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        // Assuming your API returns session.access_token or similar
-        // Adjust parsing based on exact API response structure in route.ts
-        if (data['session'] != null &&
+        _logger.debug('AuthService: Login response body: $data');
+
+        // Handle both flat structure (custom API) and nested structure (standard Supabase)
+        if (data['access_token'] != null) {
+          await saveToken(data['access_token']);
+          _logger.info(
+            'AuthService: Login successful (flat structure) for user: $email',
+          );
+          return true;
+        } else if (data['session'] != null &&
             data['session']['access_token'] != null) {
           await saveToken(data['session']['access_token']);
-          _logger.info('Login successful for user: $email');
+          _logger.info(
+            'AuthService: Login successful (nested structure) for user: $email',
+          );
           return true;
         }
       }
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Login failed';
-      _logger.warning('Login failed for user: $email. Reason: $errorMsg');
+      
+      final body = jsonDecode(response.body);
+      final errorMsg = body['error'] ?? 'Login failed';
+      _logger.warning(
+        'AuthService: Login failed for user: $email. Reason: $errorMsg',
+      );
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
-      _logger.error('Login error for user: $email', e, stackTrace);
+      _logger.error('AuthService: Login error for user: $email', e, stackTrace);
       rethrow;
     }
   }
 
   Future<bool> signUp(String email, String password) async {
-    _logger.info('Attempting signup for user: $email');
+    _logger.info('AuthService: Attempting signup for user: $email');
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/auth/register'),
@@ -78,22 +114,30 @@ class AuthService {
         body: jsonEncode({'email': email, 'password': password}),
       );
 
-      _logger.debug('Signup response status: ${response.statusCode}');
+      _logger.debug(
+        'AuthService: Signup response status: ${response.statusCode}',
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['session'] != null &&
             data['session']['access_token'] != null) {
           await saveToken(data['session']['access_token']);
-          _logger.info('Signup successful for user: $email');
+          _logger.info('AuthService: Signup successful for user: $email');
           return true;
         }
       }
       final errorMsg = jsonDecode(response.body)['error'] ?? 'Signup failed';
-      _logger.warning('Signup failed for user: $email. Reason: $errorMsg');
+      _logger.warning(
+        'AuthService: Signup failed for user: $email. Reason: $errorMsg',
+      );
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
-      _logger.error('Signup error for user: $email', e, stackTrace);
+      _logger.error(
+        'AuthService: Signup error for user: $email',
+        e,
+        stackTrace,
+      );
       rethrow;
     }
   }

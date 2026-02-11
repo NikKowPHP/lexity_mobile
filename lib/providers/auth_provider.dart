@@ -2,6 +2,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service.dart';
 
+import '../services/user_service.dart';
 import '../services/logger_service.dart';
 
 class AuthState {
@@ -34,20 +35,35 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
+  final UserService _userService;
   late final LoggerService _logger;
 
-  AuthNotifier(this._authService, this._logger) : super(AuthState()) {
+  AuthNotifier(this._authService, this._userService, this._logger)
+    : super(AuthState()) {
     checkAuthStatus();
   }
 
   Future<void> checkAuthStatus() async {
-    _logger.info('AuthNotifier: checking auth status');
+    _logger.info('AuthNotifier: checking auth status (Deep Auth Check)');
     final token = await _authService.getToken();
-    if (token != null) {
-      _logger.info('AuthNotifier: token found, authenticating');
-      state = state.copyWith(isAuthenticated: true, isInitialized: true);
-    } else {
+    
+    if (token == null) {
       _logger.info('AuthNotifier: no token found');
+      state = state.copyWith(isAuthenticated: false, isInitialized: true);
+      return;
+    }
+
+    try {
+      // PERFORM THE "ME" CHECK: Try to fetch the profile from the server
+      // This verifies the JWT is actually valid and not expired.
+      await _userService.fetchProfile();
+
+      _logger.info('AuthNotifier: token valid, authenticating');
+      state = state.copyWith(isAuthenticated: true, isInitialized: true);
+    } catch (e) {
+      // If the server says 401 (Unauthorized), the token is likely expired or invalid
+      _logger.warning("AuthNotifier: Deep Auth Check failed: $e");
+      await _authService.clearToken(); // Wipe the invalid token
       state = state.copyWith(isAuthenticated: false, isInitialized: true);
     }
   }
@@ -103,6 +119,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final authService = ref.watch(authServiceProvider);
+  final userService = ref.watch(userServiceProvider);
   final logger = ref.watch(loggerProvider);
-  return AuthNotifier(authService, logger);
+  return AuthNotifier(authService, userService, logger);
 });

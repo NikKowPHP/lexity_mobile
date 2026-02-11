@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../ui/screens/login_screen.dart';
 import '../ui/screens/home_shell.dart';
 import '../ui/screens/placeholder_screens.dart';
+import '../ui/screens/study_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -93,6 +94,16 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/profile',
                 pageBuilder: (context, state) => _buildFadePage(const ProfileScreen(), state),
+              ),
+            ],
+          ),
+          // Branch 5: Translator
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/translator',
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const TranslatorScreen(), state),
               ),
             ],
           ),

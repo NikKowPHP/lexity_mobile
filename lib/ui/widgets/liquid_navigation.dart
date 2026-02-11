@@ -13,6 +13,7 @@ class LiquidNavigation extends StatelessWidget {
   final List<({IconData icon, String label})> _items = const [
     (icon: LucideIcons.map, label: 'Path'),
     (icon: LucideIcons.brainCircuit, label: 'Study'),
+    (icon: LucideIcons.languages, label: 'Translator'),
     (icon: LucideIcons.penTool, label: 'Journal'),
     (icon: LucideIcons.barChart2, label: 'Progress'),
     (icon: LucideIcons.user, label: 'Profile'),
