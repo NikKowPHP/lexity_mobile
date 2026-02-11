@@ -2,10 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../../services/logger_service.dart';
+
 import '../../providers/auth_provider.dart';
 import '../widgets/liquid_components.dart';
-import 'home_screen.dart';
+
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -36,36 +36,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
 
-    // Listen for successful auth to navigate (Placeholder for navigation)
-    ref.listen(authProvider, (previous, next) {
-      if (next.isAuthenticated) {
-        try {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Welcome to 2026. Access Granted.")),
-          );
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-          );
-        } catch (e, stackTrace) {
-          ref.read(loggerProvider).error('Navigation failed', e, stackTrace);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Navigation error: $e"),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-      if (next.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.error!),
-            backgroundColor: Colors.red.withValues(alpha: 0.8),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    });
+
 
     return Scaffold(
       body: LiquidBackground(

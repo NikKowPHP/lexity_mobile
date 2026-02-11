@@ -26,6 +26,18 @@ class AuthService {
     await prefs.setString('auth_token', token);
   }
 
+  Future<String?> getToken() async {
+    _logger.info('Retrieving auth token');
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
+
+  Future<void> clearToken() async {
+    _logger.info('Clearing auth token');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+  }
+
   Future<bool> login(String email, String password) async {
     _logger.info('Attempting login for user: $email');
     try {
