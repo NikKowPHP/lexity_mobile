@@ -1,2 +1,4 @@
 [2026-02-11 14:01:17] [error] Test error message
 Error: Exception: Test exception
+[2026-02-11 15:35:31] [error] Test error message
+Error: Exception: Test exception

@@ -9,7 +9,7 @@ import 'logger_service.dart';
 
 // Change this based on your device
 final String baseUrl = Platform.isAndroid
-    ? 'http://10.0.2.2:3555'
+    ? 'http://localhost:3555'
     : 'http://localhost:3555';
 
 class AuthService {

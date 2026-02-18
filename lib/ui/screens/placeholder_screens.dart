@@ -1,7 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../providers/translator_provider.dart';
+import '../../providers/srs_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../models/translation_result.dart';
 import '../../theme/liquid_theme.dart';
@@ -360,6 +365,35 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   final _inputController = TextEditingController();
   String sourceLang = "English";
 
+  static const platform = MethodChannel('com.lexity.app/bubbles');
+
+  Future<void> _enableBubbleMode() async {
+    if (!Platform.isAndroid) return;
+
+    // 1. Check/Request Notification Permission (Android 13+)
+    PermissionStatus status = await Permission.notification.status;
+    if (!status.isGranted) {
+      status = await Permission.notification.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Notifications are needed for Bubble mode"),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // 2. Call Native Code
+    try {
+      await platform.invokeMethod('showBubble');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to launch bubble: '${e.message}'.");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(translatorProvider);
@@ -368,6 +402,16 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
     return GlassScaffold(
       title: 'Translator',
       subtitle: 'Real-time AI analysis',
+      floatingActionButton: Platform.isAndroid
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 80),
+              child: FloatingActionButton(
+                backgroundColor: LiquidTheme.primaryAccent,
+                onPressed: _enableBubbleMode,
+                child: const Icon(Icons.open_in_new, color: Colors.white),
+              ),
+            )
+          : null,
       body: SliverList(
         delegate: SliverChildListDelegate([
           // 1. Language Selectors
@@ -457,7 +501,9 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            ...state.segments.map((seg) => _SegmentCard(segment: seg)),
+            ...state.segments.map(
+              (seg) => _SegmentCard(segment: seg, targetLanguage: targetLang),
+            ),
           ],
         ]),
       ),
@@ -480,9 +526,48 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   }
 }
 
-class _SegmentCard extends StatelessWidget {
+class _SegmentCard extends ConsumerStatefulWidget {
   final TranslationSegment segment;
-  const _SegmentCard({required this.segment});
+  final String targetLanguage;
+  const _SegmentCard({required this.segment, required this.targetLanguage});
+
+  @override
+  ConsumerState<_SegmentCard> createState() => _SegmentCardState();
+}
+
+class _SegmentCardState extends ConsumerState<_SegmentCard> {
+  bool _isAdding = false;
+  bool _isAdded = false;
+
+  Future<void> _handleAddToDeck() async {
+    setState(() => _isAdding = true);
+
+    final success = await ref
+        .read(srsProvider.notifier)
+        .addToDeckFromTranslation(
+          front: widget.segment.source,
+          back: widget.segment.translation,
+          language: widget.targetLanguage.toLowerCase(),
+          explanation: widget.segment.explanation,
+        );
+
+    if (mounted) {
+      setState(() {
+        _isAdding = false;
+        if (success) _isAdded = true;
+      });
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Added to Study Deck"),
+            backgroundColor: LiquidTheme.primaryAccent,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -493,13 +578,38 @@ class _SegmentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              segment.source,
-              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.segment.source,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ),
+                IconButton(
+                  onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
+                  icon: _isAdding
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: LiquidTheme.primaryAccent,
+                          ),
+                        )
+                      : Icon(
+                          _isAdded ? Icons.check_circle : Icons.add_circle,
+                          color: _isAdded
+                              ? Colors.greenAccent
+                              : LiquidTheme.primaryAccent,
+                        ),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
-              segment.translation,
+              widget.segment.translation,
               style: const TextStyle(
                 color: LiquidTheme.primaryAccent,
                 fontWeight: FontWeight.bold,
@@ -523,7 +633,7 @@ class _SegmentCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      segment.explanation,
+                      widget.segment.explanation,
                       style: const TextStyle(
                         fontSize: 12,
                         fontStyle: FontStyle.italic,

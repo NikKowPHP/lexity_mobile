@@ -74,6 +74,50 @@ class SrsService {
       rethrow;
     }
   }
+
+  Future<void> createFromTranslation({
+    required String front,
+    required String back,
+    required String language,
+    String? explanation,
+  }) async {
+    _logger.info('SrsService: Creating SRS item from translation');
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/srs/create-from-translation'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'frontContent': front,
+          'backContent': back,
+          'targetLanguage': language,
+          'explanation': explanation,
+        }),
+      );
+
+      _logger.debug(
+        'SrsService: createFromTranslation response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _logger.info('SrsService: SRS item created successfully');
+        return;
+      }
+
+      final errorMsg =
+          jsonDecode(response.body)['error'] ?? 'Failed to create item';
+      _logger.warning(
+        'SrsService: createFromTranslation failed. Reason: $errorMsg',
+      );
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error(
+        'SrsService: Error in createFromTranslation',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+  }
 }
 
 final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(authServiceProvider)));

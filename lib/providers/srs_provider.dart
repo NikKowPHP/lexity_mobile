@@ -41,6 +41,27 @@ class SrsNotifier extends StateNotifier<SrsState> {
       // Handle error (optionally re-add card to deck)
     }
   }
+
+  Future<bool> addToDeckFromTranslation({
+    required String front,
+    required String back,
+    required String language,
+    String? explanation,
+  }) async {
+    try {
+      await _service.createFromTranslation(
+        front: front,
+        back: back,
+        language: language,
+        explanation: explanation,
+      );
+      // Refresh deck to include the new item
+      loadDeck(language);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 }
 
 final srsProvider = StateNotifierProvider<SrsNotifier, SrsState>((ref) {

@@ -210,3 +210,60 @@ class LiquidButton extends StatelessWidget {
     ).animate(target: isLoading ? 0 : 1).shimmer(duration: 2.seconds);
   }
 }
+// 5. Liquid Dropdown Selection
+class LiquidDropdown<T> extends StatelessWidget {
+  final String label;
+  final T value;
+  final List<T> items;
+  final ValueChanged<T?> onChanged;
+
+  const LiquidDropdown({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              value: value,
+              dropdownColor: const Color(0xFF1A1A1A), // Deep dark for contrast
+              borderRadius: BorderRadius.circular(20),
+              icon: const Icon(
+                Icons.keyboard_arrow_down,
+                color: LiquidTheme.primaryAccent,
+              ),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+              items: items.map((T val) {
+                return DropdownMenuItem<T>(
+                  value: val,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(val.toString()),
+                  ),
+                );
+              }).toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
