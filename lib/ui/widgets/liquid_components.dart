@@ -227,45 +227,44 @@ class LiquidDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // NEW: Internal safety check to prevent crash if parent passes invalid value
     final bool valueExists = items.contains(value);
     final T effectiveValue = valueExists ? value : items.first;
 
     return GlassCard(
-      padding: 8,
+      padding: 12,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            label,
+            label.toUpperCase(),
             style: const TextStyle(
-              color: Colors.white54,
+              color: Colors.white38,
               fontSize: 10,
               fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
             ),
           ),
+          const SizedBox(height: 4),
           DropdownButtonHideUnderline(
             child: DropdownButton<T>(
               isExpanded: true,
               value: effectiveValue,
-              dropdownColor: const Color(0xFF1A1A1A),
-              borderRadius: BorderRadius.circular(20),
+              dropdownColor: const Color(0xFF0A0A0A),
+              borderRadius: BorderRadius.circular(12),
               icon: const Icon(
                 Icons.keyboard_arrow_down,
-                color: LiquidTheme.primaryAccent,
+                color: Colors.white24,
               ),
               style: const TextStyle(
                 color: Colors.white,
-                fontWeight: FontWeight.bold,
                 fontSize: 16,
+                fontWeight: FontWeight.w500,
               ),
               items: items.map((T val) {
                 return DropdownMenuItem<T>(
                   value: val,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(val.toString()),
-                  ),
+                  child: Text(val.toString()),
                 );
               }).toList(),
               onChanged: onChanged,

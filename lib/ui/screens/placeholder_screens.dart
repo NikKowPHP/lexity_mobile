@@ -1,8 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/translator_provider.dart';
@@ -367,7 +365,6 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   String? _sourceLang;
   String? _targetLang;
 
-  static const platform = MethodChannel('com.lexity.app/bubbles');
 
   @override
   void initState() {
@@ -406,32 +403,6 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
     });
   }
 
-  Future<void> _enableBubbleMode() async {
-    if (!Platform.isAndroid) return;
-
-    // 1. Check/Request Notification Permission (Android 13+)
-    PermissionStatus status = await Permission.notification.status;
-    if (!status.isGranted) {
-      status = await Permission.notification.request();
-      if (!status.isGranted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Notifications are needed for Bubble mode"),
-            ),
-          );
-        }
-        return;
-      }
-    }
-
-    // 2. Call Native Code
-    try {
-      await platform.invokeMethod('showBubble');
-    } on PlatformException catch (e) {
-      debugPrint("Failed to launch bubble: '${e.message}'.");
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -469,151 +440,166 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
     return GlassScaffold(
       title: 'Translator',
       subtitle: 'Real-time AI analysis',
-      floatingActionButton: (Platform.isAndroid && !widget.isBubbleMode)
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 80),
-              child: FloatingActionButton(
-                backgroundColor: LiquidTheme.primaryAccent,
-                onPressed: _enableBubbleMode,
-                child: const Icon(Icons.open_in_new, color: Colors.white),
-              ),
-            )
-          : null,
-      body: SliverList(
-        delegate: SliverChildListDelegate([
-          // 1. Dynamic Language Selectors & Swap
-          Row(
-            children: [
-              Expanded(
-                child: LiquidDropdown<String>(
-                  label: "From",
-                  value: effectiveSource, // Use validated value
-                  items: availableLanguages,
-                  onChanged: (val) => setState(() => _sourceLang = val),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: IconButton(
-                  onPressed: _swapLanguages,
-                  icon: const Icon(Icons.swap_horiz, color: Colors.white70),
-                ),
-              ),
-              Expanded(
-                child: LiquidDropdown<String>(
-                  label: "To",
-                  value: effectiveTarget, // Use validated value
-                  items: availableLanguages,
-                  onChanged: (val) => setState(() => _targetLang = val),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // 2. Input Area with Paste & Discard
-          Stack(
-            children: [
-              GlassCard(
-                padding: 12,
-                child: TextField(
-                  controller: _inputController,
-                  maxLines: 5,
-                  style: const TextStyle(fontSize: 18, color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: "Enter text...",
-                    hintStyle: TextStyle(color: Colors.white38),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.only(
-                        right: 40, bottom: 10, left: 10, top: 10),
-                  ),
-                  onChanged: (val) => setState(() {}),
-                ),
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Column(
+      body: SliverToBoxAdapter(
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(
+              maxWidth: 1000,
+            ), // Desktop width constraint
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. Language Selectors
+                Row(
                   children: [
-                    if (_inputController.text.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.close,
-                            size: 20, color: Colors.white38),
-                        onPressed: _discardText,
-                      )
-                    else
-                      IconButton(
-                        icon: const Icon(Icons.content_paste,
-                            size: 20, color: Colors.white38),
-                        onPressed: _pasteFromClipboard,
+                    Expanded(
+                      child: LiquidDropdown<String>(
+                        label: "From",
+                        value: effectiveSource,
+                        items: availableLanguages,
+                        onChanged: (val) => setState(() => _sourceLang = val),
                       ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: IconButton(
+                        onPressed: _swapLanguages,
+                        icon: const Icon(
+                          Icons.swap_horiz,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: LiquidDropdown<String>(
+                        label: "To",
+                        value: effectiveTarget,
+                        items: availableLanguages,
+                        onChanged: (val) => setState(() => _targetLang = val),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+
+                // 2. Input Area
+                Stack(
+                  children: [
+                    GlassCard(
+                      padding: 16,
+                      child: TextField(
+                        controller: _inputController,
+                        maxLines: 6,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          color: Colors.white,
+                          height: 1.5,
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: "Enter text to translate...",
+                          hintStyle: TextStyle(color: Colors.white24),
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: _inputController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white38,
+                              ),
+                              onPressed: _discardText,
+                            )
+                          : IconButton(
+                              icon: const Icon(
+                                Icons.content_paste,
+                                color: Colors.white38,
+                              ),
+                              onPressed: _pasteFromClipboard,
+                            ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // 3. Prominent Translate Button
+                LiquidButton(
+                  text: "Translate",
+                  isLoading: state.isTranslating,
+                  onTap: () {
+                    if (_inputController.text.isNotEmpty) {
+                      ref
+                          .read(translatorProvider.notifier)
+                          .runTranslation(
+                            _inputController.text,
+                            effectiveSource,
+                            effectiveTarget,
+                          );
+                    }
+                  },
+                ),
+                const SizedBox(height: 40),
+
+                // 4. Output Section
+                if (state.fullTranslation.isNotEmpty) ...[
+                  const Text(
+                    "TRANSLATION",
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  GlassCard(
+                    padding: 20,
+                    child: Text(
+                      state.fullTranslation,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        color: Colors.white,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                ],
+
+                // 5. Sentence Breakdown Section
+                if (state.isBreakingDown)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(40),
+                      child: CircularProgressIndicator(color: Colors.white24),
+                    ),
+                  )
+                else if (state.segments.isNotEmpty) ...[
+                  const Text(
+                    "SENTENCE BREAKDOWN",
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...state.segments.map(
+                    (seg) => _SegmentCard(
+                      segment: seg,
+                      targetLanguage: effectiveTarget,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-
-          // 3. Action Button
-          LiquidButton(
-            text: "Translate",
-            isLoading: state.isTranslating,
-            onTap: () {
-              if (_inputController.text.isNotEmpty &&
-                  _sourceLang != null &&
-                  _targetLang != null) {
-                ref.read(translatorProvider.notifier).runTranslation(
-                      _inputController.text,
-                      _sourceLang!,
-                      _targetLang!,
-                    );
-              }
-            },
-          ),
-          const SizedBox(height: 30),
-
-          // 4. Fast Output
-          if (state.fullTranslation.isNotEmpty) ...[
-            const Text(
-              "Translation",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.white54,
-              ),
-            ),
-            const SizedBox(height: 8),
-            GlassCard(
-              child: Text(
-                state.fullTranslation,
-                style: const TextStyle(fontSize: 18, color: Colors.white),
-              ),
-            ),
-            const SizedBox(height: 30),
-          ],
-
-          // 5. Detailed Breakdown
-          if (state.isBreakingDown)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(20.0),
-                child: CircularProgressIndicator(color: Colors.white24),
-              ),
-            )
-          else if (state.segments.isNotEmpty) ...[
-            const Text(
-              "Sentence Breakdown",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.white54,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...state.segments.map(
-              (seg) => _SegmentCard(
-                  segment: seg, targetLanguage: _targetLang ?? "Spanish"),
-            ),
-          ],
-        ]),
+        ),
       ),
     );
   }
@@ -653,8 +639,12 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Added to Study Deck"),
+            content: Text(
+              "Added to Study Deck",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+            ),
             backgroundColor: LiquidTheme.primaryAccent,
+            behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 2),
           ),
         );
@@ -665,7 +655,7 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: GlassCard(
         padding: 16,
         child: Column(
@@ -677,18 +667,18 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
                 Expanded(
                   child: Text(
                     widget.segment.source,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    style: const TextStyle(color: Colors.white38, fontSize: 14),
                   ),
                 ),
                 IconButton(
                   onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
                   icon: _isAdding
                       ? const SizedBox(
-                          width: 20,
-                          height: 20,
+                          width: 18,
+                          height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: LiquidTheme.primaryAccent,
+                            color: Colors.white24,
                           ),
                         )
                       : Icon(
@@ -696,6 +686,7 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
                           color: _isAdded
                               ? Colors.greenAccent
                               : LiquidTheme.primaryAccent,
+                          size: 24,
                         ),
                 ),
               ],
@@ -704,19 +695,20 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
             Text(
               widget.segment.translation,
               style: const TextStyle(
-                color: LiquidTheme.primaryAccent,
+                color: Color(0xFF6366F1), // Electric Indigo from screenshot
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 18,
               ),
             ),
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: Colors.white.withValues(alpha: 0.03),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Icon(
                     Icons.lightbulb_outline,
@@ -729,8 +721,8 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
                       widget.segment.explanation,
                       style: const TextStyle(
                         fontSize: 12,
-                        fontStyle: FontStyle.italic,
                         color: Colors.white54,
+                        height: 1.4,
                       ),
                     ),
                   ),

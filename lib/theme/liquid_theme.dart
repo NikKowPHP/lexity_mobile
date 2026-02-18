@@ -13,6 +13,10 @@ class LiquidTheme {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: background,
       primaryColor: primaryAccent,
+      snackBarTheme: const SnackBarThemeData(
+        contentTextStyle: TextStyle(color: Colors.white, fontSize: 14),
+        backgroundColor: primaryAccent,
+      ),
       textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
       colorScheme: const ColorScheme.dark(
         primary: primaryAccent,
