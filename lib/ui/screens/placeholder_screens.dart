@@ -276,7 +276,7 @@ class ProfileScreen extends ConsumerWidget {
               value: profile.defaultTargetLanguage,
               items: const ["Spanish", "French", "German", "English", "Polish"],
               onChanged: (val) =>
-                  ref.read(userProfileProvider.notifier).updateInfo(lang: val),
+                  ref.read(userProfileProvider.notifier).updateInfo(targetLanguage: val),
             ),
 
             _ProfileDropdown(
@@ -284,7 +284,7 @@ class ProfileScreen extends ConsumerWidget {
               value: profile.writingStyle ?? "Casual",
               items: const ["Casual", "Formal", "Academic"],
               onChanged: (val) =>
-                  ref.read(userProfileProvider.notifier).updateInfo(style: val),
+                  ref.read(userProfileProvider.notifier).updateInfo(writingStyle: val),
             ),
 
             const SizedBox(height: 40),
@@ -374,10 +374,9 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
     // Initialize languages from provider state
     Future.microtask(() {
       final profile = ref.read(userProfileProvider).value;
-      final activeTarget = ref.read(activeLanguageProvider);
       setState(() {
         _sourceLang = profile?.nativeLanguage ?? "English";
-        _targetLang = activeTarget;
+        _targetLang = profile?.defaultTargetLanguage ?? "Spanish";
       });
     });
   }

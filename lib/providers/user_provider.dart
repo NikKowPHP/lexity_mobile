@@ -1,8 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/user_profile.dart';
 import '../services/user_service.dart';
+import '../models/user_profile.dart';
 
-// 1. Manages the full User Object
 class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
   final UserService _service;
   UserProfileNotifier(this._service) : super(const AsyncValue.loading()) {
@@ -14,39 +13,52 @@ class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
     state = await AsyncValue.guard(() => _service.fetchProfile());
   }
 
-  Future<void> updateInfo({String? lang, String? style}) async {
+  // Updated to handle all profile fields
+  Future<void> updateInfo({
+    String? nativeLanguage,
+    String? targetLanguage,
+    String? writingStyle,
+    String? writingPurpose,
+    String? selfAssessedLevel,
+  }) async {
     final current = state.value;
     if (current == null) return;
 
-    final updated = UserProfile(
-      id: current.id,
-      email: current.email,
-      defaultTargetLanguage: lang ?? current.defaultTargetLanguage,
-      writingStyle: style ?? current.writingStyle,
-      nativeLanguage: current.nativeLanguage,
-      subscriptionTier: current.subscriptionTier,
+    final updated = current.copyWith(
+      nativeLanguage: nativeLanguage,
+      defaultTargetLanguage: targetLanguage,
+      writingStyle: writingStyle,
+      writingPurpose: writingPurpose,
+      selfAssessedLevel: selfAssessedLevel,
     );
 
-    final previousState = state;
-    state = AsyncValue.data(updated); // Optimistic UI
+    // Optimistic UI
+    state = AsyncValue.data(updated);
     
     try {
       await _service.updateProfile(updated);
     } catch (e) {
-      state = previousState; // Rollback on error
+      state = AsyncValue.data(current); // Rollback
+      // In a real app, handle error display via a separate error state or callback
+    }
+  }
+  
+  // New method to add a language
+  Future<void> addLanguage(String newLanguage) async {
+    final current = state.value;
+    if (current == null) return;
+    
+    try {
+       // We don't do full optimistic update here because we need the backend 
+       // to confirm the creation of the language profile record
+       final updatedProfile = await _service.addLanguage(newLanguage);
+       state = AsyncValue.data(updatedProfile);
+    } catch (e) {
+       // Handle error
     }
   }
 }
 
 final userProfileProvider = StateNotifierProvider<UserProfileNotifier, AsyncValue<UserProfile>>((ref) {
   return UserProfileNotifier(ref.watch(userServiceProvider));
-});
-
-// 2. Global "Active Language" provider that other screens watch
-final activeLanguageProvider = Provider<String>((ref) {
-  final profileAsync = ref.watch(userProfileProvider);
-  return profileAsync.maybeWhen(
-    data: (p) => p.defaultTargetLanguage,
-    orElse: () => 'Spanish', // Fallback
-  );
 });

@@ -11,12 +11,12 @@ class LiquidNavigation extends StatelessWidget {
   const LiquidNavigation({super.key, required this.navigationShell});
 
   final List<({IconData icon, String label})> _items = const [
-    (icon: LucideIcons.map, label: 'Path'),
-    (icon: LucideIcons.brainCircuit, label: 'Study'),
-    (icon: LucideIcons.languages, label: 'Translator'),
-    (icon: LucideIcons.penTool, label: 'Journal'),
-    (icon: LucideIcons.barChart2, label: 'Progress'),
-    (icon: LucideIcons.user, label: 'Profile'),
+    (icon: LucideIcons.map, label: 'Path'),           // Index 0
+    (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
+    (icon: LucideIcons.penTool, label: 'Journal'),    // Index 2
+    (icon: LucideIcons.barChart2, label: 'Progress'), // Index 3
+    (icon: LucideIcons.user, label: 'Profile'),      // Index 4
+    (icon: LucideIcons.languages, label: 'Translator'), // Index 5
   ];
 
   void _onTap(int index) {

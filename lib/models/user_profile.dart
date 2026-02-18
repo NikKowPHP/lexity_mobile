@@ -4,6 +4,8 @@ class UserProfile {
   final String? nativeLanguage;
   final String defaultTargetLanguage;
   final String? writingStyle;
+  final String? writingPurpose; // New field
+  final String? selfAssessedLevel; // New field
   final String subscriptionTier;
   final List<LanguageProfile> languageProfiles;
 
@@ -13,6 +15,8 @@ class UserProfile {
     this.nativeLanguage,
     required this.defaultTargetLanguage,
     this.writingStyle,
+    this.writingPurpose,
+    this.selfAssessedLevel,
     required this.subscriptionTier,
     this.languageProfiles = const [],
   });
@@ -22,9 +26,10 @@ class UserProfile {
       id: json['id'] ?? '',
       email: json['email'] ?? '',
       nativeLanguage: json['nativeLanguage'],
-      // Ensure we capitalize or normalize if the backend is inconsistent
-      defaultTargetLanguage: json['defaultTargetLanguage'] ?? 'Spanish',
+      defaultTargetLanguage: json['defaultTargetLanguage'] ?? 'spanish',
       writingStyle: json['writingStyle'],
+      writingPurpose: json['writingPurpose'],
+      selfAssessedLevel: json['selfAssessedLevel'],
       subscriptionTier: json['subscriptionTier'] ?? 'FREE',
       languageProfiles: (json['languageProfiles'] as List? ?? [])
           .map((lp) => LanguageProfile.fromJson(lp))
@@ -33,10 +38,34 @@ class UserProfile {
   }
 
   Map<String, dynamic> toJson() => {
-    'nativeLanguage': nativeLanguage,
-    'defaultTargetLanguage': defaultTargetLanguage,
-    'writingStyle': writingStyle,
-  };
+        'nativeLanguage': nativeLanguage,
+        'defaultTargetLanguage': defaultTargetLanguage,
+        'writingStyle': writingStyle,
+        'writingPurpose': writingPurpose,
+        'selfAssessedLevel': selfAssessedLevel,
+      };
+
+  // Helper to clone object with updates
+  UserProfile copyWith({
+    String? nativeLanguage,
+    String? defaultTargetLanguage,
+    String? writingStyle,
+    String? writingPurpose,
+    String? selfAssessedLevel,
+    List<LanguageProfile>? languageProfiles,
+  }) {
+    return UserProfile(
+      id: id,
+      email: email,
+      subscriptionTier: subscriptionTier,
+      nativeLanguage: nativeLanguage ?? this.nativeLanguage,
+      defaultTargetLanguage: defaultTargetLanguage ?? this.defaultTargetLanguage,
+      writingStyle: writingStyle ?? this.writingStyle,
+      writingPurpose: writingPurpose ?? this.writingPurpose,
+      selfAssessedLevel: selfAssessedLevel ?? this.selfAssessedLevel,
+      languageProfiles: languageProfiles ?? this.languageProfiles,
+    );
+  }
 }
 
 class LanguageProfile {
