@@ -5,7 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/srs_item.dart';
 import '../../providers/srs_provider.dart';
 import '../widgets/liquid_components.dart';
-import 'placeholder_screens.dart'; // To use GlassScaffold
+import '../widgets/glass_scaffold.dart';
 
 class StudyScreen extends ConsumerStatefulWidget {
   const StudyScreen({super.key});

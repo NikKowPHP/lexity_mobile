@@ -5,8 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../ui/screens/login_screen.dart';
 import '../ui/screens/home_shell.dart';
-import '../ui/screens/placeholder_screens.dart';
+import '../ui/screens/path_screen.dart';
 import '../ui/screens/study_screen.dart';
+import '../ui/screens/journal_screen.dart';
+import '../ui/screens/progress_screen.dart';
+import '../ui/screens/profile_screen.dart';
+import '../ui/screens/translator_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();

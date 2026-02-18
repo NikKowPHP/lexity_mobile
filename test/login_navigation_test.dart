@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lexity_mobile/router/router.dart';
 import 'package:lexity_mobile/ui/screens/login_screen.dart';
-import 'package:lexity_mobile/ui/screens/placeholder_screens.dart';
+import 'package:lexity_mobile/ui/screens/path_screen.dart';
 import 'package:lexity_mobile/services/auth_service.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
