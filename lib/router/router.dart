@@ -28,12 +28,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!authState.isInitialized) return null;
 
       final isLoggedIn = authState.isAuthenticated;
-      final isGoingToLogin = state.uri.toString() == '/login';
-
-      if (!isLoggedIn && !isGoingToLogin) {
+      final path = state.uri.toString();
+      
+      // Allow the bubble route and login route even if not logged in
+      if (!isLoggedIn && path != '/login' && path != '/bubble-translator') {
         return '/login';
       }
-      if (isLoggedIn && isGoingToLogin) {
+      
+      if (isLoggedIn && (path == '/login')) {
         return '/path';
       }
       return null;
@@ -44,6 +46,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+
+      // standalone STANDALONE ROUTE for the Bubble
+      // This is OUTSIDE the StatefulShellRoute so it won't have the Bottom Bar
+      GoRoute(
+        path: '/bubble-translator',
+        builder: (context, state) => const TranslatorScreen(isBubbleMode: true),
       ),
 
       // APPLICATION SHELL (The Liquid UI)

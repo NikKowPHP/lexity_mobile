@@ -355,7 +355,8 @@ class _ProfileDropdown extends StatelessWidget {
 
 // 7. Translator Screen
 class TranslatorScreen extends ConsumerStatefulWidget {
-  const TranslatorScreen({super.key});
+  final bool isBubbleMode;
+  const TranslatorScreen({super.key, this.isBubbleMode = false});
 
   @override
   ConsumerState<TranslatorScreen> createState() => _TranslatorScreenState();
@@ -402,7 +403,7 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
     return GlassScaffold(
       title: 'Translator',
       subtitle: 'Real-time AI analysis',
-      floatingActionButton: Platform.isAndroid
+      floatingActionButton: (Platform.isAndroid && !widget.isBubbleMode)
           ? Padding(
               padding: const EdgeInsets.only(bottom: 80),
               child: FloatingActionButton(
