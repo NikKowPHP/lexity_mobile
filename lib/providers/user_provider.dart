@@ -57,6 +57,34 @@ class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
        // Handle error
     }
   }
+  Future<void> updateGoals(UserGoals goals) async {
+    final current = state.value;
+    if (current == null) return;
+
+    // Optimistic update
+    final updatedProfile = current.copyWith(goals: goals);
+    state = AsyncValue.data(updatedProfile);
+
+    try {
+      await _service.updateGoals(goals);
+      // We can optionally refresh from server here to ensure sync
+    } catch (e) {
+      state = AsyncValue.data(current); // Rollback
+    }
+  }
+
+  Future<String?> getManageSubscriptionUrl() async {
+    try {
+      return await _service.getBillingPortalUrl();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> resetOnboarding() async {
+    await _service.resetOnboarding();
+    await refresh(); // Reload profile to reflect un-onboarded state
+  }
 }
 
 final userProfileProvider = StateNotifierProvider<UserProfileNotifier, AsyncValue<UserProfile>>((ref) {

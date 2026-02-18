@@ -118,6 +118,63 @@ class UserService {
       rethrow;
     }
   }
+  Future<void> updateGoals(UserGoals goals) async {
+    _logger.info('UserService: Updating user goals');
+    try {
+      final token = await _auth.getToken();
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/user/goals'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(goals.toJson()),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to update goals');
+      }
+    } catch (e, st) {
+      _logger.error('UserService: Error updating goals', e, st);
+      rethrow;
+    }
+  }
+
+  Future<String> getBillingPortalUrl() async {
+    _logger.info('UserService: Getting billing portal URL');
+    try {
+      final token = await _auth.getToken();
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/billing/portal'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['url'];
+      }
+      throw Exception('Failed to get portal URL');
+    } catch (e, st) {
+      _logger.error('UserService: Error getting portal URL', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> resetOnboarding() async {
+    _logger.info('UserService: Resetting onboarding');
+    try {
+      final token = await _auth.getToken();
+      await http.post(
+        Uri.parse('$baseUrl/api/user/reset-onboarding'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } catch (e) {
+      throw Exception('Failed to reset onboarding');
+    }
+  }
 }
 
 final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(authServiceProvider)));
