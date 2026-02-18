@@ -22,49 +22,62 @@ class ProgressScreen extends ConsumerWidget {
       title: 'Analytics',
       subtitle: 'Your fluency timeline',
       body: analyticsAsync.when(
-        loading: () => const Center(
-          child: Padding(
-            padding: EdgeInsets.all(40),
-            child: CircularProgressIndicator(color: Colors.white),
+        loading: () => const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
           ),
         ),
-        error: (e, _) => Center(
-          child: Text("Error: $e", style: const TextStyle(color: Colors.white)),
+        error: (e, _) => SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(
+              "Error: $e",
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
         ),
         data: (analytics) {
           final hasData = analytics.totalEntries > 0;
 
           if (!hasData) {
-            return Center(
-              child: GlassCard(
-                padding: 32,
-                child: Column(
-                  children: [
-                    const Icon(
-                      Icons.show_chart,
-                      size: 60,
-                      color: Colors.white24,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      "No Progress Yet",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+            return SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: GlassCard(
+                  padding: 32,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.show_chart,
+                        size: 60,
+                        color: Colors.white24,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Write your first journal entry to start tracking.",
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                    const SizedBox(height: 24),
-                    LiquidButton(
-                      text: "Start Writing",
-                      onTap: () {} /* Nav to journal */,
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      const Text(
+                        "No Progress Yet",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        "Write your first journal entry to start tracking.",
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                      const SizedBox(height: 24),
+                      LiquidButton(
+                        text: "Start Writing",
+                        onTap: () {} /* Nav to journal */,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );

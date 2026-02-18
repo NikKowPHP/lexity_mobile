@@ -11,6 +11,8 @@ import '../ui/screens/journal_screen.dart';
 import '../ui/screens/progress_screen.dart';
 import '../ui/screens/profile_screen.dart';
 import '../ui/screens/translator_screen.dart';
+import '../ui/screens/journal_editor_screen.dart';
+import '../ui/screens/journal_detail_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -89,6 +91,22 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/journal',
                 pageBuilder: (context, state) => _buildFadePage(const JournalScreen(), state),
+                routes: [
+                  GoRoute(
+                    path: 'new',
+                    parentNavigatorKey:
+                        _rootNavigatorKey, // Open full screen over shell
+                    builder: (context, state) => const JournalEditorScreen(),
+                  ),
+                  GoRoute(
+                    path: ':id',
+                    parentNavigatorKey:
+                        _rootNavigatorKey, // Open full screen over shell
+                    builder: (context, state) => JournalDetailScreen(
+                      journalId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
