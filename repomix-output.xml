@@ -50,6 +50,8 @@ android/
           com/
             example/
               lexity_mobile/
+                BubbleActivity.kt
+                BubbleController.kt
                 MainActivity.kt
         res/
           drawable/
@@ -279,12 +281,106 @@ This section contains the contents of the repository's files.
 </manifest>
 </file>
 
-<file path="android/app/src/main/kotlin/com/example/lexity_mobile/MainActivity.kt">
+<file path="android/app/src/main/kotlin/com/example/lexity_mobile/BubbleActivity.kt">
 package com.example.lexity_mobile
 
 import io.flutter.embedding.android.FlutterActivity
 
-class MainActivity : FlutterActivity()
+class BubbleActivity : FlutterActivity() {
+    // This tells Flutter which route to load when the Bubble opens
+    override fun getInitialRoute(): String {
+        return "/bubble-translator"
+    }
+}
+</file>
+
+<file path="android/app/src/main/kotlin/com/example/lexity_mobile/BubbleController.kt">
+package com.example.lexity_mobile
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Person
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
+import android.os.Build
+
+object BubbleController {
+    private const val CHANNEL_ID = "lexity_bubble_channel"
+    private const val SHORTCUT_ID = "lexity_translator"
+
+    fun showBubble(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
+        // 1. Create Channel
+        if (notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Translator Bubbles",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Chat bubbles for translation"
+                setAllowBubbles(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        // 2. Prepare Intent for BubbleActivity
+        val target = Intent(context, BubbleActivity::class.java)
+        val bubbleIntent = PendingIntent.getActivity(
+            context, 0, target,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // 3. Create Dynamic Shortcut (Required for Android 11+)
+        val icon = Icon.createWithResource(context, R.mipmap.ic_launcher)
+        val person = Person.Builder()
+            .setName("Lexity AI")
+            .setIcon(icon)
+            .setImportant(true)
+            .build()
+
+        val shortcut = ShortcutInfo.Builder(context, SHORTCUT_ID)
+            .setLongLived(true)
+            .setIntent(target.setAction(Intent.ACTION_VIEW))
+            .setShortLabel("Translator")
+            .setIcon(icon)
+            .setPerson(person)
+            .build()
+
+        context.getSystemService(ShortcutManager::class.java)!!.pushDynamicShortcut(shortcut)
+
+        // 4. Build Bubble Metadata
+        val bubbleData = Notification.BubbleMetadata.Builder(bubbleIntent, icon)
+            .setDesiredHeight(600)
+            .setAutoExpandBubble(true)
+            .setSuppressNotification(true)
+            .build()
+
+        // 5. Show Notification
+        val builder = Notification.Builder(context, CHANNEL_ID)
+            .setContentIntent(bubbleIntent)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setBubbleMetadata(bubbleData)
+            .addPerson(person)
+            .setShortcutId(SHORTCUT_ID)
+            .setContentTitle("Lexity Translator")
+            .setContentText("Tap to translate...")
+            .setCategory(Notification.CATEGORY_MESSAGE)
+            .setStyle(Notification.MessagingStyle(person)
+                .setConversationTitle("Translation")
+                .addMessage("Ready", System.currentTimeMillis(), person)
+            )
+
+        notificationManager.notify(1001, builder.build())
+    }
+}
 </file>
 
 <file path="android/app/src/main/res/drawable/launch_background.xml">
@@ -357,54 +453,6 @@ class MainActivity : FlutterActivity()
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
 </resources>
-</file>
-
-<file path="android/app/src/main/AndroidManifest.xml">
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application
-        android:label="lexity_mobile"
-        android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:taskAffinity=""
-            android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
-            <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"
-              />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-        </activity>
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
-        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
-    </application>
-    <!-- Required to query activities that can process text, see:
-         https://developer.android.com/training/package-visibility and
-         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
-
-         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
-        </intent>
-    </queries>
-</manifest>
 </file>
 
 <file path="android/app/src/profile/AndroidManifest.xml">
@@ -1814,78 +1862,6 @@ class UserProfile {
 }
 </file>
 
-<file path="lib/providers/srs_provider.dart">
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/srs_item.dart';
-import '../services/srs_service.dart';
-
-class SrsState {
-  final List<SrsItem> deck;
-  final bool isLoading;
-  final String? error;
-
-  SrsState({this.deck = const [], this.isLoading = false, this.error});
-
-  SrsItem? get currentCard => deck.isNotEmpty ? deck.first : null;
-}
-
-class SrsNotifier extends StateNotifier<SrsState> {
-  final SrsService _service;
-  SrsNotifier(this._service) : super(SrsState());
-
-  Future<void> loadDeck(String language) async {
-    state = SrsState(isLoading: true);
-    try {
-      final deck = await _service.fetchDeck(language);
-      state = SrsState(deck: deck, isLoading: false);
-    } catch (e) {
-      state = SrsState(error: e.toString(), isLoading: false);
-    }
-  }
-
-  Future<void> answerCard(int quality) async {
-    final card = state.currentCard;
-    if (card == null) return;
-
-    // 1. Optimistic UI: Remove card from list immediately
-    final updatedDeck = List<SrsItem>.from(state.deck)..removeAt(0);
-    state = SrsState(deck: updatedDeck);
-
-    // 2. Background Sync
-    try {
-      await _service.reviewItem(card.id, quality);
-    } catch (e) {
-      // Handle error (optionally re-add card to deck)
-    }
-  }
-
-  Future<bool> addToDeckFromTranslation({
-    required String front,
-    required String back,
-    required String language,
-    String? explanation,
-  }) async {
-    try {
-      await _service.createFromTranslation(
-        front: front,
-        back: back,
-        language: language,
-        explanation: explanation,
-      );
-      // Refresh deck to include the new item
-      loadDeck(language);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-}
-
-final srsProvider = StateNotifierProvider<SrsNotifier, SrsState>((ref) {
-  return SrsNotifier(ref.watch(srsServiceProvider));
-});
-</file>
-
 <file path="lib/providers/translator_provider.dart">
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/translation_result.dart';
@@ -2181,132 +2157,6 @@ class LoggerService {
 final loggerProvider = Provider<LoggerService>((ref) {
   return LoggerService();
 });
-</file>
-
-<file path="lib/services/srs_service.dart">
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'auth_service.dart';
-import '../models/srs_item.dart';
-import 'logger_service.dart';
-
-class SrsService {
-  final Ref _ref;
-  final AuthService _auth;
-  late final LoggerService _logger;
-
-  SrsService(this._ref, this._auth) {
-    _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _auth.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<List<SrsItem>> fetchDeck(String language) async {
-    _logger.info('SrsService: Fetching SRS deck for language: $language');
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/srs/deck?targetLanguage=$language'),
-        headers: await _getHeaders(),
-      );
-
-      _logger.debug('SrsService: fetchDeck response status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info('SrsService: Deck fetched successfully, found ${data.length} items');
-        return data.map((item) => SrsItem.fromJson(item)).toList();
-      }
-
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to load deck';
-      _logger.warning('SrsService: Deck fetch failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('SrsService: Error during fetchDeck', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<void> reviewItem(String id, int quality) async {
-    _logger.info('SrsService: Submitting review for item: $id, quality: $quality');
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/srs/review'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'srsItemId': id,
-          'quality': quality,
-        }),
-      );
-
-      _logger.debug('SrsService: reviewItem response status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        _logger.info('SrsService: Review submitted successfully');
-        return;
-      }
-
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to submit review';
-      _logger.warning('SrsService: Review submission failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('SrsService: Error during reviewItem', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<void> createFromTranslation({
-    required String front,
-    required String back,
-    required String language,
-    String? explanation,
-  }) async {
-    _logger.info('SrsService: Creating SRS item from translation');
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/srs/create-from-translation'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'frontContent': front,
-          'backContent': back,
-          'targetLanguage': language,
-          'explanation': explanation,
-        }),
-      );
-
-      _logger.debug(
-        'SrsService: createFromTranslation response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        _logger.info('SrsService: SRS item created successfully');
-        return;
-      }
-
-      final errorMsg =
-          jsonDecode(response.body)['error'] ?? 'Failed to create item';
-      _logger.warning(
-        'SrsService: createFromTranslation failed. Reason: $errorMsg',
-      );
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error(
-        'SrsService: Error in createFromTranslation',
-        e,
-        stackTrace,
-      );
-      rethrow;
-    }
-  }
-}
-
-final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(authServiceProvider)));
 </file>
 
 <file path="lib/services/user_service.dart">
@@ -2643,278 +2493,6 @@ class _GradeButton extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/widgets/liquid_components.dart">
-// lib/ui/widgets/liquid_components.dart
-import 'dart:ui';
-import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../../theme/liquid_theme.dart';
-
-// 1. The Moving "Liquid" Background
-class LiquidBackground extends StatelessWidget {
-  final Widget child;
-  const LiquidBackground({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // Deep background
-        Container(color: LiquidTheme.background),
-
-        // Floating Orb 1 (Indigo)
-        Positioned(
-              top: -100,
-              left: -100,
-              child: _buildOrb(LiquidTheme.primaryAccent),
-            )
-            .animate(onPlay: (c) => c.repeat(reverse: true))
-            .move(
-              duration: 4.seconds,
-              begin: const Offset(0, 0),
-              end: const Offset(50, 100),
-            )
-            .scale(
-              duration: 4.seconds,
-              begin: const Offset(1, 1),
-              end: const Offset(1.5, 1.5),
-            ),
-
-        // Floating Orb 2 (Pink)
-        Positioned(
-              bottom: -50,
-              right: -50,
-              child: _buildOrb(LiquidTheme.secondaryAccent),
-            )
-            .animate(onPlay: (c) => c.repeat(reverse: true))
-            .move(
-              duration: 5.seconds,
-              begin: const Offset(0, 0),
-              end: const Offset(-60, -80),
-            )
-            .scale(
-              duration: 5.seconds,
-              begin: const Offset(1.2, 1.2),
-              end: const Offset(0.8, 0.8),
-            ),
-
-        // Content on top
-        child,
-      ],
-    );
-  }
-
-  Widget _buildOrb(Color color) {
-    return Container(
-      width: 400,
-      height: 400,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: 0.4),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.4),
-            blurRadius: 100,
-            spreadRadius: 50,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// 2. The High-Performance Glass Card
-class GlassCard extends StatelessWidget {
-  final Widget child;
-  final double padding;
-
-  const GlassCard({super.key, required this.child, this.padding = 24.0});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: EdgeInsets.all(padding),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05), // Ultra transparent
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.1),
-              width: 1.5,
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: 0.1),
-                Colors.white.withValues(alpha: 0.02),
-              ],
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-// 3. Neumorphic/Glass Input Field
-class GlassInput extends StatelessWidget {
-  final String hint;
-  final bool isPassword;
-  final TextEditingController controller;
-
-  const GlassInput({
-    super.key,
-    required this.hint,
-    required this.controller,
-    this.isPassword = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: TextField(
-        controller: controller,
-        obscureText: isPassword,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 16,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// 4. Primary Liquid Button
-class LiquidButton extends StatelessWidget {
-  final String text;
-  final VoidCallback onTap;
-  final bool isLoading;
-
-  const LiquidButton({
-    super.key,
-    required this.text,
-    required this.onTap,
-    this.isLoading = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isLoading ? null : onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            colors: [LiquidTheme.primaryAccent, LiquidTheme.secondaryAccent],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: LiquidTheme.primaryAccent.withValues(alpha: 0.5),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Center(
-          child: isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : Text(
-                  text,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-        ),
-      ),
-    ).animate(target: isLoading ? 0 : 1).shimmer(duration: 2.seconds);
-  }
-}
-// 5. Liquid Dropdown Selection
-class LiquidDropdown<T> extends StatelessWidget {
-  final String label;
-  final T value;
-  final List<T> items;
-  final ValueChanged<T?> onChanged;
-
-  const LiquidDropdown({
-    super.key,
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: 16,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
-          ),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<T>(
-              value: value,
-              dropdownColor: const Color(0xFF1A1A1A), // Deep dark for contrast
-              borderRadius: BorderRadius.circular(20),
-              icon: const Icon(
-                Icons.keyboard_arrow_down,
-                color: LiquidTheme.primaryAccent,
-              ),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-              items: items.map((T val) {
-                return DropdownMenuItem<T>(
-                  value: val,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(val.toString()),
-                  ),
-                );
-              }).toList(),
-              onChanged: onChanged,
-            ),
-          ),
         ],
       ),
     );
@@ -5206,20 +4784,6 @@ add_custom_target(flutter_assemble DEPENDS
 )
 </file>
 
-<file path="windows/flutter/generated_plugin_registrant.cc">
-//
-//  Generated file. Do not edit.
-//
-
-// clang-format off
-
-#include "generated_plugin_registrant.h"
-
-
-void RegisterPlugins(flutter::PluginRegistry* registry) {
-}
-</file>
-
 <file path="windows/flutter/generated_plugin_registrant.h">
 //
 //  Generated file. Do not edit.
@@ -5236,32 +4800,6 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
 void RegisterPlugins(flutter::PluginRegistry* registry);
 
 #endif  // GENERATED_PLUGIN_REGISTRANT_
-</file>
-
-<file path="windows/flutter/generated_plugins.cmake">
-#
-# Generated file, do not edit.
-#
-
-list(APPEND FLUTTER_PLUGIN_LIST
-)
-
-list(APPEND FLUTTER_FFI_PLUGIN_LIST
-)
-
-set(PLUGIN_BUNDLED_LIBRARIES)
-
-foreach(plugin ${FLUTTER_PLUGIN_LIST})
-  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})
-  target_link_libraries(${BINARY_NAME} PRIVATE ${plugin}_plugin)
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:${plugin}_plugin>)
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${plugin}_bundled_libraries})
-endforeach(plugin)
-
-foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
-  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${ffi_plugin}/windows plugins/${ffi_plugin})
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${ffi_plugin}_bundled_libraries})
-endforeach(ffi_plugin)
 </file>
 
 <file path="windows/runner/CMakeLists.txt">
@@ -6319,13 +5857,6 @@ linter:
 # https://dart.dev/guides/language/analysis-options
 </file>
 
-<file path="app_logs.txt">
-[2026-02-11 14:01:17] [error] Test error message
-Error: Exception: Test exception
-[2026-02-11 15:35:31] [error] Test error message
-Error: Exception: Test exception
-</file>
-
 <file path="README.md">
 # lexity_mobile
 
@@ -6343,6 +5874,164 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+</file>
+
+<file path="android/app/src/main/kotlin/com/example/lexity_mobile/MainActivity.kt">
+package com.example.lexity_mobile
+
+import androidx.annotation.NonNull
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity: FlutterActivity() {
+    private val CHANNEL = "com.lexity.app/bubbles"
+
+    override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+            if (call.method == "showBubble") {
+                BubbleController.showBubble(this)
+                // Optional: Move app to background so bubble pops visibly
+                moveTaskToBack(true)
+                result.success(null)
+            } else {
+                result.notImplemented()
+            }
+        }
+    }
+}
+</file>
+
+<file path="android/app/src/main/AndroidManifest.xml">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permissions must be outside the <application> tag -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <application
+        android:label="lexity_mobile"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- BubbleActivity for the Translator Bubble -->
+        <activity
+            android:name=".BubbleActivity"
+            android:allowEmbedded="true"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/LaunchTheme"
+            android:exported="true" />
+
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <!-- Queries for processing text -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>
+</file>
+
+<file path="lib/providers/srs_provider.dart">
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/srs_item.dart';
+import '../services/srs_service.dart';
+
+class SrsState {
+  final List<SrsItem> deck;
+  final bool isLoading;
+  final String? error;
+
+  SrsState({this.deck = const [], this.isLoading = false, this.error});
+
+  SrsItem? get currentCard => deck.isNotEmpty ? deck.first : null;
+}
+
+class SrsNotifier extends StateNotifier<SrsState> {
+  final SrsService _service;
+  SrsNotifier(this._service) : super(SrsState());
+
+  Future<void> loadDeck(String language) async {
+    state = SrsState(isLoading: true);
+    try {
+      final deck = await _service.fetchDeck(language);
+      state = SrsState(deck: deck, isLoading: false);
+    } catch (e) {
+      state = SrsState(error: e.toString(), isLoading: false);
+    }
+  }
+
+  Future<void> answerCard(int quality) async {
+    final card = state.currentCard;
+    if (card == null) return;
+
+    // 1. Optimistic UI: Remove card from list immediately
+    final updatedDeck = List<SrsItem>.from(state.deck)..removeAt(0);
+    state = SrsState(deck: updatedDeck);
+
+    // 2. Background Sync
+    try {
+      await _service.reviewItem(card.id, quality);
+    } catch (e) {
+      // Handle error (optionally re-add card to deck)
+    }
+  }
+
+  Future<bool> addToDeckFromTranslation({
+    required String front,
+    required String back,
+    required String language,
+    String? explanation,
+  }) async {
+    try {
+      await _service.createFromTranslation(
+        front: front,
+        back: back,
+        language: language,
+        explanation: explanation,
+      );
+      // Refresh deck to include the new item
+      loadDeck(language);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+}
+
+final srsProvider = StateNotifierProvider<SrsNotifier, SrsState>((ref) {
+  return SrsNotifier(ref.watch(srsServiceProvider));
+});
 </file>
 
 <file path="lib/router/router.dart">
@@ -6376,12 +6065,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!authState.isInitialized) return null;
 
       final isLoggedIn = authState.isAuthenticated;
-      final isGoingToLogin = state.uri.toString() == '/login';
-
-      if (!isLoggedIn && !isGoingToLogin) {
+      final path = state.uri.toString();
+      
+      // Allow the bubble route and login route even if not logged in
+      if (!isLoggedIn && path != '/login' && path != '/bubble-translator') {
         return '/login';
       }
-      if (isLoggedIn && isGoingToLogin) {
+      
+      if (isLoggedIn && (path == '/login')) {
         return '/path';
       }
       return null;
@@ -6392,6 +6083,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+
+      // standalone STANDALONE ROUTE for the Bubble
+      // This is OUTSIDE the StatefulShellRoute so it won't have the Bottom Bar
+      GoRoute(
+        path: '/bubble-translator',
+        builder: (context, state) => const TranslatorScreen(isBubbleMode: true),
       ),
 
       // APPLICATION SHELL (The Liquid UI)
@@ -6485,9 +6183,917 @@ class _RiverpodRouterRefreshStream extends ChangeNotifier {
 }
 </file>
 
-<file path="lib/ui/screens/placeholder_screens.dart">
+<file path="lib/services/srs_service.dart">
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'auth_service.dart';
+import '../models/srs_item.dart';
+import 'logger_service.dart';
+
+class SrsService {
+  final Ref _ref;
+  final AuthService _auth;
+  late final LoggerService _logger;
+
+  SrsService(this._ref, this._auth) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _auth.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<SrsItem>> fetchDeck(String language) async {
+    _logger.info('SrsService: Fetching SRS deck for language: $language');
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/srs/deck?targetLanguage=$language'),
+        headers: await _getHeaders(),
+      );
+
+      _logger.debug('SrsService: fetchDeck response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info('SrsService: Deck fetched successfully, found ${data.length} items');
+        return data.map((item) => SrsItem.fromJson(item)).toList();
+      }
+
+      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to load deck';
+      _logger.warning('SrsService: Deck fetch failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('SrsService: Error during fetchDeck', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> reviewItem(String id, int quality) async {
+    _logger.info('SrsService: Submitting review for item: $id, quality: $quality');
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/srs/review'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'srsItemId': id,
+          'quality': quality,
+        }),
+      );
+
+      _logger.debug('SrsService: reviewItem response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        _logger.info('SrsService: Review submitted successfully');
+        return;
+      }
+
+      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to submit review';
+      _logger.warning('SrsService: Review submission failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('SrsService: Error during reviewItem', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> createFromTranslation({
+    required String front,
+    required String back,
+    required String language,
+    String? explanation,
+  }) async {
+    _logger.info('SrsService: Creating SRS item from translation');
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/srs/create-from-translation'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'frontContent': front,
+          'backContent': back,
+          'targetLanguage': language,
+          'explanation': explanation,
+        }),
+      );
+
+      _logger.debug(
+        'SrsService: createFromTranslation response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _logger.info('SrsService: SRS item created successfully');
+        return;
+      }
+
+      final errorMsg =
+          jsonDecode(response.body)['error'] ?? 'Failed to create item';
+      _logger.warning(
+        'SrsService: createFromTranslation failed. Reason: $errorMsg',
+      );
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error(
+        'SrsService: Error in createFromTranslation',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+  }
+}
+
+final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(authServiceProvider)));
+</file>
+
+<file path="lib/ui/widgets/liquid_components.dart">
+// lib/ui/widgets/liquid_components.dart
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../../theme/liquid_theme.dart';
+
+// 1. The Moving "Liquid" Background
+class LiquidBackground extends StatelessWidget {
+  final Widget child;
+  const LiquidBackground({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Deep background
+        Container(color: LiquidTheme.background),
+
+        // Floating Orb 1 (Indigo)
+        Positioned(
+              top: -100,
+              left: -100,
+              child: _buildOrb(LiquidTheme.primaryAccent),
+            )
+            .animate(onPlay: (c) => c.repeat(reverse: true))
+            .move(
+              duration: 4.seconds,
+              begin: const Offset(0, 0),
+              end: const Offset(50, 100),
+            )
+            .scale(
+              duration: 4.seconds,
+              begin: const Offset(1, 1),
+              end: const Offset(1.5, 1.5),
+            ),
+
+        // Floating Orb 2 (Pink)
+        Positioned(
+              bottom: -50,
+              right: -50,
+              child: _buildOrb(LiquidTheme.secondaryAccent),
+            )
+            .animate(onPlay: (c) => c.repeat(reverse: true))
+            .move(
+              duration: 5.seconds,
+              begin: const Offset(0, 0),
+              end: const Offset(-60, -80),
+            )
+            .scale(
+              duration: 5.seconds,
+              begin: const Offset(1.2, 1.2),
+              end: const Offset(0.8, 0.8),
+            ),
+
+        // Content on top
+        child,
+      ],
+    );
+  }
+
+  Widget _buildOrb(Color color) {
+    return Container(
+      width: 400,
+      height: 400,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withValues(alpha: 0.4),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.4),
+            blurRadius: 100,
+            spreadRadius: 50,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// 2. The High-Performance Glass Card
+class GlassCard extends StatelessWidget {
+  final Widget child;
+  final double padding;
+
+  const GlassCard({super.key, required this.child, this.padding = 24.0});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(30),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          padding: EdgeInsets.all(padding),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05), // Ultra transparent
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.1),
+              width: 1.5,
+            ),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.1),
+                Colors.white.withValues(alpha: 0.02),
+              ],
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+// 3. Neumorphic/Glass Input Field
+class GlassInput extends StatelessWidget {
+  final String hint;
+  final bool isPassword;
+  final TextEditingController controller;
+
+  const GlassInput({
+    super.key,
+    required this.hint,
+    required this.controller,
+    this.isPassword = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: isPassword,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 16,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// 4. Primary Liquid Button
+class LiquidButton extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
+  final bool isLoading;
+
+  const LiquidButton({
+    super.key,
+    required this.text,
+    required this.onTap,
+    this.isLoading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            colors: [LiquidTheme.primaryAccent, LiquidTheme.secondaryAccent],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: LiquidTheme.primaryAccent.withValues(alpha: 0.5),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Center(
+          child: isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  text,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+        ),
+      ),
+    ).animate(target: isLoading ? 0 : 1).shimmer(duration: 2.seconds);
+  }
+}
+// 5. Liquid Dropdown Selection
+class LiquidDropdown<T> extends StatelessWidget {
+  final String label;
+  final T value;
+  final List<T> items;
+  final ValueChanged<T?> onChanged;
+
+  const LiquidDropdown({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              value: value,
+              dropdownColor: const Color(0xFF1A1A1A), // Deep dark for contrast
+              borderRadius: BorderRadius.circular(20),
+              icon: const Icon(
+                Icons.keyboard_arrow_down,
+                color: LiquidTheme.primaryAccent,
+              ),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+              items: items.map((T val) {
+                return DropdownMenuItem<T>(
+                  value: val,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(val.toString()),
+                  ),
+                );
+              }).toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/widgets/liquid_navigation.dart">
+// lib/ui/widgets/liquid_navigation.dart
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import '../../theme/liquid_theme.dart';
+
+class LiquidNavigation extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
+
+  const LiquidNavigation({super.key, required this.navigationShell});
+
+  final List<({IconData icon, String label})> _items = const [
+    (icon: LucideIcons.map, label: 'Path'),
+    (icon: LucideIcons.brainCircuit, label: 'Study'),
+    (icon: LucideIcons.languages, label: 'Translator'),
+    (icon: LucideIcons.penTool, label: 'Journal'),
+    (icon: LucideIcons.barChart2, label: 'Progress'),
+    (icon: LucideIcons.user, label: 'Profile'),
+  ];
+
+  void _onTap(int index) {
+    navigationShell.goBranch(
+      index,
+      initialLocation: index == navigationShell.currentIndex,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentIndex = navigationShell.currentIndex;
+    final width = MediaQuery.of(context).size.width;
+    final isDesktop = width > 800;
+
+    return isDesktop
+        ? _buildSideRail(context, currentIndex)
+        : _buildBottomBar(context, currentIndex);
+  }
+
+  Widget _buildBottomBar(BuildContext context, int currentIndex) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 30, left: 20, right: 20),
+        height: 70,
+        decoration: _glassDecoration(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(35),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _items.asMap().entries.map((entry) {
+                return _NavItem(
+                  icon: entry.value.icon,
+                  label: entry.value.label,
+                  isActive: currentIndex == entry.key,
+                  onTap: () => _onTap(entry.key),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSideRail(BuildContext context, int currentIndex) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(left: 30),
+        width: 80,
+        height: 500,
+        decoration: _glassDecoration(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _items.asMap().entries.map((entry) {
+                return _NavItem(
+                  icon: entry.value.icon,
+                  label: entry.value.label,
+                  isActive: currentIndex == entry.key,
+                  onTap: () => _onTap(entry.key),
+                  isVertical: true,
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration _glassDecoration() {
+    return BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(40),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.3),
+          blurRadius: 30,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+  final bool isVertical;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+    this.isVertical = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutQuart,
+        padding: const EdgeInsets.all(12),
+        decoration: isActive
+            ? BoxDecoration(
+                color: LiquidTheme.primaryAccent.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: LiquidTheme.primaryAccent.withValues(alpha: 0.4),
+                    blurRadius: 15,
+                    spreadRadius: -2,
+                  )
+                ],
+              )
+            : const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
+        child: Icon(
+          icon,
+          color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
+          size: 24,
+        ),
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/main.dart">
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
+import 'providers/auth_provider.dart';
+import 'router/router.dart';
+import 'theme/liquid_theme.dart';
+import 'ui/widgets/liquid_components.dart';
+
+void main() {
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
+  runApp(const ProviderScope(child: MyApp()));
+}
+
+class MyApp extends ConsumerWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+    final router = ref.watch(routerProvider);
+
+    // If not initialized, show a Glass loading screen
+    if (!authState.isInitialized) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: LiquidTheme.theme,
+        home: const Scaffold(
+          body: LiquidBackground(
+            child: Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return MaterialApp.router(
+      title: 'Lexity Mobile',
+      debugShowCheckedModeBanner: false,
+      theme: LiquidTheme.theme,
+      routerConfig: router,
+    );
+  }
+}
+</file>
+
+<file path="test/login_navigation_test.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lexity_mobile/router/router.dart';
+import 'package:lexity_mobile/ui/screens/login_screen.dart';
+import 'package:lexity_mobile/ui/screens/placeholder_screens.dart';
+import 'package:lexity_mobile/services/auth_service.dart';
+import 'package:mockito/mockito.dart';
+import 'package:mockito/annotations.dart';
+
+@GenerateNiceMocks([MockSpec<AuthService>()])
+import 'login_navigation_test.mocks.dart';
+
+void main() {
+  testWidgets(
+    'LoginScreen redirects to PathScreen on successful login via GoRouter',
+    (WidgetTester tester) async {
+    final mockAuthService = MockAuthService();
+    
+    when(mockAuthService.login(any, any)).thenAnswer((_) async => true);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+            authServiceProvider.overrideWithValue(mockAuthService),
+        ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              final router = ref.watch(routerProvider);
+              return MaterialApp.router(routerConfig: router);
+            },
+        ),
+      ),
+    );
+
+      // Should start at login because not authenticated
+      expect(find.byType(LoginScreen), findsOneWidget);
+
+    // Enter text
+    await tester.enterText(find.byType(TextField).at(0), 'test@test.com');
+    await tester.enterText(find.byType(TextField).at(1), 'password');
+
+    // Tap login button
+    await tester.tap(find.text('Sign In'));
+      await tester.pump(); 
+    
+      // Wait for async operations and redirect
+    for (int i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(PathScreen).evaluate().isNotEmpty) {
+            break;
+        }
+    }
+
+    // Verification
+      expect(find.byType(PathScreen), findsOneWidget);
+  });
+}
+</file>
+
+<file path="windows/flutter/generated_plugin_registrant.cc">
+//
+//  Generated file. Do not edit.
+//
+
+// clang-format off
+
+#include "generated_plugin_registrant.h"
+
+#include <permission_handler_windows/permission_handler_windows_plugin.h>
+
+void RegisterPlugins(flutter::PluginRegistry* registry) {
+  PermissionHandlerWindowsPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("PermissionHandlerWindowsPlugin"));
+}
+</file>
+
+<file path="windows/flutter/generated_plugins.cmake">
+#
+# Generated file, do not edit.
+#
+
+list(APPEND FLUTTER_PLUGIN_LIST
+  permission_handler_windows
+)
+
+list(APPEND FLUTTER_FFI_PLUGIN_LIST
+)
+
+set(PLUGIN_BUNDLED_LIBRARIES)
+
+foreach(plugin ${FLUTTER_PLUGIN_LIST})
+  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})
+  target_link_libraries(${BINARY_NAME} PRIVATE ${plugin}_plugin)
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:${plugin}_plugin>)
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${plugin}_bundled_libraries})
+endforeach(plugin)
+
+foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
+  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${ffi_plugin}/windows plugins/${ffi_plugin})
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${ffi_plugin}_bundled_libraries})
+endforeach(ffi_plugin)
+</file>
+
+<file path=".gitignore">
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+./app_logs.txt
+</file>
+
+<file path="app_logs.txt">
+[2026-02-11 14:01:17] [error] Test error message
+Error: Exception: Test exception
+[2026-02-11 15:35:31] [error] Test error message
+Error: Exception: Test exception
+</file>
+
+<file path="lib/ui/screens/login_screen.dart">
+// lib/ui/screens/login_screen.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+
+import '../../providers/auth_provider.dart';
+import '../widgets/liquid_components.dart';
+
+
+class LoginScreen extends ConsumerStatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends ConsumerState<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool isLogin = true;
+
+  void _submit() {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) return;
+
+    if (isLogin) {
+      ref.read(authProvider.notifier).login(email, password);
+    } else {
+      ref.read(authProvider.notifier).signUp(email, password);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+
+
+
+    return Scaffold(
+      body: LiquidBackground(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Logo or Title
+                Text(
+                  "LEXITY",
+                  style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -1.5,
+                    color: Colors.white,
+                  ),
+                ).animate().fadeIn(duration: 800.ms).moveY(begin: 20, end: 0),
+
+                const SizedBox(height: 40),
+
+                // The Glass Form
+                GlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isLogin ? "Welcome Back" : "Create Account",
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          GlassInput(
+                            controller: _emailController,
+                            hint: "Email",
+                          ),
+                          GlassInput(
+                            controller: _passwordController,
+                            hint: "Password",
+                            isPassword: true,
+                          ),
+                          const SizedBox(height: 30),
+                          LiquidButton(
+                            text: isLogin ? "Sign In" : "Sign Up",
+                            isLoading: authState.isLoading,
+                            onTap: _submit,
+                          ),
+                        ],
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 200.ms, duration: 600.ms)
+                    .slideY(begin: 0.1, end: 0),
+
+                const SizedBox(height: 20),
+
+                // Toggle Button
+                TextButton(
+                  onPressed: () => setState(() => isLogin = !isLogin),
+                  child: RichText(
+                    text: TextSpan(
+                      text: isLogin
+                          ? "New here? "
+                          : "Already have an account? ",
+                      style: const TextStyle(color: Colors.white60),
+                      children: [
+                        TextSpan(
+                          text: isLogin ? "Create account" : "Log in",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/screens/placeholder_screens.dart">
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../providers/translator_provider.dart';
 import '../../providers/srs_provider.dart';
@@ -6839,7 +7445,8 @@ class _ProfileDropdown extends StatelessWidget {
 
 // 7. Translator Screen
 class TranslatorScreen extends ConsumerStatefulWidget {
-  const TranslatorScreen({super.key});
+  final bool isBubbleMode;
+  const TranslatorScreen({super.key, this.isBubbleMode = false});
 
   @override
   ConsumerState<TranslatorScreen> createState() => _TranslatorScreenState();
@@ -6849,6 +7456,35 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   final _inputController = TextEditingController();
   String sourceLang = "English";
 
+  static const platform = MethodChannel('com.lexity.app/bubbles');
+
+  Future<void> _enableBubbleMode() async {
+    if (!Platform.isAndroid) return;
+
+    // 1. Check/Request Notification Permission (Android 13+)
+    PermissionStatus status = await Permission.notification.status;
+    if (!status.isGranted) {
+      status = await Permission.notification.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Notifications are needed for Bubble mode"),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // 2. Call Native Code
+    try {
+      await platform.invokeMethod('showBubble');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to launch bubble: '${e.message}'.");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(translatorProvider);
@@ -6857,6 +7493,16 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
     return GlassScaffold(
       title: 'Translator',
       subtitle: 'Real-time AI analysis',
+      floatingActionButton: (Platform.isAndroid && !widget.isBubbleMode)
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 80),
+              child: FloatingActionButton(
+                backgroundColor: LiquidTheme.primaryAccent,
+                onPressed: _enableBubbleMode,
+                child: const Icon(Icons.open_in_new, color: Colors.white),
+              ),
+            )
+          : null,
       body: SliverList(
         delegate: SliverChildListDelegate([
           // 1. Language Selectors
@@ -7097,459 +7743,132 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
 }
 </file>
 
-<file path="lib/ui/widgets/liquid_navigation.dart">
-// lib/ui/widgets/liquid_navigation.dart
-import 'dart:ui';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import '../../theme/liquid_theme.dart';
+<file path="lib/providers/auth_provider.dart">
+// lib/providers/auth_provider.dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/auth_service.dart';
 
-class LiquidNavigation extends StatelessWidget {
-  final StatefulNavigationShell navigationShell;
+import '../services/user_service.dart';
+import '../services/logger_service.dart';
 
-  const LiquidNavigation({super.key, required this.navigationShell});
+class AuthState {
+  final bool isInitialized;
+  final bool isLoading;
+  final String? error;
+  final bool isAuthenticated;
 
-  final List<({IconData icon, String label})> _items = const [
-    (icon: LucideIcons.map, label: 'Path'),
-    (icon: LucideIcons.brainCircuit, label: 'Study'),
-    (icon: LucideIcons.languages, label: 'Translator'),
-    (icon: LucideIcons.penTool, label: 'Journal'),
-    (icon: LucideIcons.barChart2, label: 'Progress'),
-    (icon: LucideIcons.user, label: 'Profile'),
-  ];
-
-  void _onTap(int index) {
-    navigationShell.goBranch(
-      index,
-      initialLocation: index == navigationShell.currentIndex,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final currentIndex = navigationShell.currentIndex;
-    final width = MediaQuery.of(context).size.width;
-    final isDesktop = width > 800;
-
-    return isDesktop
-        ? _buildSideRail(context, currentIndex)
-        : _buildBottomBar(context, currentIndex);
-  }
-
-  Widget _buildBottomBar(BuildContext context, int currentIndex) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 30, left: 20, right: 20),
-        height: 70,
-        decoration: _glassDecoration(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(35),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _items.asMap().entries.map((entry) {
-                return _NavItem(
-                  icon: entry.value.icon,
-                  label: entry.value.label,
-                  isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSideRail(BuildContext context, int currentIndex) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(left: 30),
-        width: 80,
-        height: 500,
-        decoration: _glassDecoration(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(40),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _items.asMap().entries.map((entry) {
-                return _NavItem(
-                  icon: entry.value.icon,
-                  label: entry.value.label,
-                  isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
-                  isVertical: true,
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  BoxDecoration _glassDecoration() {
-    return BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.2),
-      borderRadius: BorderRadius.circular(40),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.3),
-          blurRadius: 30,
-          offset: const Offset(0, 10),
-        ),
-      ],
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-  final bool isVertical;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-    this.isVertical = false,
+  AuthState({
+    this.isInitialized = false,
+    this.isLoading = false,
+    this.error,
+    this.isAuthenticated = false,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutQuart,
-        padding: const EdgeInsets.all(12),
-        decoration: isActive
-            ? BoxDecoration(
-                color: LiquidTheme.primaryAccent.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: LiquidTheme.primaryAccent.withValues(alpha: 0.4),
-                    blurRadius: 15,
-                    spreadRadius: -2,
-                  )
-                ],
-              )
-            : const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
-        child: Icon(
-          icon,
-          color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
-          size: 24,
-        ),
-      ),
+  AuthState copyWith({
+    bool? isInitialized,
+    bool? isLoading,
+    String? error,
+    bool? isAuthenticated,
+  }) {
+    return AuthState(
+      isInitialized: isInitialized ?? this.isInitialized,
+      isLoading: isLoading ?? this.isLoading,
+      error: error, // Nullable override
+      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
     );
   }
 }
-</file>
 
-<file path="lib/main.dart">
-// lib/main.dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
-import 'providers/auth_provider.dart';
-import 'router/router.dart';
-import 'theme/liquid_theme.dart';
-import 'ui/widgets/liquid_components.dart';
+class AuthNotifier extends StateNotifier<AuthState> {
+  final AuthService _authService;
+  final UserService _userService;
+  late final LoggerService _logger;
 
-void main() {
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
-  runApp(const ProviderScope(child: MyApp()));
-}
+  AuthNotifier(this._authService, this._userService, this._logger)
+    : super(AuthState()) {
+    checkAuthStatus();
+  }
 
-class MyApp extends ConsumerWidget {
-  const MyApp({super.key});
+  Future<void> checkAuthStatus() async {
+    _logger.info('AuthNotifier: checking auth status (Deep Auth Check)');
+    final token = await _authService.getToken();
+    
+    if (token == null) {
+      _logger.info('AuthNotifier: no token found');
+      state = state.copyWith(isAuthenticated: false, isInitialized: true);
+      return;
+    }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
-    final router = ref.watch(routerProvider);
+    try {
+      // PERFORM THE "ME" CHECK: Try to fetch the profile from the server
+      // This verifies the JWT is actually valid and not expired.
+      await _userService.fetchProfile();
 
-    // If not initialized, show a Glass loading screen
-    if (!authState.isInitialized) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: LiquidTheme.theme,
-        home: const Scaffold(
-          body: LiquidBackground(
-            child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          ),
-        ),
+      _logger.info('AuthNotifier: token valid, authenticating');
+      state = state.copyWith(isAuthenticated: true, isInitialized: true);
+    } catch (e) {
+      // If the server says 401 (Unauthorized), the token is likely expired or invalid
+      _logger.warning("AuthNotifier: Deep Auth Check failed: $e");
+      await _authService.clearToken(); // Wipe the invalid token
+      state = state.copyWith(isAuthenticated: false, isInitialized: true);
+    }
+  }
+
+  Future<void> logout() async {
+    _logger.info('AuthNotifier: logging out');
+    await _authService.clearToken();
+    state = state.copyWith(isAuthenticated: false, isInitialized: true);
+  }
+
+  Future<void> login(String email, String password) async {
+    _logger.info('AuthNotifier: login started for $email');
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _authService.login(email, password);
+      _logger.info('AuthNotifier: login successful for $email');
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        isInitialized: true,
+      );
+    } catch (e, stackTrace) {
+      _logger.error('AuthNotifier: login failed for $email', e, stackTrace);
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll("Exception: ", ""),
+        isInitialized: true,
       );
     }
-
-    return MaterialApp.router(
-      title: 'Lexity Mobile',
-      debugShowCheckedModeBanner: false,
-      theme: LiquidTheme.theme,
-      routerConfig: router,
-    );
   }
-}
-</file>
 
-<file path="test/login_navigation_test.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:lexity_mobile/router/router.dart';
-import 'package:lexity_mobile/ui/screens/login_screen.dart';
-import 'package:lexity_mobile/ui/screens/placeholder_screens.dart';
-import 'package:lexity_mobile/services/auth_service.dart';
-import 'package:mockito/mockito.dart';
-import 'package:mockito/annotations.dart';
-
-@GenerateNiceMocks([MockSpec<AuthService>()])
-import 'login_navigation_test.mocks.dart';
-
-void main() {
-  testWidgets(
-    'LoginScreen redirects to PathScreen on successful login via GoRouter',
-    (WidgetTester tester) async {
-    final mockAuthService = MockAuthService();
-    
-    when(mockAuthService.login(any, any)).thenAnswer((_) async => true);
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-            authServiceProvider.overrideWithValue(mockAuthService),
-        ],
-          child: Consumer(
-            builder: (context, ref, child) {
-              final router = ref.watch(routerProvider);
-              return MaterialApp.router(routerConfig: router);
-            },
-        ),
-      ),
-    );
-
-      // Should start at login because not authenticated
-      expect(find.byType(LoginScreen), findsOneWidget);
-
-    // Enter text
-    await tester.enterText(find.byType(TextField).at(0), 'test@test.com');
-    await tester.enterText(find.byType(TextField).at(1), 'password');
-
-    // Tap login button
-    await tester.tap(find.text('Sign In'));
-      await tester.pump(); 
-    
-      // Wait for async operations and redirect
-    for (int i = 0; i < 20; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-        if (find.byType(PathScreen).evaluate().isNotEmpty) {
-            break;
-        }
-    }
-
-    // Verification
-      expect(find.byType(PathScreen), findsOneWidget);
-  });
-}
-</file>
-
-<file path=".gitignore">
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-./app_logs.txt
-</file>
-
-<file path="lib/ui/screens/login_screen.dart">
-// lib/ui/screens/login_screen.dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-
-import '../../providers/auth_provider.dart';
-import '../widgets/liquid_components.dart';
-
-
-class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
-
-  @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool isLogin = true;
-
-  void _submit() {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-
-    if (email.isEmpty || password.isEmpty) return;
-
-    if (isLogin) {
-      ref.read(authProvider.notifier).login(email, password);
-    } else {
-      ref.read(authProvider.notifier).signUp(email, password);
+  Future<void> signUp(String email, String password) async {
+    _logger.info('AuthNotifier: signup started for $email');
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _authService.signUp(email, password);
+      _logger.info('AuthNotifier: signup successful for $email');
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        isInitialized: true,
+      );
+    } catch (e, stackTrace) {
+      _logger.error('AuthNotifier: signup failed for $email', e, stackTrace);
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll("Exception: ", ""),
+        isInitialized: true,
+      );
     }
   }
-
-  @override
-  Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
-
-
-
-    return Scaffold(
-      body: LiquidBackground(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Logo or Title
-                Text(
-                  "LEXITY",
-                  style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -1.5,
-                    color: Colors.white,
-                  ),
-                ).animate().fadeIn(duration: 800.ms).moveY(begin: 20, end: 0),
-
-                const SizedBox(height: 40),
-
-                // The Glass Form
-                GlassCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isLogin ? "Welcome Back" : "Create Account",
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          GlassInput(
-                            controller: _emailController,
-                            hint: "Email",
-                          ),
-                          GlassInput(
-                            controller: _passwordController,
-                            hint: "Password",
-                            isPassword: true,
-                          ),
-                          const SizedBox(height: 30),
-                          LiquidButton(
-                            text: isLogin ? "Sign In" : "Sign Up",
-                            isLoading: authState.isLoading,
-                            onTap: _submit,
-                          ),
-                        ],
-                      ),
-                    )
-                    .animate()
-                    .fadeIn(delay: 200.ms, duration: 600.ms)
-                    .slideY(begin: 0.1, end: 0),
-
-                const SizedBox(height: 20),
-
-                // Toggle Button
-                TextButton(
-                  onPressed: () => setState(() => isLogin = !isLogin),
-                  child: RichText(
-                    text: TextSpan(
-                      text: isLogin
-                          ? "New here? "
-                          : "Already have an account? ",
-                      style: const TextStyle(color: Colors.white60),
-                      children: [
-                        TextSpan(
-                          text: isLogin ? "Create account" : "Log in",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
+
+final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+  final authService = ref.watch(authServiceProvider);
+  final userService = ref.watch(userServiceProvider);
+  final logger = ref.watch(loggerProvider);
+  return AuthNotifier(authService, userService, logger);
+});
 </file>
 
 <file path="pubspec.lock">
@@ -8075,6 +8394,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
+  permission_handler:
+    dependency: "direct main"
+    description:
+      name: permission_handler
+      sha256: "59adad729136f01ea9e35a48f5d1395e25cba6cea552249ddbe9cf950f5d7849"
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.4.0"
+  permission_handler_android:
+    dependency: transitive
+    description:
+      name: permission_handler_android
+      sha256: d3971dcdd76182a0c198c096b5db2f0884b0d4196723d21a866fc4cdea057ebc
+      url: "https://pub.dev"
+    source: hosted
+    version: "12.1.0"
+  permission_handler_apple:
+    dependency: transitive
+    description:
+      name: permission_handler_apple
+      sha256: f000131e755c54cf4d84a5d8bd6e4149e262cc31c5a8b1d698de1ac85fa41023
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.4.7"
+  permission_handler_html:
+    dependency: transitive
+    description:
+      name: permission_handler_html
+      sha256: "38f000e83355abb3392140f6bc3030660cfaef189e1f87824facb76300b4ff24"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.3+5"
+  permission_handler_platform_interface:
+    dependency: transitive
+    description:
+      name: permission_handler_platform_interface
+      sha256: eb99b295153abce5d683cac8c02e22faab63e50679b937fa1bf67d58bb282878
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.3.0"
+  permission_handler_windows:
+    dependency: transitive
+    description:
+      name: permission_handler_windows
+      sha256: "1a790728016f79a41216d88672dbc5df30e686e811ad4e698bfc51f76ad91f1e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.1"
   platform:
     dependency: transitive
     description:
@@ -8397,6 +8764,8 @@ dependencies:
   intl: ^0.19.0
   lucide_icons: ^0.257.0
   go_router: ^17.1.0
+  permission_handler: ^11.3.0
+
 
 dev_dependencies:
   flutter_test:
@@ -8456,134 +8825,6 @@ flutter:
   # see https://flutter.dev/to/font-from-package
 </file>
 
-<file path="lib/providers/auth_provider.dart">
-// lib/providers/auth_provider.dart
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/auth_service.dart';
-
-import '../services/user_service.dart';
-import '../services/logger_service.dart';
-
-class AuthState {
-  final bool isInitialized;
-  final bool isLoading;
-  final String? error;
-  final bool isAuthenticated;
-
-  AuthState({
-    this.isInitialized = false,
-    this.isLoading = false,
-    this.error,
-    this.isAuthenticated = false,
-  });
-
-  AuthState copyWith({
-    bool? isInitialized,
-    bool? isLoading,
-    String? error,
-    bool? isAuthenticated,
-  }) {
-    return AuthState(
-      isInitialized: isInitialized ?? this.isInitialized,
-      isLoading: isLoading ?? this.isLoading,
-      error: error, // Nullable override
-      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
-    );
-  }
-}
-
-class AuthNotifier extends StateNotifier<AuthState> {
-  final AuthService _authService;
-  final UserService _userService;
-  late final LoggerService _logger;
-
-  AuthNotifier(this._authService, this._userService, this._logger)
-    : super(AuthState()) {
-    checkAuthStatus();
-  }
-
-  Future<void> checkAuthStatus() async {
-    _logger.info('AuthNotifier: checking auth status (Deep Auth Check)');
-    final token = await _authService.getToken();
-    
-    if (token == null) {
-      _logger.info('AuthNotifier: no token found');
-      state = state.copyWith(isAuthenticated: false, isInitialized: true);
-      return;
-    }
-
-    try {
-      // PERFORM THE "ME" CHECK: Try to fetch the profile from the server
-      // This verifies the JWT is actually valid and not expired.
-      await _userService.fetchProfile();
-
-      _logger.info('AuthNotifier: token valid, authenticating');
-      state = state.copyWith(isAuthenticated: true, isInitialized: true);
-    } catch (e) {
-      // If the server says 401 (Unauthorized), the token is likely expired or invalid
-      _logger.warning("AuthNotifier: Deep Auth Check failed: $e");
-      await _authService.clearToken(); // Wipe the invalid token
-      state = state.copyWith(isAuthenticated: false, isInitialized: true);
-    }
-  }
-
-  Future<void> logout() async {
-    _logger.info('AuthNotifier: logging out');
-    await _authService.clearToken();
-    state = state.copyWith(isAuthenticated: false, isInitialized: true);
-  }
-
-  Future<void> login(String email, String password) async {
-    _logger.info('AuthNotifier: login started for $email');
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      await _authService.login(email, password);
-      _logger.info('AuthNotifier: login successful for $email');
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        isInitialized: true,
-      );
-    } catch (e, stackTrace) {
-      _logger.error('AuthNotifier: login failed for $email', e, stackTrace);
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString().replaceAll("Exception: ", ""),
-        isInitialized: true,
-      );
-    }
-  }
-
-  Future<void> signUp(String email, String password) async {
-    _logger.info('AuthNotifier: signup started for $email');
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      await _authService.signUp(email, password);
-      _logger.info('AuthNotifier: signup successful for $email');
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: true,
-        isInitialized: true,
-      );
-    } catch (e, stackTrace) {
-      _logger.error('AuthNotifier: signup failed for $email', e, stackTrace);
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString().replaceAll("Exception: ", ""),
-        isInitialized: true,
-      );
-    }
-  }
-}
-
-final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  final authService = ref.watch(authServiceProvider);
-  final userService = ref.watch(userServiceProvider);
-  final logger = ref.watch(loggerProvider);
-  return AuthNotifier(authService, userService, logger);
-});
-</file>
-
 <file path="lib/services/auth_service.dart">
 // lib/services/auth_service.dart
 import 'dart:convert';
@@ -8596,7 +8837,7 @@ import 'logger_service.dart';
 
 // Change this based on your device
 final String baseUrl = Platform.isAndroid
-    ? 'http://10.0.2.2:3555'
+    ? 'http://localhost:3555'
     : 'http://localhost:3555';
 
 class AuthService {

@@ -227,19 +227,28 @@ class LiquidDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // NEW: Internal safety check to prevent crash if parent passes invalid value
+    final bool valueExists = items.contains(value);
+    final T effectiveValue = valueExists ? value : items.first;
+
     return GlassCard(
-      padding: 16,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           DropdownButtonHideUnderline(
             child: DropdownButton<T>(
-              value: value,
-              dropdownColor: const Color(0xFF1A1A1A), // Deep dark for contrast
+              isExpanded: true,
+              value: effectiveValue,
+              dropdownColor: const Color(0xFF1A1A1A),
               borderRadius: BorderRadius.circular(20),
               icon: const Icon(
                 Icons.keyboard_arrow_down,

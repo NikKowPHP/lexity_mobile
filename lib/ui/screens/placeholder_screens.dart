@@ -364,9 +364,47 @@ class TranslatorScreen extends ConsumerStatefulWidget {
 
 class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   final _inputController = TextEditingController();
-  String sourceLang = "English";
+  String? _sourceLang;
+  String? _targetLang;
 
   static const platform = MethodChannel('com.lexity.app/bubbles');
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize languages from provider state
+    Future.microtask(() {
+      final profile = ref.read(userProfileProvider).value;
+      final activeTarget = ref.read(activeLanguageProvider);
+      setState(() {
+        _sourceLang = profile?.nativeLanguage ?? "English";
+        _targetLang = activeTarget;
+      });
+    });
+  }
+
+  void _swapLanguages() {
+    setState(() {
+      final temp = _sourceLang;
+      _sourceLang = _targetLang;
+      _targetLang = temp;
+    });
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data?.text != null) {
+      setState(() {
+        _inputController.text = data!.text!;
+      });
+    }
+  }
+
+  void _discardText() {
+    setState(() {
+      _inputController.clear();
+    });
+  }
 
   Future<void> _enableBubbleMode() async {
     if (!Platform.isAndroid) return;
@@ -398,7 +436,35 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(translatorProvider);
-    final targetLang = ref.watch(activeLanguageProvider);
+    final profileAsync = ref.watch(userProfileProvider);
+
+    // 1. Ensure unique list and handle potential nulls/casing
+    final List<String> availableLanguages = profileAsync.maybeWhen(
+      data: (p) {
+        final set = <String>{
+          if (p.nativeLanguage != null && p.nativeLanguage!.isNotEmpty)
+            p.nativeLanguage!,
+          ...p.languageProfiles.map((lp) => lp.language).where((l) => l.isNotEmpty),
+          if (p.defaultTargetLanguage.isNotEmpty) p.defaultTargetLanguage,
+        };
+        // Fallback if set is empty
+        if (set.isEmpty) return ["English", "Spanish"];
+        return set.toList();
+      },
+      orElse: () => ["English", "Spanish", "French", "German"],
+    );
+
+    // 2. Safety check: Ensure selected values exist in the current available list
+    // This prevents the crash if the profile updates and a language is removed
+    final effectiveSource = availableLanguages.contains(_sourceLang)
+        ? _sourceLang!
+        : availableLanguages.first;
+
+    final effectiveTarget = availableLanguages.contains(_targetLang)
+        ? _targetLang!
+        : (availableLanguages.length > 1
+            ? availableLanguages[1]
+            : availableLanguages.first);
 
     return GlassScaffold(
       title: 'Translator',
@@ -415,36 +481,76 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
           : null,
       body: SliverList(
         delegate: SliverChildListDelegate([
-          // 1. Language Selectors
+          // 1. Dynamic Language Selectors & Swap
           Row(
             children: [
-              Expanded(child: _buildLangButton(sourceLang)),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8.0),
-                child: Icon(
-                  Icons.arrow_forward,
-                  color: Colors.white24,
-                  size: 16,
+              Expanded(
+                child: LiquidDropdown<String>(
+                  label: "From",
+                  value: effectiveSource, // Use validated value
+                  items: availableLanguages,
+                  onChanged: (val) => setState(() => _sourceLang = val),
                 ),
               ),
-              Expanded(child: _buildLangButton(targetLang)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: IconButton(
+                  onPressed: _swapLanguages,
+                  icon: const Icon(Icons.swap_horiz, color: Colors.white70),
+                ),
+              ),
+              Expanded(
+                child: LiquidDropdown<String>(
+                  label: "To",
+                  value: effectiveTarget, // Use validated value
+                  items: availableLanguages,
+                  onChanged: (val) => setState(() => _targetLang = val),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 20),
 
-          // 2. Input Area
-          GlassCard(
-            padding: 12,
-            child: TextField(
-              controller: _inputController,
-              maxLines: 5,
-              style: const TextStyle(fontSize: 18, color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: "Enter text...",
-                hintStyle: TextStyle(color: Colors.white38),
-                border: InputBorder.none,
+          // 2. Input Area with Paste & Discard
+          Stack(
+            children: [
+              GlassCard(
+                padding: 12,
+                child: TextField(
+                  controller: _inputController,
+                  maxLines: 5,
+                  style: const TextStyle(fontSize: 18, color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: "Enter text...",
+                    hintStyle: TextStyle(color: Colors.white38),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.only(
+                        right: 40, bottom: 10, left: 10, top: 10),
+                  ),
+                  onChanged: (val) => setState(() {}),
+                ),
               ),
-            ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Column(
+                  children: [
+                    if (_inputController.text.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.close,
+                            size: 20, color: Colors.white38),
+                        onPressed: _discardText,
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.content_paste,
+                            size: 20, color: Colors.white38),
+                        onPressed: _pasteFromClipboard,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
@@ -453,13 +559,13 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
             text: "Translate",
             isLoading: state.isTranslating,
             onTap: () {
-              if (_inputController.text.isNotEmpty) {
-                ref
-                    .read(translatorProvider.notifier)
-                    .runTranslation(
+              if (_inputController.text.isNotEmpty &&
+                  _sourceLang != null &&
+                  _targetLang != null) {
+                ref.read(translatorProvider.notifier).runTranslation(
                       _inputController.text,
-                      sourceLang,
-                      targetLang,
+                      _sourceLang!,
+                      _targetLang!,
                     );
               }
             },
@@ -503,25 +609,11 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
             ),
             const SizedBox(height: 12),
             ...state.segments.map(
-              (seg) => _SegmentCard(segment: seg, targetLanguage: targetLang),
+              (seg) => _SegmentCard(
+                  segment: seg, targetLanguage: _targetLang ?? "Spanish"),
             ),
           ],
         ]),
-      ),
-    );
-  }
-
-  Widget _buildLangButton(String label) {
-    return GlassCard(
-      padding: 12,
-      child: Center(
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
       ),
     );
   }

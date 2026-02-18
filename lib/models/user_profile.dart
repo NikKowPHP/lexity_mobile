@@ -5,6 +5,7 @@ class UserProfile {
   final String defaultTargetLanguage;
   final String? writingStyle;
   final String subscriptionTier;
+  final List<LanguageProfile> languageProfiles;
 
   UserProfile({
     required this.id,
@@ -13,6 +14,7 @@ class UserProfile {
     required this.defaultTargetLanguage,
     this.writingStyle,
     required this.subscriptionTier,
+    this.languageProfiles = const [],
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -20,9 +22,13 @@ class UserProfile {
       id: json['id'] ?? '',
       email: json['email'] ?? '',
       nativeLanguage: json['nativeLanguage'],
+      // Ensure we capitalize or normalize if the backend is inconsistent
       defaultTargetLanguage: json['defaultTargetLanguage'] ?? 'Spanish',
       writingStyle: json['writingStyle'],
       subscriptionTier: json['subscriptionTier'] ?? 'FREE',
+      languageProfiles: (json['languageProfiles'] as List? ?? [])
+          .map((lp) => LanguageProfile.fromJson(lp))
+          .toList(),
     );
   }
 
@@ -31,4 +37,12 @@ class UserProfile {
     'defaultTargetLanguage': defaultTargetLanguage,
     'writingStyle': writingStyle,
   };
+}
+
+class LanguageProfile {
+  final String language;
+  LanguageProfile({required this.language});
+  factory LanguageProfile.fromJson(Map<String, dynamic> json) {
+    return LanguageProfile(language: json['language'] ?? '');
+  }
 }
