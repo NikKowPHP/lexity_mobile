@@ -52,6 +52,8 @@ class UserProfile {
   final DateTime? subscriptionPeriodEnd;
   final List<LanguageProfile> languageProfiles;
   final UserGoals? goals;
+  final int currentStreak;
+  final int longestStreak;
 
   UserProfile({
     required this.id,
@@ -66,6 +68,8 @@ class UserProfile {
     this.subscriptionPeriodEnd,
     this.languageProfiles = const [],
     this.goals,
+    this.currentStreak = 0,
+    this.longestStreak = 0,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -86,6 +90,8 @@ class UserProfile {
           .map((lp) => LanguageProfile.fromJson(lp))
           .toList(),
       goals: json['goals'] != null ? UserGoals.fromJson(json['goals']) : null,
+      currentStreak: json['currentStreak'] ?? 0,
+      longestStreak: json['longestStreak'] ?? 0,
     );
   }
 
@@ -98,6 +104,8 @@ class UserProfile {
     String? selfAssessedLevel,
     List<LanguageProfile>? languageProfiles,
     UserGoals? goals,
+    int? currentStreak,
+    int? longestStreak,
   }) {
     return UserProfile(
       id: id,
@@ -112,6 +120,8 @@ class UserProfile {
       selfAssessedLevel: selfAssessedLevel ?? this.selfAssessedLevel,
       languageProfiles: languageProfiles ?? this.languageProfiles,
       goals: goals ?? this.goals,
+      currentStreak: currentStreak ?? this.currentStreak,
+      longestStreak: longestStreak ?? this.longestStreak,
     );
   }
 }

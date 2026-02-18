@@ -90,3 +90,7 @@ class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile>> {
 final userProfileProvider = StateNotifierProvider<UserProfileNotifier, AsyncValue<UserProfile>>((ref) {
   return UserProfileNotifier(ref.watch(userServiceProvider));
 });
+
+final activeLanguageProvider = Provider<String>((ref) {
+  return ref.watch(userProfileProvider).value?.defaultTargetLanguage ?? 'es';
+});
