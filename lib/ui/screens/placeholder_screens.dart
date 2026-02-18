@@ -27,6 +27,8 @@ class GlassScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > 800;
+
     // Add padding to bottom to avoid nav bar overlap
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -35,7 +37,7 @@ class GlassScaffold extends StatelessWidget {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 60, 24, 20),
+              padding: EdgeInsets.fromLTRB(isDesktop ? 100 : 24, 60, 24, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -408,6 +410,8 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(translatorProvider);
     final profileAsync = ref.watch(userProfileProvider);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth > 900;
 
     // 1. Ensure unique list and handle potential nulls/casing
     final List<String> availableLanguages = profileAsync.maybeWhen(
@@ -437,168 +441,194 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
             ? availableLanguages[1]
             : availableLanguages.first);
 
+    // Helper to build the left column (Input & Main Translation)
+    Widget buildMainContent() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Language Selectors
+          Row(
+            children: [
+              Expanded(
+                child: LiquidDropdown<String>(
+                  label: "From",
+                  value: effectiveSource,
+                  items: availableLanguages,
+                  onChanged: (val) => setState(() => _sourceLang = val),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: IconButton(
+                  onPressed: _swapLanguages,
+                  icon: const Icon(Icons.swap_horiz, color: Colors.white54),
+                ),
+              ),
+              Expanded(
+                child: LiquidDropdown<String>(
+                  label: "To",
+                  value: effectiveTarget,
+                  items: availableLanguages,
+                  onChanged: (val) => setState(() => _targetLang = val),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          // Input Area
+          Stack(
+            children: [
+              GlassCard(
+                padding: 16,
+                child: TextField(
+                  controller: _inputController,
+                  maxLines: 6,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    color: Colors.white,
+                    height: 1.5,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: "Enter text...",
+                    hintStyle: TextStyle(color: Colors.white24),
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: _inputController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white38),
+                        onPressed: _discardText,
+                      )
+                    : IconButton(
+                        icon: const Icon(
+                          Icons.content_paste,
+                          color: Colors.white38,
+                        ),
+                        onPressed: _pasteFromClipboard,
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          LiquidButton(
+            text: "Translate",
+            isLoading: state.isTranslating,
+            onTap: () {
+              if (_inputController.text.isNotEmpty) {
+                ref
+                    .read(translatorProvider.notifier)
+                    .runTranslation(
+                      _inputController.text,
+                      effectiveSource,
+                      effectiveTarget,
+                    );
+              }
+            },
+          ),
+          if (state.fullTranslation.isNotEmpty) ...[
+            const SizedBox(height: 32),
+            const Text(
+              "TRANSLATION",
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 12),
+            GlassCard(
+              padding: 20,
+              child: Text(
+                state.fullTranslation,
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: Colors.white,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+    // Helper to build the right column (Breakdown)
+    Widget buildBreakdownContent() {
+      if (state.isBreakingDown) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(40),
+            child: CircularProgressIndicator(color: Colors.white24),
+          ),
+        );
+      }
+      if (state.segments.isEmpty) {
+        return Center(
+          child: Opacity(
+            opacity: 0.3,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.auto_awesome, size: 48, color: Colors.white),
+                const SizedBox(height: 16),
+                const Text(
+                  "Analysis will appear here",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "SENTENCE BREAKDOWN",
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...state.segments.map(
+            (seg) =>
+                _SegmentCard(segment: seg, targetLanguage: effectiveTarget),
+          ),
+        ],
+      );
+    }
+
     return GlassScaffold(
       title: 'Translator',
       subtitle: 'Real-time AI analysis',
       body: SliverToBoxAdapter(
-        child: Center(
-          child: Container(
-            constraints: const BoxConstraints(
-              maxWidth: 1000,
-            ), // Desktop width constraint
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. Language Selectors
-                Row(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 20),
+          child: isDesktop
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: LiquidDropdown<String>(
-                        label: "From",
-                        value: effectiveSource,
-                        items: availableLanguages,
-                        onChanged: (val) => setState(() => _sourceLang = val),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: IconButton(
-                        onPressed: _swapLanguages,
-                        icon: const Icon(
-                          Icons.swap_horiz,
-                          color: Colors.white54,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: LiquidDropdown<String>(
-                        label: "To",
-                        value: effectiveTarget,
-                        items: availableLanguages,
-                        onChanged: (val) => setState(() => _targetLang = val),
-                      ),
-                    ),
+                    Expanded(flex: 5, child: buildMainContent()),
+                    const SizedBox(width: 40),
+                    Expanded(flex: 4, child: buildBreakdownContent()),
+                  ],
+                )
+              : Column(
+                  children: [
+                    buildMainContent(),
+                    const SizedBox(height: 40),
+                    buildBreakdownContent(),
                   ],
                 ),
-                const SizedBox(height: 24),
-
-                // 2. Input Area
-                Stack(
-                  children: [
-                    GlassCard(
-                      padding: 16,
-                      child: TextField(
-                        controller: _inputController,
-                        maxLines: 6,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          color: Colors.white,
-                          height: 1.5,
-                        ),
-                        decoration: const InputDecoration(
-                          hintText: "Enter text to translate...",
-                          hintStyle: TextStyle(color: Colors.white24),
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: _inputController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.white38,
-                              ),
-                              onPressed: _discardText,
-                            )
-                          : IconButton(
-                              icon: const Icon(
-                                Icons.content_paste,
-                                color: Colors.white38,
-                              ),
-                              onPressed: _pasteFromClipboard,
-                            ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // 3. Prominent Translate Button
-                LiquidButton(
-                  text: "Translate",
-                  isLoading: state.isTranslating,
-                  onTap: () {
-                    if (_inputController.text.isNotEmpty) {
-                      ref
-                          .read(translatorProvider.notifier)
-                          .runTranslation(
-                            _inputController.text,
-                            effectiveSource,
-                            effectiveTarget,
-                          );
-                    }
-                  },
-                ),
-                const SizedBox(height: 40),
-
-                // 4. Output Section
-                if (state.fullTranslation.isNotEmpty) ...[
-                  const Text(
-                    "TRANSLATION",
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  GlassCard(
-                    padding: 20,
-                    child: Text(
-                      state.fullTranslation,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        color: Colors.white,
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                ],
-
-                // 5. Sentence Breakdown Section
-                if (state.isBreakingDown)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(40),
-                      child: CircularProgressIndicator(color: Colors.white24),
-                    ),
-                  )
-                else if (state.segments.isNotEmpty) ...[
-                  const Text(
-                    "SENTENCE BREAKDOWN",
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ...state.segments.map(
-                    (seg) => _SegmentCard(
-                      segment: seg,
-                      targetLanguage: effectiveTarget,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
         ),
       ),
     );
