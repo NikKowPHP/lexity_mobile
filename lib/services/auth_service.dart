@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:lexity_mobile/services/token_service.dart';
 
 import 'logger_service.dart';
 
@@ -15,48 +16,13 @@ final String baseUrl = Platform.isAndroid
 class AuthService {
   final Ref ref;
   late final LoggerService _logger;
+  late final TokenService _authTokenService;
+  late final TokenService _refreshTokenService;
 
   AuthService(this.ref) {
     _logger = ref.read(loggerProvider);
-  }
-
-  Future<void> saveToken(String token) async {
-    _logger.info('AuthService: Saving auth token');
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('auth_token', token);
-      _logger.info('AuthService: Token saved successfully');
-    } catch (e, stackTrace) {
-      _logger.error('AuthService: Error saving token', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<String?> getToken() async {
-    _logger.info('AuthService: Retrieving auth token');
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('auth_token');
-      _logger.info(
-        'AuthService: Token retrieved: ${token != null ? "found" : "not found"}',
-      );
-      return token;
-    } catch (e, stackTrace) {
-      _logger.error('AuthService: Error retrieving token', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<void> clearToken() async {
-    _logger.info('AuthService: Clearing auth token');
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('auth_token');
-      _logger.info('AuthService: Token cleared successfully');
-    } catch (e, stackTrace) {
-      _logger.error('AuthService: Error clearing token', e, stackTrace);
-      rethrow;
-    }
+    _authTokenService = ref.read(tokenServiceProvider(TokenType.auth));
+    _refreshTokenService = ref.read(tokenServiceProvider(TokenType.refresh));
   }
 
   Future<bool> login(String email, String password) async {
@@ -76,23 +42,23 @@ class AuthService {
         final data = jsonDecode(response.body);
         _logger.debug('AuthService: Login response body: $data');
 
-        // Handle both flat structure (custom API) and nested structure (standard Supabase)
         if (data['access_token'] != null) {
-          await saveToken(data['access_token']);
+          await _authTokenService.saveToken(data['access_token']);
           _logger.info(
             'AuthService: Login successful (flat structure) for user: $email',
           );
-          return true;
-        } else if (data['session'] != null &&
-            data['session']['access_token'] != null) {
-          await saveToken(data['session']['access_token']);
+
+          _logger.info('DATA FROM LOGIN RESPONSE: $data');
+        }
+        if (data['refresh_token'] != null) {
+          await _refreshTokenService.saveToken(data['refresh_token']);
           _logger.info(
             'AuthService: Login successful (nested structure) for user: $email',
           );
-          return true;
         }
+        return true;
       }
-      
+
       final body = jsonDecode(response.body);
       final errorMsg = body['error'] ?? 'Login failed';
       _logger.warning(
@@ -122,7 +88,8 @@ class AuthService {
         final data = jsonDecode(response.body);
         if (data['session'] != null &&
             data['session']['access_token'] != null) {
-          await saveToken(data['session']['access_token']);
+          _logger.info('DATA FROM SIGNUP RESPONSE: $data');
+          await _authTokenService.saveToken(data['session']['access_token']);
           _logger.info('AuthService: Signup successful for user: $email');
           return true;
         }
@@ -138,6 +105,44 @@ class AuthService {
         e,
         stackTrace,
       );
+      rethrow;
+    }
+  }
+
+  Future<List<String>> refreshToken(String refreshToken) async {
+    _logger.info('AuthService: Attempting to refresh token');
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refreshToken}),
+      );
+      List<String> authResponse = [];
+
+      _logger.debug(
+        'AuthService: Refresh token response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['access_token'] != null) {
+          await _authTokenService.saveToken(data['access_token']);
+          _logger.info('AuthService: Token refreshed successfully');
+          authResponse.add(data['access_token']);
+        }
+        if (data['refresh_token'] != null) {
+          await _refreshTokenService.saveToken(data['refresh_token']);
+          _logger.info('AuthService: Refresh token refreshed successfully');
+          authResponse.add(data['refresh_token']);
+        }
+        return authResponse;
+      }
+      final errorMsg =
+          jsonDecode(response.body)['error'] ?? 'Refresh token failed';
+      _logger.warning('AuthService: Refresh token failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('AuthService: Refresh token error', e, stackTrace);
       rethrow;
     }
   }

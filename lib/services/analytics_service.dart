@@ -1,31 +1,38 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'auth_service.dart';
+import 'package:lexity_mobile/services/auth_service.dart';
+import 'package:lexity_mobile/services/token_service.dart';
 import '../models/analytics.dart';
 import 'logger_service.dart';
 
 class AnalyticsService {
   final Ref _ref;
-  final AuthService _auth;
   late final LoggerService _logger;
-
-  AnalyticsService(this._ref, this._auth) {
+  final TokenService _authTokenService;
+  AnalyticsService(this._ref, this._authTokenService) {
     _logger = _ref.read(loggerProvider);
   }
 
   Future<Map<String, String>> _getHeaders() async {
-    final token = await _auth.getToken();
+    final token = await _authTokenService.getToken();
     return {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
   }
 
-  Future<AnalyticsData> fetchAnalytics(String targetLanguage, {String predictionHorizon = '3m'}) async {
-    _logger.info('AnalyticsService: Fetching main analytics for $targetLanguage');
+  Future<AnalyticsData> fetchAnalytics(
+    String targetLanguage, {
+    String predictionHorizon = '3m',
+  }) async {
+    _logger.info(
+      'AnalyticsService: Fetching main analytics for $targetLanguage',
+    );
     final response = await http.get(
-      Uri.parse('$baseUrl/api/analytics?targetLanguage=$targetLanguage&predictionHorizon=$predictionHorizon'),
+      Uri.parse(
+        '$baseUrl/api/analytics?targetLanguage=$targetLanguage&predictionHorizon=$predictionHorizon',
+      ),
       headers: await _getHeaders(),
     );
 
@@ -48,11 +55,16 @@ class AnalyticsService {
     throw Exception('Failed to load goal progress');
   }
 
-  Future<List<ActivityHeatmapPoint>> fetchActivityHeatmap(String targetLanguage, {int? year}) async {
+  Future<List<ActivityHeatmapPoint>> fetchActivityHeatmap(
+    String targetLanguage, {
+    int? year,
+  }) async {
     _logger.info('AnalyticsService: Fetching heatmap');
     final y = year ?? DateTime.now().year;
     final response = await http.get(
-      Uri.parse('$baseUrl/api/user/activity-stats?type=heatmap&targetLanguage=$targetLanguage&year=$y'),
+      Uri.parse(
+        '$baseUrl/api/user/activity-stats?type=heatmap&targetLanguage=$targetLanguage&year=$y',
+      ),
       headers: await _getHeaders(),
     );
 
@@ -63,10 +75,14 @@ class AnalyticsService {
     throw Exception('Failed to load activity heatmap');
   }
 
-  Future<List<PracticeConcept>> fetchPracticeAnalytics(String targetLanguage) async {
+  Future<List<PracticeConcept>> fetchPracticeAnalytics(
+    String targetLanguage,
+  ) async {
     _logger.info('AnalyticsService: Fetching practice analytics');
     final response = await http.get(
-      Uri.parse('$baseUrl/api/user/practice-analytics?targetLanguage=$targetLanguage'),
+      Uri.parse(
+        '$baseUrl/api/user/practice-analytics?targetLanguage=$targetLanguage',
+      ),
       headers: await _getHeaders(),
     );
 
@@ -78,4 +94,7 @@ class AnalyticsService {
   }
 }
 
-final analyticsServiceProvider = Provider((ref) => AnalyticsService(ref, ref.watch(authServiceProvider)));
+final analyticsServiceProvider = Provider(
+  (ref) =>
+      AnalyticsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
+);

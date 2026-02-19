@@ -1,21 +1,22 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
 import '../models/translation_result.dart';
 import 'auth_service.dart';
 import 'logger_service.dart';
 
 class AIService {
   final Ref _ref;
-  final AuthService _auth;
-  late final LoggerService _logger;
 
-  AIService(this._ref, this._auth) {
+  late final LoggerService _logger;
+  final TokenService _authTokenService;
+  AIService(this._ref, this._authTokenService) {
     _logger = _ref.read(loggerProvider);
   }
 
   Future<Map<String, String>> _getHeaders() async {
-    final token = await _auth.getToken();
+    final token = await _authTokenService.getToken();
     return {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
@@ -23,8 +24,14 @@ class AIService {
   }
 
   // Call 1: Fast Full Translation
-  Future<String> translate(String text, String sourceLang, String targetLang) async {
-    _logger.info('AIService: Requesting translation from $sourceLang to $targetLang');
+  Future<String> translate(
+    String text,
+    String sourceLang,
+    String targetLang,
+  ) async {
+    _logger.info(
+      'AIService: Requesting translation from $sourceLang to $targetLang',
+    );
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/ai/translate'),
@@ -36,15 +43,18 @@ class AIService {
         }),
       );
 
-      _logger.debug('AIService: translate response status: ${response.statusCode}');
+      _logger.debug(
+        'AIService: translate response status: ${response.statusCode}',
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _logger.info('AIService: Translation successful');
         return data['translatedText'];
       }
-      
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Translation failed';
+
+      final errorMsg =
+          jsonDecode(response.body)['error'] ?? 'Translation failed';
       _logger.warning('AIService: Translation failed. Reason: $errorMsg');
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
@@ -54,8 +64,14 @@ class AIService {
   }
 
   // Call 2: Detailed Breakdown
-  Future<List<TranslationSegment>> translateBreakdown(String text, String sourceLang, String targetLang) async {
-    _logger.info('AIService: Requesting breakdown from $sourceLang to $targetLang');
+  Future<List<TranslationSegment>> translateBreakdown(
+    String text,
+    String sourceLang,
+    String targetLang,
+  ) async {
+    _logger.info(
+      'AIService: Requesting breakdown from $sourceLang to $targetLang',
+    );
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/ai/translate-breakdown'),
@@ -67,12 +83,16 @@ class AIService {
         }),
       );
 
-      _logger.debug('AIService: translateBreakdown response status: ${response.statusCode}');
+      _logger.debug(
+        'AIService: translateBreakdown response status: ${response.statusCode}',
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List segmentsJson = data['segments'] ?? [];
-        _logger.info('AIService: Breakdown successful, found ${segmentsJson.length} segments');
+        _logger.info(
+          'AIService: Breakdown successful, found ${segmentsJson.length} segments',
+        );
         return segmentsJson.map((s) => TranslationSegment.fromJson(s)).toList();
       }
 
@@ -80,10 +100,16 @@ class AIService {
       _logger.warning('AIService: Breakdown failed. Reason: $errorMsg');
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
-      _logger.error('AIService: Error during translateBreakdown', e, stackTrace);
+      _logger.error(
+        'AIService: Error during translateBreakdown',
+        e,
+        stackTrace,
+      );
       rethrow;
     }
   }
 }
 
-final aiServiceProvider = Provider((ref) => AIService(ref, ref.watch(authServiceProvider)));
+final aiServiceProvider = Provider(
+  (ref) => AIService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
+);

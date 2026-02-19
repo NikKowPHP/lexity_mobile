@@ -1,5 +1,6 @@
 // lib/providers/auth_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
 import '../services/auth_service.dart';
 
 import '../services/user_service.dart';
@@ -37,16 +38,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
   final UserService _userService;
   late final LoggerService _logger;
+  late final TokenService _authTokenService;
+  late final TokenService _refreshTokenService;
 
-  AuthNotifier(this._authService, this._userService, this._logger)
-    : super(AuthState()) {
+  AuthNotifier(
+    this._authService,
+    this._userService,
+    this._logger,
+    this._authTokenService,
+    this._refreshTokenService,
+  ) : super(AuthState()) {
     checkAuthStatus();
   }
 
   Future<void> checkAuthStatus() async {
     _logger.info('AuthNotifier: checking auth status (Deep Auth Check)');
-    final token = await _authService.getToken();
-    
+    final token = await _authTokenService.getToken();
+
     if (token == null) {
       _logger.info('AuthNotifier: no token found');
       state = state.copyWith(isAuthenticated: false, isInitialized: true);
@@ -54,23 +62,39 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
 
     try {
-      // PERFORM THE "ME" CHECK: Try to fetch the profile from the server
-      // This verifies the JWT is actually valid and not expired.
       await _userService.fetchProfile();
 
       _logger.info('AuthNotifier: token valid, authenticating');
       state = state.copyWith(isAuthenticated: true, isInitialized: true);
     } catch (e) {
-      // If the server says 401 (Unauthorized), the token is likely expired or invalid
       _logger.warning("AuthNotifier: Deep Auth Check failed: $e");
-      await _authService.clearToken(); // Wipe the invalid token
-      state = state.copyWith(isAuthenticated: false, isInitialized: true);
+      final refreshedAuthTokens = await refreshToken();
+      if (refreshedAuthTokens != null) {
+        await _authTokenService.saveToken(refreshedAuthTokens[0]);
+        await _refreshTokenService.saveToken(refreshedAuthTokens[1]);
+        state = state.copyWith(isAuthenticated: true, isInitialized: true);
+      } else {
+        await _authTokenService.clearToken(); // Wipe the invalid token
+        state = state.copyWith(isAuthenticated: false, isInitialized: true);
+      }
     }
+  }
+
+  Future<List<String>?> refreshToken() async {
+    _logger.info('AuthNotifier: refreshing token, retrieving from storage');
+    final token = await _refreshTokenService.getToken();
+    if (token == null) {
+      _logger.info('AuthNotifier: no token found');
+      state = state.copyWith(isAuthenticated: false, isInitialized: true);
+      return null;
+    }
+    final refreshedAuthTocken = await _authService.refreshToken(token);
+    return refreshedAuthTocken;
   }
 
   Future<void> logout() async {
     _logger.info('AuthNotifier: logging out');
-    await _authService.clearToken();
+    await _authTokenService.clearToken();
     state = state.copyWith(isAuthenticated: false, isInitialized: true);
   }
 
@@ -121,5 +145,11 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final authService = ref.watch(authServiceProvider);
   final userService = ref.watch(userServiceProvider);
   final logger = ref.watch(loggerProvider);
-  return AuthNotifier(authService, userService, logger);
+  return AuthNotifier(
+    authService,
+    userService,
+    logger,
+    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(tokenServiceProvider(TokenType.refresh)),
+  );
 });

@@ -1,21 +1,22 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'auth_service.dart';
+import 'package:lexity_mobile/services/auth_service.dart';
+import 'package:lexity_mobile/services/token_service.dart';
 import '../models/srs_item.dart';
 import 'logger_service.dart';
 
 class SrsService {
   final Ref _ref;
-  final AuthService _auth;
+  final TokenService _authTokenService;
   late final LoggerService _logger;
 
-  SrsService(this._ref, this._auth) {
+  SrsService(this._ref, this._authTokenService) {
     _logger = _ref.read(loggerProvider);
   }
 
   Future<Map<String, String>> _getHeaders() async {
-    final token = await _auth.getToken();
+    final token = await _authTokenService.getToken();
     return {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
@@ -120,4 +121,4 @@ class SrsService {
   }
 }
 
-final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(authServiceProvider)));
+final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));

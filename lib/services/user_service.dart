@@ -1,23 +1,24 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
 import 'auth_service.dart';
 import '../models/user_profile.dart';
 import 'logger_service.dart';
 
 class UserService {
   final Ref _ref;
-  final AuthService _auth;
+  final TokenService _authTokenService;
   late final LoggerService _logger;
 
-  UserService(this._ref, this._auth) {
+  UserService(this._ref, this._authTokenService) {
     _logger = _ref.read(loggerProvider);
   }
 
   Future<UserProfile> fetchProfile() async {
     _logger.info('UserService: Fetching user profile');
     try {
-      final token = await _auth.getToken();
+      final token = await _authTokenService.getToken();
       
       // DEBUG: Check if token looks like a real JWT (starts with ey...)
       print(
@@ -59,7 +60,7 @@ class UserService {
   Future<UserProfile> updateProfile(UserProfile profile) async {
     _logger.info('UserService: Updating user profile');
     try {
-      final token = await _auth.getToken();
+      final token = await _authTokenService.getToken();
       // We map the model fields to the API expectations
       final body = {
         'nativeLanguage': profile.nativeLanguage,
@@ -96,7 +97,7 @@ class UserService {
   Future<UserProfile> addLanguage(String newLanguage) async {
     _logger.info('UserService: Adding new language: $newLanguage');
     try {
-      final token = await _auth.getToken();
+      final token = await _authTokenService.getToken();
       final response = await http.put(
         Uri.parse('$baseUrl/api/user/profile'),
         headers: {
@@ -121,7 +122,7 @@ class UserService {
   Future<void> updateGoals(UserGoals goals) async {
     _logger.info('UserService: Updating user goals');
     try {
-      final token = await _auth.getToken();
+      final token = await _authTokenService.getToken();
       final response = await http.put(
         Uri.parse('$baseUrl/api/user/goals'),
         headers: {
@@ -143,7 +144,7 @@ class UserService {
   Future<String> getBillingPortalUrl() async {
     _logger.info('UserService: Getting billing portal URL');
     try {
-      final token = await _auth.getToken();
+      final token = await _authTokenService.getToken();
       final response = await http.post(
         Uri.parse('$baseUrl/api/billing/portal'),
         headers: {
@@ -166,7 +167,7 @@ class UserService {
   Future<void> resetOnboarding() async {
     _logger.info('UserService: Resetting onboarding');
     try {
-      final token = await _auth.getToken();
+      final token = await _authTokenService.getToken();
       await http.post(
         Uri.parse('$baseUrl/api/user/reset-onboarding'),
         headers: {'Authorization': 'Bearer $token'},
@@ -177,4 +178,4 @@ class UserService {
   }
 }
 
-final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(authServiceProvider)));
+final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
