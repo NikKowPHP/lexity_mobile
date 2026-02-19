@@ -17,6 +17,7 @@ import '../ui/screens/module_detail_screen.dart';
 import '../ui/screens/drill_screen.dart';
 import '../ui/screens/study_material_screen.dart';
 import '../ui/screens/reading_screen.dart';
+import '../ui/screens/listening_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -112,6 +113,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'read',
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => ReadingScreen(
+                      moduleId: state.uri.queryParameters['moduleId'],
+                    ),
+                  ),
+                  // NEW: Listening Screen Route
+                  GoRoute(
+                    path: 'listen',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => ListeningScreen(
                       moduleId: state.uri.queryParameters['moduleId'],
                     ),
                   ),

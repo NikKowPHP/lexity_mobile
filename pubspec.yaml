@@ -48,6 +48,7 @@ dependencies:
   permission_handler: ^11.3.0
   fl_chart: ^0.68.0
   flutter_markdown: any
+  youtube_player_flutter: ^9.0.1
 
 
 dev_dependencies:

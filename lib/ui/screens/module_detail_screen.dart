@@ -182,9 +182,7 @@ class ModuleDetailScreen extends ConsumerWidget {
           subtitle: "Video comprehension",
           isCompleted: act['completed'] == true,
           icon: Icons.headset,
-          onTap: () => context.push(
-            '/path/material?moduleId=$moduleId&mode=listening&title=${Uri.encodeComponent('Video')}&content=${Uri.encodeComponent(act['videoId'] ?? '')}',
-          ),
+          onTap: () => context.push('/path/listen?moduleId=$moduleId'),
         ),
       );
     }
