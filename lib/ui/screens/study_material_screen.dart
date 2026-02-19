@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 
-class StudyMaterialScreen extends StatelessWidget {
+class StudyMaterialScreen extends StatefulWidget {
   final String title;
   final String content; // Text for Read, VideoID for Listen
   final String mode; // 'reading' or 'listening'
@@ -18,31 +20,70 @@ class StudyMaterialScreen extends StatelessWidget {
   });
 
   @override
+  State<StudyMaterialScreen> createState() => _StudyMaterialScreenState();
+}
+
+class _StudyMaterialScreenState extends State<StudyMaterialScreen> {
+  YoutubePlayerController? _videoController;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.mode == 'listening') {
+      _videoController = YoutubePlayerController(
+        initialVideoId: widget.content,
+        flags: const YoutubePlayerFlags(
+          autoPlay: false,
+          mute: false,
+          forceHD: true,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isReading = mode == 'reading';
+    final isReading = widget.mode == 'reading';
 
     return GlassScaffold(
       title: isReading ? 'Read' : 'Listen',
-      subtitle: title,
+      subtitle: widget.title,
       body: SliverFillRemaining(
         hasScrollBody: false,
         child: Column(
           children: [
             Expanded(
               child: GlassCard(
-                child: SingleChildScrollView(
-                  child: isReading 
-                    ? Text(content, style: const TextStyle(color: Colors.white70, fontSize: 18, height: 1.6))
-                    : _buildVideoPlaceholder(),
-                ),
+                padding: isReading ? 24 : 0, // Remove padding for video
+                child: isReading 
+                    ? SingleChildScrollView(
+                        child: Text(
+                          widget.content,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 18,
+                            height: 1.6,
+                          ),
+                        ),
+                      )
+                    : _buildVideoPlayer(),
               ),
             ),
             const SizedBox(height: 24),
             LiquidButton(
               text: "Write Summary",
-              onTap: () => context.push(
-                '/journal/new?moduleId=$moduleId&mode=$mode&topic=${Uri.encodeComponent('Summary: $title')}'
-              ),
+              onTap: () {
+                _videoController?.pause();
+                context.push(
+                  '/journal/new?moduleId=${widget.moduleId}&mode=${widget.mode}&topic=${Uri.encodeComponent('Summary: ${widget.title}')}',
+                );
+              },
             ),
             const SizedBox(height: 40),
           ],
@@ -51,23 +92,32 @@ class StudyMaterialScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildVideoPlaceholder() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          height: 200,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(20),
+  Widget _buildVideoPlayer() {
+    if (_videoController == null) {
+      return const Center(
+        child: Text("Video unavailable", style: TextStyle(color: Colors.white)),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Center(
+        child: YoutubePlayer(
+          controller: _videoController!,
+          showVideoProgressIndicator: true,
+          progressIndicatorColor: LiquidTheme.primaryAccent,
+          progressColors: const ProgressBarColors(
+            playedColor: LiquidTheme.primaryAccent,
+            handleColor: LiquidTheme.secondaryAccent,
           ),
-          child: const Center(
-            child: Icon(Icons.play_circle_fill, size: 64, color: Colors.white54),
-          ),
+          bottomActions: [
+            CurrentPosition(),
+            ProgressBar(isExpanded: true),
+            RemainingDuration(),
+            const PlaybackSpeedButton(),
+          ],
         ),
-        const SizedBox(height: 16),
-        const Text("Video Material Loaded", style: TextStyle(color: Colors.white38)),
-      ],
+      ),
     );
   }
 }

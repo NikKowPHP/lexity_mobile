@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../models/srs_item.dart';
 import '../../providers/srs_provider.dart';
+import '../../providers/user_provider.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 
@@ -20,8 +21,11 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize deck for the current language
-    Future.microtask(() => ref.read(srsProvider.notifier).loadDeck("Spanish"));
+    // Initialize deck for the current active language defined in user profile
+    Future.microtask(() {
+      final lang = ref.read(activeLanguageProvider);
+      ref.read(srsProvider.notifier).loadDeck(lang);
+    });
   }
 
   void _handleReview(int quality) {
@@ -32,6 +36,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(srsProvider);
+    final activeLang = ref.watch(activeLanguageProvider);
 
     return GlassScaffold(
       title: 'Study',
@@ -42,13 +47,13 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         child: state.isLoading 
           ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : state.currentCard == null 
-            ? _buildEmptyState()
+            ? _buildEmptyState(activeLang)
             : _buildFlashcard(state.currentCard!),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(String lang) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -58,7 +63,10 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         const SizedBox(height: 8),
         const Text("Come back later for more reviews", style: TextStyle(color: Colors.white38)),
         const SizedBox(height: 24),
-        LiquidButton(text: "Refresh", onTap: () => ref.read(srsProvider.notifier).loadDeck("Spanish")),
+        LiquidButton(
+          text: "Refresh",
+          onTap: () => ref.read(srsProvider.notifier).loadDeck(lang),
+        ),
       ],
     );
   }
