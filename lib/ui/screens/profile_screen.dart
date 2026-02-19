@@ -8,7 +8,6 @@ import '../../theme/liquid_theme.dart';
 import '../../utils/constants.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
-import '../../services/auth_service.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -53,7 +52,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const _SectionHeader(title: "Data & Onboarding"),
               _DataSection(onReset: () async {
                  await ref.read(userProfileProvider.notifier).resetOnboarding();
-              }, onExport: () => _launchURL('$baseUrl/api/user/export')),
+                },
+                onExport: () =>
+                    _launchURL('${AppConstants.baseUrl}/api/user/export'),
+              ),
 
               const SizedBox(height: 24),
               const _SectionHeader(title: "Account"),

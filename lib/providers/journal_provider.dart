@@ -26,10 +26,43 @@ class JournalNotifier extends StateNotifier<AsyncValue<void>> {
 
   JournalNotifier(this._service, this._ref) : super(const AsyncValue.data(null));
 
-  Future<void> createEntry(String title, String content, String language) async {
+  // Update signature to accept optional moduleId
+  Future<void> createEntry(
+    String title,
+    String content,
+    String language, {
+    String? moduleId,
+  }) async {
     state = const AsyncValue.loading();
     try {
-      final entry = await _service.createEntry(content, title, language);
+      // Pass moduleId to service
+      final entry = await _service.createEntry(
+        content,
+        title,
+        language,
+        moduleId: moduleId,
+      );
+      // Auto-analyze
+      await _service.analyzeEntry(entry.id);
+      _ref.invalidate(journalHistoryProvider);
+      state = const AsyncValue.data(null);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  Future<void> createAudioEntry(
+    String filePath,
+    String language, {
+    String? moduleId,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final entry = await _service.createAudioEntry(
+        filePath,
+        language,
+        moduleId: moduleId,
+      );
       // Auto-analyze
       await _service.analyzeEntry(entry.id);
       _ref.invalidate(journalHistoryProvider);

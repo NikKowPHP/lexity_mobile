@@ -62,6 +62,16 @@ class SrsNotifier extends StateNotifier<SrsState> {
       return false;
     }
   }
+
+  Future<void> loadDrill(String language) async {
+    state = SrsState(isLoading: true);
+    try {
+      final deck = await _service.fetchDrillItems(language);
+      state = SrsState(deck: deck, isLoading: false);
+    } catch (e) {
+      state = SrsState(error: e.toString(), isLoading: false);
+    }
+  }
 }
 
 final srsProvider = StateNotifierProvider<SrsNotifier, SrsState>((ref) {

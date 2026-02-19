@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lexity_mobile/services/token_service.dart';
-import 'auth_service.dart';
 import '../models/user_profile.dart';
 import 'logger_service.dart';
+import '../utils/constants.dart';
 
 class UserService {
   final Ref _ref;
@@ -26,7 +26,7 @@ class UserService {
       );
 
       final response = await http.get(
-        Uri.parse('$baseUrl/api/user/profile'),
+        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -71,7 +71,7 @@ class UserService {
       };
 
       final response = await http.put(
-        Uri.parse('$baseUrl/api/user/profile'),
+        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token'
@@ -99,7 +99,7 @@ class UserService {
     try {
       final token = await _authTokenService.getToken();
       final response = await http.put(
-        Uri.parse('$baseUrl/api/user/profile'),
+        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token'
@@ -124,7 +124,7 @@ class UserService {
     try {
       final token = await _authTokenService.getToken();
       final response = await http.put(
-        Uri.parse('$baseUrl/api/user/goals'),
+        Uri.parse('${AppConstants.baseUrl}/api/user/goals'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -146,7 +146,7 @@ class UserService {
     try {
       final token = await _authTokenService.getToken();
       final response = await http.post(
-        Uri.parse('$baseUrl/api/billing/portal'),
+        Uri.parse('${AppConstants.baseUrl}/api/billing/portal'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -169,11 +169,37 @@ class UserService {
     try {
       final token = await _authTokenService.getToken();
       await http.post(
-        Uri.parse('$baseUrl/api/user/reset-onboarding'),
+        Uri.parse('${AppConstants.baseUrl}/api/user/reset-onboarding'),
         headers: {'Authorization': 'Bearer $token'},
       );
     } catch (e) {
       throw Exception('Failed to reset onboarding');
+    }
+  }
+
+  Future<void> logActivity({
+    required DateTime startTime,
+    required int durationInSeconds,
+    required String activityType,
+    required String targetLanguage,
+  }) async {
+    try {
+      final token = await _authTokenService.getToken();
+      await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/user/activity-log'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'startTime': startTime.toIso8601String(),
+          'durationInSeconds': durationInSeconds,
+          'activityType': activityType,
+          'targetLanguage': targetLanguage,
+        }),
+      );
+    } catch (e) {
+      _logger.warning('Failed to log activity: $e');
     }
   }
 }

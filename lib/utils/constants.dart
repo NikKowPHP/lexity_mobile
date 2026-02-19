@@ -1,4 +1,13 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+
 class AppConstants {
+  static String get baseUrl {
+    if (kIsWeb) return 'http://localhost:3555';
+    if (Platform.isAndroid) return 'http://10.0.2.2:3555';
+    return 'http://localhost:3555';
+  }
+
   static const List<Map<String, String>> supportedLanguages = [
     {'name': "English", 'value': "english"},
     {'name': "Spanish", 'value': "spanish"},

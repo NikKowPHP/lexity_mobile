@@ -1,17 +1,12 @@
 // lib/services/auth_service.dart
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:lexity_mobile/services/token_service.dart';
 
 import 'logger_service.dart';
-
-// Change this based on your device
-final String baseUrl = Platform.isAndroid
-    ? 'http://localhost:3555'
-    : 'http://localhost:3555';
+import '../utils/constants.dart';
 
 class AuthService {
   final Ref ref;
@@ -29,7 +24,7 @@ class AuthService {
     _logger.info('AuthService: Attempting login for user: $email');
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/login'),
+        Uri.parse('${AppConstants.baseUrl}/api/auth/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -49,6 +44,9 @@ class AuthService {
           );
 
           _logger.info('DATA FROM LOGIN RESPONSE: $data');
+          
+          // NEW: Sync user immediately after login to ensure DB profile exists
+          await _syncUser(data['access_token']);
         }
         if (data['refresh_token'] != null) {
           await _refreshTokenService.saveToken(data['refresh_token']);
@@ -75,7 +73,7 @@ class AuthService {
     _logger.info('AuthService: Attempting signup for user: $email');
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/register'),
+        Uri.parse('${AppConstants.baseUrl}/api/auth/register'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -113,7 +111,7 @@ class AuthService {
     _logger.info('AuthService: Attempting to refresh token');
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/refresh'),
+        Uri.parse('${AppConstants.baseUrl}/api/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refresh_token': refreshToken}),
       );
@@ -144,6 +142,21 @@ class AuthService {
     } catch (e, stackTrace) {
       _logger.error('AuthService: Refresh token error', e, stackTrace);
       rethrow;
+    }
+  }
+
+  // NEW METHOD
+  Future<void> _syncUser(String token) async {
+    try {
+      await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/auth/sync-user'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (e) {
+      _logger.warning('AuthService: User sync failed (non-critical)', e);
     }
   }
 }

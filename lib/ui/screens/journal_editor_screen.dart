@@ -6,9 +6,11 @@ import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/path_provider.dart';
 
 class JournalEditorScreen extends ConsumerStatefulWidget {
-  const JournalEditorScreen({super.key});
+  final String? moduleId;
+  const JournalEditorScreen({super.key, this.moduleId});
 
   @override
   ConsumerState<JournalEditorScreen> createState() => _JournalEditorScreenState();
@@ -91,8 +93,16 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                  await ref.read(journalNotifierProvider.notifier).createEntry(
                    _titleController.text.isEmpty ? "Free Write" : _titleController.text,
                    _contentController.text,
-                   activeLang
+                      activeLang,
+                      moduleId: widget.moduleId,
                  );
+                 
+                if (widget.moduleId != null) {
+                  ref
+                      .read(pathNotifierProvider.notifier)
+                      .updateActivity(widget.moduleId!, 'writing', true);
+                }
+
                  if (context.mounted) context.pop();
               },
             ),

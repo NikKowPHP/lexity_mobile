@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/auth_service.dart';
 import 'package:lexity_mobile/services/token_service.dart';
 import '../models/analytics.dart';
 import 'logger_service.dart';
+import '../utils/constants.dart';
 
 class AnalyticsService {
   final Ref _ref;
@@ -31,7 +31,7 @@ class AnalyticsService {
     );
     final response = await http.get(
       Uri.parse(
-        '$baseUrl/api/analytics?targetLanguage=$targetLanguage&predictionHorizon=$predictionHorizon',
+        '${AppConstants.baseUrl}/api/analytics?targetLanguage=$targetLanguage&predictionHorizon=$predictionHorizon',
       ),
       headers: await _getHeaders(),
     );
@@ -45,7 +45,7 @@ class AnalyticsService {
   Future<GoalProgress> fetchGoalProgress() async {
     _logger.info('AnalyticsService: Fetching goal progress');
     final response = await http.get(
-      Uri.parse('$baseUrl/api/user/goal-progress'),
+      Uri.parse('${AppConstants.baseUrl}/api/user/goal-progress'),
       headers: await _getHeaders(),
     );
 
@@ -63,7 +63,7 @@ class AnalyticsService {
     final y = year ?? DateTime.now().year;
     final response = await http.get(
       Uri.parse(
-        '$baseUrl/api/user/activity-stats?type=heatmap&targetLanguage=$targetLanguage&year=$y',
+        '${AppConstants.baseUrl}/api/user/activity-stats?type=heatmap&targetLanguage=$targetLanguage&year=$y',
       ),
       headers: await _getHeaders(),
     );
@@ -81,7 +81,7 @@ class AnalyticsService {
     _logger.info('AnalyticsService: Fetching practice analytics');
     final response = await http.get(
       Uri.parse(
-        '$baseUrl/api/user/practice-analytics?targetLanguage=$targetLanguage',
+        '${AppConstants.baseUrl}/api/user/practice-analytics?targetLanguage=$targetLanguage',
       ),
       headers: await _getHeaders(),
     );

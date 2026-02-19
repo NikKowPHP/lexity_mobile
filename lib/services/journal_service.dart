@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
+
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/auth_service.dart';
 import 'package:lexity_mobile/services/token_service.dart';
 import 'logger_service.dart';
 import '../models/journal_entry.dart';
+import '../utils/constants.dart';
 
 class JournalService {
   final Ref _ref;
@@ -26,7 +28,9 @@ class JournalService {
   Future<List<JournalEntry>> getHistory(String targetLanguage) async {
     _logger.info('JournalService: Fetching history for $targetLanguage');
     final response = await http.get(
-      Uri.parse('$baseUrl/api/journal?targetLanguage=$targetLanguage'),
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/journal?targetLanguage=$targetLanguage',
+      ),
       headers: await _getHeaders(),
     );
 
@@ -40,7 +44,7 @@ class JournalService {
   Future<JournalEntry> getEntry(String id) async {
     _logger.info('JournalService: Fetching entry $id');
     final response = await http.get(
-      Uri.parse('$baseUrl/api/journal/$id'),
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
       headers: await _getHeaders(),
     );
 
@@ -50,16 +54,23 @@ class JournalService {
     throw Exception('Failed to load entry');
   }
 
-  Future<JournalEntry> createEntry(String content, String title, String targetLanguage) async {
+  // MODIFIED: Accept optional moduleId
+  Future<JournalEntry> createEntry(
+    String content,
+    String title,
+    String targetLanguage, {
+    String? moduleId,
+  }) async {
     _logger.info('JournalService: Creating entry');
     final response = await http.post(
-      Uri.parse('$baseUrl/api/journal'),
+      Uri.parse('${AppConstants.baseUrl}/api/journal'),
       headers: await _getHeaders(),
       body: jsonEncode({
         'content': content,
         'topicTitle': title,
         'targetLanguage': targetLanguage,
-        'mode': 'free_write'
+        'mode': 'free_write',
+        'moduleId': moduleId, // Include moduleId if present
       }),
     );
 
@@ -72,20 +83,77 @@ class JournalService {
   Future<void> updateEntry(String id, String content, String title) async {
      _logger.info('JournalService: Updating entry $id');
      final response = await http.put(
-       Uri.parse('$baseUrl/api/journal/$id'),
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
        headers: await _getHeaders(),
        body: jsonEncode({
          'content': content,
-         'topicId': 'unknown', // Simplification: API requires topicId, ideally we fetch it first or API supports title update
+        'topicId':
+            title, // Note: Web API might expect ID, but here we pass title/ID logic based on your implementation
        })
      );
       if (response.statusCode != 200) throw Exception('Failed to update entry');
   }
 
+  // NEW METHODS FOR AUDIO UPLOAD
+  Future<void> _uploadFileToSupabase(String signedUrl, File file) async {
+    final bytes = await file.readAsBytes();
+    // Using simple PUT as required by Supabase Storage signed URLs
+    final response = await http.put(
+      Uri.parse(signedUrl),
+      headers: {'Content-Type': 'audio/webm'}, // Adjust mime type as needed
+      body: bytes,
+    );
+    if (response.statusCode != 200) throw Exception('Failed to upload file');
+  }
+
+  Future<JournalEntry> createAudioEntry(
+    String filePath,
+    String targetLanguage, {
+    String? moduleId,
+  }) async {
+    _logger.info('JournalService: Starting audio journal creation');
+
+    final file = File(filePath);
+    final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.webm';
+
+    // 1. Get Signed URL
+    final response = await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/journal/generate-upload-url?filename=$filename',
+      ),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200)
+      throw Exception('Failed to generate upload URL');
+    final data = jsonDecode(response.body);
+    final signedUrl = data['signedUrl'];
+    final storagePath = data['path'];
+
+    // 2. Upload Binary
+    await _uploadFileToSupabase(signedUrl, file);
+
+    // 3. Create Journal Record
+    final createResponse = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/audio'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'path': storagePath,
+        'targetLanguage': targetLanguage,
+        'moduleId': moduleId,
+        'aidsUsage': [],
+      }),
+    );
+
+    if (createResponse.statusCode == 201) {
+      return JournalEntry.fromJson(jsonDecode(createResponse.body));
+    }
+    throw Exception('Failed to create audio journal record');
+  }
+
   Future<void> deleteEntry(String id) async {
     _logger.info('JournalService: Deleting entry $id');
     final response = await http.delete(
-      Uri.parse('$baseUrl/api/journal/$id'),
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
       headers: await _getHeaders(),
     );
     if (response.statusCode != 200 && response.statusCode != 204) {
@@ -96,7 +164,7 @@ class JournalService {
   Future<void> analyzeEntry(String id) async {
     _logger.info('JournalService: Starting analysis for $id');
     final response = await http.post(
-      Uri.parse('$baseUrl/api/analyze'),
+      Uri.parse('${AppConstants.baseUrl}/api/analyze'),
       headers: await _getHeaders(),
       body: jsonEncode({'journalId': id}),
     );
@@ -105,7 +173,9 @@ class JournalService {
 
   Future<List<String>> getSuggestedTopics(String targetLanguage) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/api/user/suggested-topics?targetLanguage=$targetLanguage'),
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/user/suggested-topics?targetLanguage=$targetLanguage',
+      ),
       headers: await _getHeaders(),
     );
     if (response.statusCode == 200) {
@@ -117,7 +187,9 @@ class JournalService {
   
   Future<void> generateTopics(String targetLanguage) async {
      await http.get(
-      Uri.parse('$baseUrl/api/user/generate-topics?targetLanguage=$targetLanguage'),
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/user/generate-topics?targetLanguage=$targetLanguage',
+      ),
       headers: await _getHeaders(),
     );
   }

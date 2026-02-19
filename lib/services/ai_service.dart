@@ -3,8 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lexity_mobile/services/token_service.dart';
 import '../models/translation_result.dart';
-import 'auth_service.dart';
 import 'logger_service.dart';
+import '../utils/constants.dart';
 
 class AIService {
   final Ref _ref;
@@ -34,7 +34,7 @@ class AIService {
     );
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/ai/translate'),
+        Uri.parse('${AppConstants.baseUrl}/api/ai/translate'),
         headers: await _getHeaders(),
         body: jsonEncode({
           'text': text,
@@ -74,7 +74,7 @@ class AIService {
     );
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/ai/translate-breakdown'),
+        Uri.parse('${AppConstants.baseUrl}/api/ai/translate-breakdown'),
         headers: await _getHeaders(),
         body: jsonEncode({
           'text': text,

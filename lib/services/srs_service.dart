@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/auth_service.dart';
 import 'package:lexity_mobile/services/token_service.dart';
 import '../models/srs_item.dart';
 import 'logger_service.dart';
+import '../utils/constants.dart';
 
 class SrsService {
   final Ref _ref;
@@ -27,7 +27,9 @@ class SrsService {
     _logger.info('SrsService: Fetching SRS deck for language: $language');
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/srs/deck?targetLanguage=$language'),
+        Uri.parse(
+          '${AppConstants.baseUrl}/api/srs/deck?targetLanguage=$language',
+        ),
         headers: await _getHeaders(),
       );
 
@@ -52,7 +54,7 @@ class SrsService {
     _logger.info('SrsService: Submitting review for item: $id, quality: $quality');
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/srs/review'),
+        Uri.parse('${AppConstants.baseUrl}/api/srs/review'),
         headers: await _getHeaders(),
         body: jsonEncode({
           'srsItemId': id,
@@ -85,7 +87,7 @@ class SrsService {
     _logger.info('SrsService: Creating SRS item from translation');
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/srs/create-from-translation'),
+        Uri.parse('${AppConstants.baseUrl}/api/srs/create-from-translation'),
         headers: await _getHeaders(),
         body: jsonEncode({
           'frontContent': front,
@@ -117,6 +119,34 @@ class SrsService {
         stackTrace,
       );
       rethrow;
+    }
+  }
+
+  Future<List<SrsItem>> fetchDrillItems(String language) async {
+    _logger.info('SrsService: Fetching drill items for $language');
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${AppConstants.baseUrl}/api/srs/drill?targetLanguage=$language',
+        ),
+        headers: await _getHeaders(),
+      );
+
+      _logger.debug(
+        'SrsService: fetchDrillItems response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info(
+          'SrsService: Drill items fetched successfully, found ${data.length} items',
+        );
+        return data.map((item) => SrsItem.fromJson(item)).toList();
+      }
+      return [];
+    } catch (e, stackTrace) {
+      _logger.error('SrsService: Error fetching drill items', e, stackTrace);
+      return [];
     }
   }
 }

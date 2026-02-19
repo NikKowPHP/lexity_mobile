@@ -13,6 +13,8 @@ import '../ui/screens/profile_screen.dart';
 import '../ui/screens/translator_screen.dart';
 import '../ui/screens/journal_editor_screen.dart';
 import '../ui/screens/journal_detail_screen.dart';
+import '../ui/screens/module_detail_screen.dart';
+import '../ui/screens/drill_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -73,6 +75,24 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/path',
                 pageBuilder: (context, state) => _buildFadePage(const PathScreen(), state),
+                routes: [
+                  // NEW: Module Detail Route
+                  GoRoute(
+                    path: 'module/:moduleId',
+                    parentNavigatorKey: _rootNavigatorKey, // Hide bottom nav
+                    builder: (context, state) => ModuleDetailScreen(
+                      moduleId: state.pathParameters['moduleId']!,
+                    ),
+                  ),
+                  // NEW: Drill Route
+                  GoRoute(
+                    path: 'drill/:moduleId',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => DrillScreen(
+                      moduleId: state.pathParameters['moduleId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -96,7 +116,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'new',
                     parentNavigatorKey:
                         _rootNavigatorKey, // Open full screen over shell
-                    builder: (context, state) => const JournalEditorScreen(),
+                    builder: (context, state) => JournalEditorScreen(
+                      moduleId: state.uri.queryParameters['moduleId'],
+                    ),
                   ),
                   GoRoute(
                     path: ':id',
