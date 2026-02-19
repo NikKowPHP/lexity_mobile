@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 import '../../providers/path_provider.dart';
+import '../../theme/liquid_theme.dart';
 
 class ModuleDetailScreen extends ConsumerWidget {
   final String moduleId;
@@ -45,9 +47,54 @@ class ModuleDetailScreen extends ConsumerWidget {
               const Text("MICRO-LESSON", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12)),
               const SizedBox(height: 12),
               GlassCard(
-                child: Text(
-                  module.microLesson,
-                  style: const TextStyle(color: Colors.white, height: 1.6, fontSize: 15),
+                child: MarkdownBody(
+                  data: module.microLesson,
+                  styleSheet: MarkdownStyleSheet(
+                    p: const TextStyle(
+                      color: Colors.white,
+                      height: 1.6,
+                      fontSize: 15,
+                    ),
+                    h1: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 22,
+                      height: 1.5,
+                    ),
+                    h2: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      height: 1.5,
+                    ),
+                    h3: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      height: 1.5,
+                    ),
+                    listBullet: TextStyle(
+                      color: LiquidTheme.primaryAccent,
+                      fontSize: 16,
+                    ),
+                    em: const TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: Colors.white70,
+                    ),
+                    strong: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    blockquote: const TextStyle(
+                      color: Colors.white60,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    code: TextStyle(
+                      color: LiquidTheme.secondaryAccent,
+                      backgroundColor: Colors.transparent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 32),

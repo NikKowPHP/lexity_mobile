@@ -20,8 +20,6 @@ import '../ui/screens/drill_screen.dart';
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authProvider);
-
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/path', // Default tab
@@ -32,6 +30,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     
     // 3. AUTO-REDIRECT LOGIC
     redirect: (context, state) {
+      final authState = ref.read(authProvider);
+      
       // If we haven't finished checking the disk yet, stay on current page
       if (!authState.isInitialized) return null;
 

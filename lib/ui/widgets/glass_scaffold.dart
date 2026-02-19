@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class GlassScaffold extends StatelessWidget {
   final String title;
   final String subtitle;
   final Widget body;
   final Widget? floatingActionButton;
+  final bool? showBackButton;
 
   const GlassScaffold({
     super.key,
@@ -12,11 +14,13 @@ class GlassScaffold extends StatelessWidget {
     required this.subtitle,
     required this.body,
     this.floatingActionButton,
+    this.showBackButton,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 800;
+    final canPop = showBackButton ?? context.canPop();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -29,6 +33,25 @@ class GlassScaffold extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (canPop)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: GestureDetector(
+                        onTap: () => context.pop(),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back_ios_new,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
                   Text(
                     title,
                     style: const TextStyle(

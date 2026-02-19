@@ -47,6 +47,7 @@ dependencies:
   go_router: ^17.1.0
   permission_handler: ^11.3.0
   fl_chart: ^0.68.0
+  flutter_markdown: any
 
 
 dev_dependencies:
