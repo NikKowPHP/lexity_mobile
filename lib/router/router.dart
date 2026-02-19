@@ -169,7 +169,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 // Helper for sleek 2026 transitions
 CustomTransitionPage _buildFadePage(Widget child, GoRouterState state) {
   return CustomTransitionPage(
-    key: state.pageKey,
+    key: ValueKey(state.uri.toString()),
     child: child,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
       return FadeTransition(opacity: animation, child: child);

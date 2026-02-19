@@ -123,7 +123,7 @@ class ModuleDetailScreen extends ConsumerWidget {
                   icon: Icons.style,
                   onTap: () {
                     if (!isSrsDone) {
-                      context.push('/study'); 
+                      context.go('/study'); 
                     }
                   },
                 ),
