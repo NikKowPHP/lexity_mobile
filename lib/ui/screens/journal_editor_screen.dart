@@ -10,43 +10,122 @@ import '../../providers/path_provider.dart';
 
 class JournalEditorScreen extends ConsumerStatefulWidget {
   final String? moduleId;
-  const JournalEditorScreen({super.key, this.moduleId});
+  final String? initialMode;
+  final String? initialTopic;
+  final String? initialImageUrl;
+
+  const JournalEditorScreen({
+    super.key,
+    this.moduleId,
+    this.initialMode,
+    this.initialTopic,
+    this.initialImageUrl,
+  });
 
   @override
   ConsumerState<JournalEditorScreen> createState() => _JournalEditorScreenState();
 }
 
 class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
-  final _titleController = TextEditingController();
-  final _contentController = TextEditingController();
-  
+  late TextEditingController _titleController;
+  late TextEditingController _contentController;
+  bool _isRecording = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(
+      text: widget.initialTopic ?? "Free Write",
+    );
+    _contentController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _contentController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeLang = ref.watch(activeLanguageProvider);
     final topicsAsync = ref.watch(suggestedTopicsProvider);
+    final isAudioMode = widget.initialMode == 'audio_journal';
+    final isDescribeMode = widget.initialMode == 'describe_image';
 
     return GlassScaffold(
-      title: 'New Entry',
-      subtitle: 'Practice writing in $activeLang',
+      title: isAudioMode ? 'Speak' : 'Write',
+      subtitle: 'Practice in $activeLang',
       body: SliverToBoxAdapter(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 1. IMAGE PROMPT (For Describe Image mode)
+            if (isDescribeMode && widget.initialImageUrl != null) ...[
+              const Text(
+                "DESCRIBE THIS IMAGE",
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.network(
+                  widget.initialImageUrl!,
+                  height: 200,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(
+                      Icons.broken_image,
+                      color: Colors.white24,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // 2. ADAPTIVE INPUT (Audio vs Text)
+            if (isAudioMode) ...[
+              _buildAudioInterface(),
+              const SizedBox(height: 24),
+            ],
+
             const Text("Topic Suggestions", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             SizedBox(
               height: 40,
               child: topicsAsync.when(
-                loading: () => const LinearProgressIndicator(),
+                loading: () => const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 2,
+                    child: LinearProgressIndicator(),
+                  ),
+                ),
                 error: (_, __) => const SizedBox(),
                 data: (topics) => ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: topics.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 8),
                   itemBuilder: (context, index) => ActionChip(
                     label: Text(topics[index]),
                     backgroundColor: Colors.white10,
-                    labelStyle: const TextStyle(color: Colors.white),
+                    labelStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
                     onPressed: () => _titleController.text = topics[index],
                   ),
                 ),
@@ -63,50 +142,107 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
             
             const SizedBox(height: 16),
             
-            Container(
-              height: 300,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: TextField(
-                controller: _contentController,
-                maxLines: null,
-                expands: true,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: "Start writing...",
-                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-                  border: InputBorder.none,
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 24),
-            
+            if (!isAudioMode) ...[
+              _buildTextInterface(),
+              const SizedBox(height: 24),
+            ],
+
             LiquidButton(
               text: "Save & Analyze",
               onTap: () async {
-                 if (_contentController.text.isEmpty) return;
-                 await ref.read(journalNotifierProvider.notifier).createEntry(
-                   _titleController.text.isEmpty ? "Free Write" : _titleController.text,
-                   _contentController.text,
+                if (_contentController.text.isEmpty && !isAudioMode) return;
+
+                await ref
+                    .read(journalNotifierProvider.notifier)
+                    .createEntry(
+                      _titleController.text.isEmpty
+                          ? "Untitled Entry"
+                          : _titleController.text,
+                      _contentController.text,
                       activeLang,
                       moduleId: widget.moduleId,
-                 );
+                    );
                  
                 if (widget.moduleId != null) {
+                  // Mark module activity done
+                  final key = widget.initialMode ?? 'writing';
                   ref
                       .read(pathNotifierProvider.notifier)
-                      .updateActivity(widget.moduleId!, 'writing', true);
+                      .updateActivity(widget.moduleId!, key, true);
                 }
 
-                 if (context.mounted) context.pop();
+                if (context.mounted) context.pop();
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAudioInterface() {
+    return GlassCard(
+      child: Column(
+        children: [
+          Icon(
+            _isRecording ? Icons.mic : Icons.mic_none,
+            size: 64,
+            color: _isRecording ? Colors.redAccent : Colors.white,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _isRecording ? "Listening..." : "Tap to Speak",
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: () => setState(() => _isRecording = !_isRecording),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _isRecording
+                    ? Colors.redAccent.withValues(alpha: 0.1)
+                    : Colors.white10,
+              ),
+              child: Icon(
+                _isRecording ? Icons.stop : Icons.play_arrow,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          if (!_isRecording && _contentController.text.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 20),
+              child: Text(
+                "Transcript: ${_contentController.text}",
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextInterface() {
+    return Container(
+      height: 300,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: TextField(
+        controller: _contentController,
+        maxLines: null,
+        expands: true,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: "Start writing...",
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+          border: InputBorder.none,
         ),
       ),
     );

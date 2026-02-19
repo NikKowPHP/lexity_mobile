@@ -188,6 +188,7 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
     return GlassScaffold(
       title: 'Translator',
       subtitle: 'Real-time AI analysis',
+      showBackButton: false,
       floatingActionButton: (Platform.isAndroid && !widget.isBubbleMode)
         ? Padding(padding: const EdgeInsets.only(bottom: 80), child: FloatingActionButton(backgroundColor: LiquidTheme.primaryAccent, onPressed: _enableBubbleMode, child: const Icon(Icons.open_in_new, color: Colors.white)))
         : null,

@@ -36,6 +36,7 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     return GlassScaffold(
       title: 'Study',
       subtitle: '${state.deck.length} cards remaining',
+      showBackButton: false,
       body: SliverFillRemaining(
         hasScrollBody: false,
         child: state.isLoading 

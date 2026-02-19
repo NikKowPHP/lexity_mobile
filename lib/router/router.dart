@@ -15,6 +15,8 @@ import '../ui/screens/journal_editor_screen.dart';
 import '../ui/screens/journal_detail_screen.dart';
 import '../ui/screens/module_detail_screen.dart';
 import '../ui/screens/drill_screen.dart';
+import '../ui/screens/study_material_screen.dart';
+import '../ui/screens/reading_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -92,6 +94,27 @@ final routerProvider = Provider<GoRouter>((ref) {
                       moduleId: state.pathParameters['moduleId']!,
                     ),
                   ),
+                  // NEW: Study Material Route (Reading/Listening)
+                  GoRoute(
+                    path: 'material',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => StudyMaterialScreen(
+                      moduleId: state.uri.queryParameters['moduleId'] ?? '',
+                      mode: state.uri.queryParameters['mode'] ?? 'reading',
+                      title:
+                          state.uri.queryParameters['title'] ??
+                          'Study Material',
+                      content: state.uri.queryParameters['content'] ?? '',
+                    ),
+                  ),
+                  // NEW: Reading Screen Route
+                  GoRoute(
+                    path: 'read',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => ReadingScreen(
+                      moduleId: state.uri.queryParameters['moduleId'],
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -114,10 +137,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'new',
-                    parentNavigatorKey:
-                        _rootNavigatorKey, // Open full screen over shell
+                    parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => JournalEditorScreen(
                       moduleId: state.uri.queryParameters['moduleId'],
+                      initialMode: state.uri.queryParameters['mode'],
+                      initialTopic: state.uri.queryParameters['topic'],
+                      initialImageUrl: state.uri.queryParameters['imageUrl'],
                     ),
                   ),
                   GoRoute(

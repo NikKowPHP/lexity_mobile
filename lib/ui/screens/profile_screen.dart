@@ -30,6 +30,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return GlassScaffold(
       title: 'Settings',
       subtitle: 'Manage your profile and preferences',
+      showBackButton: false,
       body: profileAsync.when(
         loading: () => const SliverToBoxAdapter(
             child: Center(child: CircularProgressIndicator(color: Colors.white))),

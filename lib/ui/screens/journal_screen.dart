@@ -18,6 +18,7 @@ class JournalScreen extends ConsumerWidget {
     return GlassScaffold(
       title: 'Journal',
       subtitle: 'Write freely or describe an image',
+      showBackButton: false,
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: LiquidTheme.primaryAccent,
         icon: const Icon(Icons.edit, color: Colors.white),

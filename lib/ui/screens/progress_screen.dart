@@ -21,6 +21,7 @@ class ProgressScreen extends ConsumerWidget {
     return GlassScaffold(
       title: 'Analytics',
       subtitle: 'Your fluency timeline',
+      showBackButton: false,
       body: analyticsAsync.when(
         loading: () => const SliverFillRemaining(
           hasScrollBody: false,

@@ -69,12 +69,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       _logger.warning("AuthNotifier: Deep Auth Check failed: $e");
       final refreshedAuthTokens = await refreshToken();
-      if (refreshedAuthTokens != null) {
+      if (refreshedAuthTokens != null && refreshedAuthTokens.length >= 2) {
         await _authTokenService.saveToken(refreshedAuthTokens[0]);
         await _refreshTokenService.saveToken(refreshedAuthTokens[1]);
         state = state.copyWith(isAuthenticated: true, isInitialized: true);
       } else {
-        await _authTokenService.clearToken(); // Wipe the invalid token
+        _logger.warning(
+          "AuthNotifier: Token refresh failed or returned invalid data, clearing tokens",
+        );
+        await _authTokenService.clearToken();
+        await _refreshTokenService.clearToken();
         state = state.copyWith(isAuthenticated: false, isInitialized: true);
       }
     }
@@ -84,12 +88,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _logger.info('AuthNotifier: refreshing token, retrieving from storage');
     final token = await _refreshTokenService.getToken();
     if (token == null) {
-      _logger.info('AuthNotifier: no token found');
-      state = state.copyWith(isAuthenticated: false, isInitialized: true);
+      _logger.info('AuthNotifier: no refresh token found in storage');
       return null;
     }
-    final refreshedAuthTocken = await _authService.refreshToken(token);
-    return refreshedAuthTocken;
+    
+    try {
+      final refreshedAuthToken = await _authService.refreshToken(token);
+      return refreshedAuthToken;
+    } catch (e) {
+      _logger.error('AuthNotifier: refresh token request failed', e);
+      return null;
+    }
   }
 
   Future<void> logout() async {

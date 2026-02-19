@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lexity_mobile/services/token_service.dart';
 import 'logger_service.dart';
 import '../models/journal_entry.dart';
+import '../models/writing_aids.dart';
 import '../utils/constants.dart';
 
 class JournalService {
@@ -192,6 +193,22 @@ class JournalService {
       ),
       headers: await _getHeaders(),
     );
+  }
+
+  Future<WritingAids> getWritingAids(
+    String topic,
+    String targetLanguage,
+  ) async {
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/helpers'),
+      headers: await _getHeaders(),
+      body: jsonEncode({'topic': topic, 'targetLanguage': targetLanguage}),
+    );
+
+    if (response.statusCode == 200) {
+      return WritingAids.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load writing aids');
   }
 }
 

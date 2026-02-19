@@ -17,6 +17,7 @@ class PathScreen extends ConsumerWidget {
     return GlassScaffold(
       title: 'Your Path',
       subtitle: 'Personalized Curriculum',
+      showBackButton: false,
       body: pathAsync.when(
         loading: () => const SliverFillRemaining(
           child: Center(child: CircularProgressIndicator(color: Colors.white)),
