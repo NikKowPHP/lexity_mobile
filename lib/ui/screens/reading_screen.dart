@@ -23,6 +23,7 @@ class ReadingScreen extends ConsumerStatefulWidget {
 class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _responseController = TextEditingController();
+  bool _isSubmitting = false;
   
   @override
   void initState() {
@@ -44,7 +45,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
     } else {
       _responseController.text = "$currentText $text";
     }
-    // Move cursor to end
     _responseController.selection = TextSelection.fromPosition(
       TextPosition(offset: _responseController.text.length),
     );
@@ -54,54 +54,54 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
   Widget build(BuildContext context) {
     final materialAsync = ref.watch(readingMaterialProvider);
     final tasksAsync = ref.watch(readingTaskProvider);
-    final aidsAsync = ref.watch(readingAidsProvider); // Watch the new provider
+    final aidsAsync = ref.watch(readingAidsProvider);
     final activeLang = ref.watch(activeLanguageProvider);
 
     return GlassScaffold(
       title: 'Read & Write',
       subtitle: 'Comprehension Practice',
       body: materialAsync.when(
-        loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
-        error: (e, _) => SliverFillRemaining(child: Center(child: Text("Error: $e"))),
+        // FIX: Wrap Center in SliverFillRemaining
+        loading: () => const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        // FIX: Wrap Center in SliverFillRemaining
+        error: (e, _) =>
+            SliverFillRemaining(child: Center(child: Text("Error: $e"))),
         data: (material) {
-          // Auto-generate tasks if not yet loaded
           if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
              Future.microtask(() => 
                ref.read(readingTaskProvider.notifier).generate(material.content, activeLang, material.level)
              );
           }
 
+          // FIX: Wrap NestedScrollView in SliverFillRemaining
           return SliverFillRemaining(
-            child: Column(
-              children: [
-                TabBar(
-                  controller: _tabController,
-                  indicatorColor: LiquidTheme.primaryAccent,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.white54,
-                  tabs: const [
-                    Tab(text: "Reading"),
-                    Tab(text: "Writing Task"),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      // TAB 1: READING MATERIAL
-                      _buildReadingTab(material),
-
-                      // TAB 2: WRITING TASK & AIDS
-                      _buildWritingTab(
-                        tasksAsync,
-                        aidsAsync,
-                        activeLang,
-                        material,
-                      ),
-                    ],
+            child: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorColor: LiquidTheme.primaryAccent,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: Colors.white54,
+                      tabs: const [
+                        Tab(text: "Reading"),
+                        Tab(text: "Writing Task"),
+                      ],
+                    ),
                   ),
                 ),
               ],
+              body: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildReadingTab(material),
+                  _buildWritingTab(tasksAsync, aidsAsync, activeLang, material),
+                ],
+              ),
             ),
           );
         },
@@ -111,7 +111,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
 
   Widget _buildReadingTab(ReadingMaterial material) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
       child: GlassCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -137,10 +136,10 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
   }
 
   Widget _buildWritingTab(
-    AsyncValue<ReadingTasksResponse?> tasksAsync,
+    AsyncValue<ReadingTasksResponse?> tasksAsync, 
     AsyncValue<WritingAids?> aidsAsync,
-    String lang,
-    ReadingMaterial material,
+    String lang, 
+    ReadingMaterial material
   ) {
     if (tasksAsync.isLoading) {
       return const Center(child: Column(
@@ -157,10 +156,8 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
     if (tasks == null) return const SizedBox();
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // 1. TASK INFO
           GlassCard(
             padding: 20,
             child: Column(
@@ -182,7 +179,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
           
           const SizedBox(height: 16),
 
-          // 2. WRITING AIDS (Sentence Starter & Vocab)
           aidsAsync.when(
             loading: () => const Padding(
               padding: EdgeInsets.all(16.0),
@@ -194,7 +190,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
                 ),
               ),
             ),
-            error: (err, stack) => const SizedBox(),
+            error: (_, __) => const SizedBox(),
             data: (aids) {
               if (aids == null) return const SizedBox();
               return GlassCard(
@@ -202,7 +198,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Sentence Starter
                     const Text(
                       "Sentence Starter",
                       style: TextStyle(
@@ -212,44 +207,40 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '"${aids.sentenceStarter}"',
-                            style: const TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: GestureDetector(
-                              onTap: () => _insertText(aids.sentenceStarter),
-                              child: const Text(
-                                "Use this",
-                                style: TextStyle(
-                                  color: LiquidTheme.primaryAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+                    GestureDetector(
+                      onTap: () => _insertText(aids.sentenceStarter),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '"${aids.sentenceStarter}"',
+                                style: const TextStyle(
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                            const Text(
+                              "Use this",
+                              style: TextStyle(
+                                color: LiquidTheme.primaryAccent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-
                     const SizedBox(height: 16),
-
-                    // Vocabulary Chips
                     const Text(
                       "Vocabulary to Try",
                       style: TextStyle(
@@ -290,7 +281,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
 
           const SizedBox(height: 16),
 
-          // 3. EDITOR
           Container(
             height: 300,
             padding: const EdgeInsets.all(16),
@@ -315,36 +305,59 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
           const SizedBox(height: 24),
 
           LiquidButton(
-            text: "Submit for Analysis",
-            onTap: () async {
-              if (_responseController.text.length < 10) return;
-
-              // Submit Journal
-              final journalNotifier = ref.read(journalNotifierProvider.notifier);
-              await journalNotifier.createEntry(
-                tasks.summary.title,
-                _responseController.text,
-                lang,
-                moduleId: widget.moduleId,
-              );
-
-              // Mark Complete
-              if (widget.moduleId != null) {
-                ref.read(pathNotifierProvider.notifier).updateActivity(
-                  widget.moduleId!, 
-                  'reading', 
-                  true,
-                );
-              }
-
-              if (mounted) {
-                context.pop();
-              }
-            },
+            text: _isSubmitting ? "Analyzing..." : "Submit for Analysis",
+            isLoading: _isSubmitting,
+            onTap: _submitExercise,
           ),
           const SizedBox(height: 40),
         ],
       ),
     );
+  }
+
+  Future<void> _submitExercise() async {
+    if (_responseController.text.length < 10) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please write a bit more!")));
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final tasks = ref.read(readingTaskProvider).value!;
+      final lang = ref.read(activeLanguageProvider);
+      final material = ref.read(readingMaterialProvider).value!;
+
+      final newEntryId = await ref
+          .read(journalNotifierProvider.notifier)
+          .createEntry(
+            tasks.summary.title,
+            _responseController.text,
+            lang,
+            moduleId: widget.moduleId,
+          );
+
+      if (widget.moduleId != null) {
+        await ref.read(pathNotifierProvider.notifier).updateActivity(
+          widget.moduleId!,
+          'reading',
+          true,
+          {'materialId': material.id}
+        );
+      }
+
+      if (mounted && newEntryId != null) {
+        context.pushReplacement('/journal/$newEntryId');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Submission failed: $e")));
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 }
