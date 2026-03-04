@@ -299,532 +299,69 @@ app_logs.txt
 pubspec.lock
 pubspec.yaml
 README.md
+request.json
+test.sh
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
-<file path="lib/models/listening_models.dart">
-import 'reading_models.dart'; // Reusing WritingTask from reading models
-
-class ListeningExercise {
-  final String id;
-  final String title;
-  final String videoId;
-  final String transcript;
-  final String level;
-  final String? source;
-
-  ListeningExercise({
-    required this.id,
-    required this.title,
-    required this.videoId,
-    required this.transcript,
-    required this.level,
-    this.source,
-  });
-
-  factory ListeningExercise.fromJson(Map<String, dynamic> json) {
-    return ListeningExercise(
-      id: json['id'],
-      title: json['title'] ?? '',
-      videoId: json['videoId'] ?? '',
-      transcript: json['transcript'] ?? '',
-      level: json['level'] ?? 'INTERMEDIATE',
-      source: json['source'],
-    );
-  }
-}
-
-class ListeningTasksResponse {
-  final WritingTask summary;
-  final WritingTask comprehension;
-
-  ListeningTasksResponse({
-    required this.summary,
-    required this.comprehension,
-  });
-
-  factory ListeningTasksResponse.fromJson(Map<String, dynamic> json) {
-    return ListeningTasksResponse(
-      summary: WritingTask.fromJson(json['summary']),
-      comprehension: WritingTask.fromJson(json['comprehension']),
-    );
-  }
-}
-</file>
-
-<file path="lib/providers/listening_provider.dart">
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/listening_models.dart';
-import '../models/writing_aids.dart';
-import '../services/listening_service.dart';
-import '../services/journal_service.dart';
-import 'user_provider.dart';
-
-// 1. Fetch Exercise
-final listeningExerciseProvider = FutureProvider.autoDispose<ListeningExercise>((ref) async {
-  final service = ref.watch(listeningServiceProvider);
-  final lang = ref.watch(activeLanguageProvider);
-  return service.getExercise(lang);
-});
-
-// 2. Task Generation State
-class ListeningTaskNotifier extends StateNotifier<AsyncValue<ListeningTasksResponse?>> {
-  final ListeningService _service;
-  
-  ListeningTaskNotifier(this._service) : super(const AsyncValue.data(null));
-
-  Future<void> generate(String exerciseId) async {
-    state = const AsyncValue.loading();
-    try {
-      final tasks = await _service.generateTasks(exerciseId);
-      state = AsyncValue.data(tasks);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
-  }
-}
-
-final listeningTaskProvider = StateNotifierProvider<ListeningTaskNotifier, AsyncValue<ListeningTasksResponse?>>((ref) {
-  return ListeningTaskNotifier(ref.watch(listeningServiceProvider));
-});
-
-// 3. Fetch Aids based on the generated task
-final listeningAidsProvider = FutureProvider.autoDispose<WritingAids?>((ref) async {
-  final taskState = ref.watch(listeningTaskProvider);
-  final lang = ref.watch(activeLanguageProvider);
-  final journalService = ref.watch(journalServiceProvider);
-
-  if (taskState.value != null) {
-    // We use the summary task title to generate relevant aids
-    final topic = taskState.value!.summary.title;
-    return journalService.getWritingAids(topic, lang);
-  }
-  return null;
-});
-</file>
-
-<file path="lib/services/listening_service.dart">
-import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-import '../models/listening_models.dart';
-import '../utils/constants.dart';
-import 'token_service.dart';
-
-class ListeningService {
-  final TokenService _authTokenService;
-
-  ListeningService(this._authTokenService);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  // 1. Fetch Material (GET)
-  Future<ListeningExercise> getExercise(String targetLanguage) async {
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/listening-material?targetLanguage=$targetLanguage'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      return ListeningExercise.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to load listening exercise');
-  }
-
-  // 2. Generate Tasks (POST)
-  Future<ListeningTasksResponse> generateTasks(String exerciseId) async {
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/ai/listening-task'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'listeningExerciseId': exerciseId,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      return ListeningTasksResponse.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to generate listening tasks');
-  }
-}
-
-final listeningServiceProvider = Provider((ref) => 
-  ListeningService(ref.watch(tokenServiceProvider(TokenType.auth)))
-);
-</file>
-
-<file path="lib/ui/screens/listening_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
-import '../../theme/liquid_theme.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../../providers/listening_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/journal_provider.dart';
-import '../../providers/path_provider.dart';
-import '../../models/listening_models.dart';
-import '../../models/writing_aids.dart';
-
-class ListeningScreen extends ConsumerStatefulWidget {
-  final String? moduleId;
-  
-  const ListeningScreen({super.key, this.moduleId});
-
-  @override
-  ConsumerState<ListeningScreen> createState() => _ListeningScreenState();
-}
-
-class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final TextEditingController _responseController = TextEditingController();
-  YoutubePlayerController? _videoController;
-  bool _isSubmitting = false;
-  
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    // Pause video when switching tabs
-    _tabController.addListener(() {
-      if (_tabController.index == 1 && _videoController != null) {
-        _videoController!.pause();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _responseController.dispose();
-    _videoController?.dispose();
-    super.dispose();
-  }
-
-  void _insertText(String text) {
-    final currentText = _responseController.text;
-    if (currentText.isEmpty) {
-      _responseController.text = text;
-    } else {
-      _responseController.text = "$currentText $text";
-    }
-    _responseController.selection = TextSelection.fromPosition(TextPosition(offset: _responseController.text.length));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final exerciseAsync = ref.watch(listeningExerciseProvider);
-    final tasksAsync = ref.watch(listeningTaskProvider);
-    final aidsAsync = ref.watch(listeningAidsProvider);
-    final activeLang = ref.watch(activeLanguageProvider);
-
-    return GlassScaffold(
-      title: 'Listen & Write',
-      subtitle: 'Comprehension Practice',
-      body: exerciseAsync.when(
-        loading: () => const SliverFillRemaining(
-          child: Center(child: CircularProgressIndicator()),
-        ),
-        error: (e, _) => SliverFillRemaining(
-          child: Center(child: Text("Error loading exercise: $e", style: const TextStyle(color: Colors.white))),
-        ),
-        data: (exercise) {
-          // Initialize Video Controller once
-          if (_videoController == null) {
-            _videoController = YoutubePlayerController(
-              initialVideoId: exercise.videoId,
-              flags: const YoutubePlayerFlags(
-                autoPlay: false,
-                mute: false,
-                forceHD: true,
-              ),
-            );
-          }
-
-          // Auto-generate tasks
-          if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
-             Future.microtask(() => 
-               ref.read(listeningTaskProvider.notifier).generate(exercise.id)
-             );
-          }
-
-          return SliverFillRemaining(
-            child: NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorColor: LiquidTheme.primaryAccent,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white54,
-                      tabs: const [
-                        Tab(text: "Watch"),
-                        Tab(text: "Write"),
-                      ],
-                    ),
-                  ),
-                )
-              ],
-              body: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildWatchTab(exercise),
-                  _buildWriteTab(tasksAsync, aidsAsync, activeLang, exercise),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildWatchTab(ListeningExercise exercise) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          // VIDEO PLAYER
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: YoutubePlayer(
-              controller: _videoController!,
-              showVideoProgressIndicator: true,
-              progressIndicatorColor: LiquidTheme.primaryAccent,
-              progressColors: const ProgressBarColors(
-                playedColor: LiquidTheme.primaryAccent,
-                handleColor: LiquidTheme.secondaryAccent,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          
-          GlassCard(
-            padding: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(exercise.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-                if (exercise.source != null) ...[
-                  const SizedBox(height: 4),
-                  Text("Source: ${exercise.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                ],
-                const SizedBox(height: 16),
-                const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.white54, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(child: Text("Watch the video carefully. You will be asked to summarize it in the next tab.", style: TextStyle(color: Colors.white70, fontSize: 13))),
-                  ],
-                )
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 32),
-          LiquidButton(
-            text: "Start Writing",
-            onTap: () {
-               _videoController?.pause();
-               _tabController.animateTo(1);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWriteTab(
-    AsyncValue<ListeningTasksResponse?> tasksAsync, 
-    AsyncValue<WritingAids?> aidsAsync,
-    String lang,
-    ListeningExercise exercise
-  ) {
-    if (tasksAsync.isLoading) {
-      return const Center(child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text("Generating writing tasks...", style: TextStyle(color: Colors.white54)),
-        ],
-      ));
-    }
-
-    final tasks = tasksAsync.value;
-    if (tasks == null) return const SizedBox();
-
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          // 1. COMPREHENSION TASK
-          GlassCard(
-            padding: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Topic: ${tasks.summary.title}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
-                const SizedBox(height: 8),
-                Text(tasks.summary.prompt, style: const TextStyle(color: Colors.white70)),
-                const SizedBox(height: 12),
-                Container(
-                   padding: const EdgeInsets.all(12),
-                   decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
-                   child: Column(
-                     crossAxisAlignment: CrossAxisAlignment.start,
-                     children: [
-                       const Text("Questions to answer:", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                       const SizedBox(height: 4),
-                       Text(tasks.comprehension.prompt, style: const TextStyle(fontSize: 13, color: Colors.white70, fontStyle: FontStyle.italic)),
-                     ],
-                   ),
-                )
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 16),
-
-          // 2. WRITING AIDS
-          aidsAsync.when(
-            loading: () => const Padding(padding: EdgeInsets.all(16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
-            error: (_,__) => const SizedBox(),
-            data: (aids) {
-              if (aids == null) return const SizedBox();
-              return GlassCard(
-                padding: 16,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Sentence Starter", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: () => _insertText(aids.sentenceStarter),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        width: double.infinity,
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(child: Text('"${aids.sentenceStarter}"', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white))),
-                            const Text("Use this", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text("Vocabulary to Try", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: aids.suggestedVocab.map((vocab) => ActionChip(
-                        label: Text(vocab),
-                        backgroundColor: Colors.white.withValues(alpha: 0.1),
-                        labelStyle: const TextStyle(color: Colors.white, fontSize: 13),
-                        side: BorderSide.none,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        onPressed: () => _insertText(vocab),
-                      )).toList(),
-                    ),
-                  ],
-                ),
-              );
+<file path="request.json">
+{
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "inlineData": {
+              "mimeType": "text/xml",
+              "data": "aGV5"
             }
-          ),
-
-          const SizedBox(height: 16),
-
-          // 3. EDITOR
-          Container(
-            height: 300,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: TextField(
-              controller: _responseController,
-              maxLines: null,
-              expands: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: "Summarize the video and answer the questions...",
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-                border: InputBorder.none,
-              ),
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-
-          LiquidButton(
-            text: _isSubmitting ? "Analyzing..." : "Submit for Analysis",
-            isLoading: _isSubmitting,
-            onTap: _submitExercise,
-          ),
-          const SizedBox(height: 40),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _submitExercise() async {
-    if (_responseController.text.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please write a bit more!")));
-      return;
-    }
-
-    setState(() => _isSubmitting = true);
-    _videoController?.pause();
-
-    try {
-      final tasks = ref.read(listeningTaskProvider).value!;
-      final lang = ref.read(activeLanguageProvider);
-      final exercise = ref.read(listeningExerciseProvider).value!;
-
-      // 1. Submit Journal
-      final newEntryId = await ref.read(journalNotifierProvider.notifier).createEntry(
-        tasks.summary.title,
-        _responseController.text,
-        lang,
-        moduleId: widget.moduleId,
-      );
-
-      // 2. Mark Activity Complete (and link the specific listening exercise)
-      if (widget.moduleId != null) {
-        await ref.read(pathNotifierProvider.notifier).updateActivity(
-          widget.moduleId!, 
-          'listening', 
-          true,
-          {'listeningExerciseId': exercise.id}
-        );
+          },
+          {
+            "text": "hey"
+          }
+        ]
       }
-
-      if (mounted && newEntryId != null) {
-        context.pushReplacement('/journal/$newEntryId');
-      }
-    } catch (e) {
-      if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Submission failed: $e")));
-         setState(() => _isSubmitting = false);
-      }
-    }
-  }
+    ],
+   
 }
+</file>
+
+<file path="test.sh">
+#!/bin/bash
+set -e -E
+
+GEMINI_API_KEY="AIzaSyBIqqKTyMD3-i9eQbVFRGYxxgmUJcf84_o"
+MODEL_ID="gemini-3-flash-preview"
+GENERATE_CONTENT_API="streamGenerateContent"
+
+cat << EOF > request.json
+{
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "inlineData": {
+              "mimeType": "text/xml",
+              "data": "aGV5"
+            }
+          },
+          {
+            "text": "hey"
+          }
+        ]
+      }
+    ],
+   
+}
+EOF
+
+curl \
+-X POST \
+-H "Content-Type: application/json" \
+"https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:${GENERATE_CONTENT_API}?key=${GEMINI_API_KEY}" -d '@request.json'
 </file>
 
 <file path="android/app/src/debug/AndroidManifest.xml">
@@ -2617,6 +2154,56 @@ class LearningModule {
 }
 </file>
 
+<file path="lib/models/listening_models.dart">
+import 'reading_models.dart'; // Reusing WritingTask from reading models
+
+class ListeningExercise {
+  final String id;
+  final String title;
+  final String videoId;
+  final String transcript;
+  final String level;
+  final String? source;
+
+  ListeningExercise({
+    required this.id,
+    required this.title,
+    required this.videoId,
+    required this.transcript,
+    required this.level,
+    this.source,
+  });
+
+  factory ListeningExercise.fromJson(Map<String, dynamic> json) {
+    return ListeningExercise(
+      id: json['id'],
+      title: json['title'] ?? '',
+      videoId: json['videoId'] ?? '',
+      transcript: json['transcript'] ?? '',
+      level: json['level'] ?? 'INTERMEDIATE',
+      source: json['source'],
+    );
+  }
+}
+
+class ListeningTasksResponse {
+  final WritingTask summary;
+  final WritingTask comprehension;
+
+  ListeningTasksResponse({
+    required this.summary,
+    required this.comprehension,
+  });
+
+  factory ListeningTasksResponse.fromJson(Map<String, dynamic> json) {
+    return ListeningTasksResponse(
+      summary: WritingTask.fromJson(json['summary']),
+      comprehension: WritingTask.fromJson(json['comprehension']),
+    );
+  }
+}
+</file>
+
 <file path="lib/models/reading_models.dart">
 class ReadingMaterial {
   final String id;
@@ -2775,6 +2362,57 @@ final practiceAnalyticsProvider = FutureProvider.autoDispose<List<PracticeConcep
   final service = ref.watch(analyticsServiceProvider);
   final activeLang = ref.watch(activeLanguageProvider);
   return service.fetchPracticeAnalytics(activeLang);
+});
+</file>
+
+<file path="lib/providers/listening_provider.dart">
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/listening_models.dart';
+import '../models/writing_aids.dart';
+import '../services/listening_service.dart';
+import '../services/journal_service.dart';
+import 'user_provider.dart';
+
+// 1. Fetch Exercise
+final listeningExerciseProvider = FutureProvider.autoDispose<ListeningExercise>((ref) async {
+  final service = ref.watch(listeningServiceProvider);
+  final lang = ref.watch(activeLanguageProvider);
+  return service.getExercise(lang);
+});
+
+// 2. Task Generation State
+class ListeningTaskNotifier extends StateNotifier<AsyncValue<ListeningTasksResponse?>> {
+  final ListeningService _service;
+  
+  ListeningTaskNotifier(this._service) : super(const AsyncValue.data(null));
+
+  Future<void> generate(String exerciseId) async {
+    state = const AsyncValue.loading();
+    try {
+      final tasks = await _service.generateTasks(exerciseId);
+      state = AsyncValue.data(tasks);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+}
+
+final listeningTaskProvider = StateNotifierProvider<ListeningTaskNotifier, AsyncValue<ListeningTasksResponse?>>((ref) {
+  return ListeningTaskNotifier(ref.watch(listeningServiceProvider));
+});
+
+// 3. Fetch Aids based on the generated task
+final listeningAidsProvider = FutureProvider.autoDispose<WritingAids?>((ref) async {
+  final taskState = ref.watch(listeningTaskProvider);
+  final lang = ref.watch(activeLanguageProvider);
+  final journalService = ref.watch(journalServiceProvider);
+
+  if (taskState.value != null) {
+    // We use the summary task title to generate relevant aids
+    final topic = taskState.value!.summary.title;
+    return journalService.getWritingAids(topic, lang);
+  }
+  return null;
 });
 </file>
 
@@ -3031,6 +2669,62 @@ class LearningPathService {
 
 final learningPathServiceProvider = Provider((ref) => 
   LearningPathService(ref, ref.watch(tokenServiceProvider(TokenType.auth)))
+);
+</file>
+
+<file path="lib/services/listening_service.dart">
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import '../models/listening_models.dart';
+import '../utils/constants.dart';
+import 'token_service.dart';
+
+class ListeningService {
+  final TokenService _authTokenService;
+
+  ListeningService(this._authTokenService);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  // 1. Fetch Material (GET)
+  Future<ListeningExercise> getExercise(String targetLanguage) async {
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/listening-material?targetLanguage=$targetLanguage'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      return ListeningExercise.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load listening exercise');
+  }
+
+  // 2. Generate Tasks (POST)
+  Future<ListeningTasksResponse> generateTasks(String exerciseId) async {
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/ai/listening-task'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'listeningExerciseId': exerciseId,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return ListeningTasksResponse.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to generate listening tasks');
+  }
+}
+
+final listeningServiceProvider = Provider((ref) => 
+  ListeningService(ref.watch(tokenServiceProvider(TokenType.auth)))
 );
 </file>
 
@@ -3561,78 +3255,368 @@ class JournalDetailScreen extends ConsumerWidget {
 }
 </file>
 
-<file path="lib/ui/screens/study_material_screen.dart">
+<file path="lib/ui/screens/listening_screen.dart">
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
+import '../../providers/listening_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/journal_provider.dart';
+import '../../providers/path_provider.dart';
+import '../../models/listening_models.dart';
+import '../../models/writing_aids.dart';
 
-class StudyMaterialScreen extends StatelessWidget {
-  final String title;
-  final String content; // Text for Read, VideoID for Listen
-  final String mode; // 'reading' or 'listening'
-  final String moduleId;
+class ListeningScreen extends ConsumerStatefulWidget {
+  final String? moduleId;
+  
+  const ListeningScreen({super.key, this.moduleId});
 
-  const StudyMaterialScreen({
-    super.key, 
-    required this.title, 
-    required this.content, 
-    required this.mode,
-    required this.moduleId,
-  });
+  @override
+  ConsumerState<ListeningScreen> createState() => _ListeningScreenState();
+}
+
+class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final TextEditingController _responseController = TextEditingController();
+  YoutubePlayerController? _videoController;
+  bool _isSubmitting = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    // Pause video when switching tabs
+    _tabController.addListener(() {
+      if (_tabController.index == 1 && _videoController != null) {
+        _videoController!.pause();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _responseController.dispose();
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  void _insertText(String text) {
+    final currentText = _responseController.text;
+    if (currentText.isEmpty) {
+      _responseController.text = text;
+    } else {
+      _responseController.text = "$currentText $text";
+    }
+    _responseController.selection = TextSelection.fromPosition(TextPosition(offset: _responseController.text.length));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isReading = mode == 'reading';
+    final exerciseAsync = ref.watch(listeningExerciseProvider);
+    final tasksAsync = ref.watch(listeningTaskProvider);
+    final aidsAsync = ref.watch(listeningAidsProvider);
+    final activeLang = ref.watch(activeLanguageProvider);
 
     return GlassScaffold(
-      title: isReading ? 'Read' : 'Listen',
-      subtitle: title,
-      body: SliverFillRemaining(
-        hasScrollBody: false,
-        child: Column(
-          children: [
-            Expanded(
-              child: GlassCard(
-                child: SingleChildScrollView(
-                  child: isReading 
-                    ? Text(content, style: const TextStyle(color: Colors.white70, fontSize: 18, height: 1.6))
-                    : _buildVideoPlaceholder(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            LiquidButton(
-              text: "Write Summary",
-              onTap: () => context.push(
-                '/journal/new?moduleId=$moduleId&mode=$mode&topic=${Uri.encodeComponent('Summary: $title')}'
-              ),
-            ),
-            const SizedBox(height: 40),
-          ],
+      title: 'Listen & Write',
+      subtitle: 'Comprehension Practice',
+      body: exerciseAsync.when(
+        loading: () => const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
         ),
+        error: (e, _) => SliverFillRemaining(
+          child: Center(child: Text("Error loading exercise: $e", style: const TextStyle(color: Colors.white))),
+        ),
+        data: (exercise) {
+          // Initialize Video Controller once
+          if (_videoController == null) {
+            _videoController = YoutubePlayerController(
+              initialVideoId: exercise.videoId,
+              flags: const YoutubePlayerFlags(
+                autoPlay: false,
+                mute: false,
+                forceHD: true,
+              ),
+            );
+          }
+
+          // Auto-generate tasks
+          if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
+             Future.microtask(() => 
+               ref.read(listeningTaskProvider.notifier).generate(exercise.id)
+             );
+          }
+
+          return SliverFillRemaining(
+            child: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorColor: LiquidTheme.primaryAccent,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: Colors.white54,
+                      tabs: const [
+                        Tab(text: "Watch"),
+                        Tab(text: "Write"),
+                      ],
+                    ),
+                  ),
+                )
+              ],
+              body: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildWatchTab(exercise),
+                  _buildWriteTab(tasksAsync, aidsAsync, activeLang, exercise),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildVideoPlaceholder() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          height: 200,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(20),
+  Widget _buildWatchTab(ListeningExercise exercise) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // VIDEO PLAYER
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: YoutubePlayer(
+              controller: _videoController!,
+              showVideoProgressIndicator: true,
+              progressIndicatorColor: LiquidTheme.primaryAccent,
+              progressColors: const ProgressBarColors(
+                playedColor: LiquidTheme.primaryAccent,
+                handleColor: LiquidTheme.secondaryAccent,
+              ),
+            ),
           ),
-          child: const Center(
-            child: Icon(Icons.play_circle_fill, size: 64, color: Colors.white54),
+          const SizedBox(height: 20),
+          
+          GlassCard(
+            padding: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(exercise.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                if (exercise.source != null) ...[
+                  const SizedBox(height: 4),
+                  Text("Source: ${exercise.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                ],
+                const SizedBox(height: 16),
+                const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.white54, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(child: Text("Watch the video carefully. You will be asked to summarize it in the next tab.", style: TextStyle(color: Colors.white70, fontSize: 13))),
+                  ],
+                )
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
-        const Text("Video Material Loaded", style: TextStyle(color: Colors.white38)),
-      ],
+          
+          const SizedBox(height: 32),
+          LiquidButton(
+            text: "Start Writing",
+            onTap: () {
+               _videoController?.pause();
+               _tabController.animateTo(1);
+            },
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildWriteTab(
+    AsyncValue<ListeningTasksResponse?> tasksAsync, 
+    AsyncValue<WritingAids?> aidsAsync,
+    String lang,
+    ListeningExercise exercise
+  ) {
+    if (tasksAsync.isLoading) {
+      return const Center(child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text("Generating writing tasks...", style: TextStyle(color: Colors.white54)),
+        ],
+      ));
+    }
+
+    final tasks = tasksAsync.value;
+    if (tasks == null) return const SizedBox();
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // 1. COMPREHENSION TASK
+          GlassCard(
+            padding: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Topic: ${tasks.summary.title}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
+                const SizedBox(height: 8),
+                Text(tasks.summary.prompt, style: const TextStyle(color: Colors.white70)),
+                const SizedBox(height: 12),
+                Container(
+                   padding: const EdgeInsets.all(12),
+                   decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+                       const Text("Questions to answer:", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                       const SizedBox(height: 4),
+                       Text(tasks.comprehension.prompt, style: const TextStyle(fontSize: 13, color: Colors.white70, fontStyle: FontStyle.italic)),
+                     ],
+                   ),
+                )
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+
+          // 2. WRITING AIDS
+          aidsAsync.when(
+            loading: () => const Padding(padding: EdgeInsets.all(16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
+            error: (_,__) => const SizedBox(),
+            data: (aids) {
+              if (aids == null) return const SizedBox();
+              return GlassCard(
+                padding: 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("Sentence Starter", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => _insertText(aids.sentenceStarter),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        width: double.infinity,
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(child: Text('"${aids.sentenceStarter}"', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white))),
+                            const Text("Use this", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text("Vocabulary to Try", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: aids.suggestedVocab.map((vocab) => ActionChip(
+                        label: Text(vocab),
+                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        labelStyle: const TextStyle(color: Colors.white, fontSize: 13),
+                        side: BorderSide.none,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        onPressed: () => _insertText(vocab),
+                      )).toList(),
+                    ),
+                  ],
+                ),
+              );
+            }
+          ),
+
+          const SizedBox(height: 16),
+
+          // 3. EDITOR
+          Container(
+            height: 300,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: TextField(
+              controller: _responseController,
+              maxLines: null,
+              expands: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: "Summarize the video and answer the questions...",
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+
+          LiquidButton(
+            text: _isSubmitting ? "Analyzing..." : "Submit for Analysis",
+            isLoading: _isSubmitting,
+            onTap: _submitExercise,
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitExercise() async {
+    if (_responseController.text.length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please write a bit more!")));
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    _videoController?.pause();
+
+    try {
+      final tasks = ref.read(listeningTaskProvider).value!;
+      final lang = ref.read(activeLanguageProvider);
+      final exercise = ref.read(listeningExerciseProvider).value!;
+
+      // 1. Submit Journal
+      final newEntryId = await ref.read(journalNotifierProvider.notifier).createEntry(
+        tasks.summary.title,
+        _responseController.text,
+        lang,
+        moduleId: widget.moduleId,
+      );
+
+      // 2. Mark Activity Complete (and link the specific listening exercise)
+      if (widget.moduleId != null) {
+        await ref.read(pathNotifierProvider.notifier).updateActivity(
+          widget.moduleId!, 
+          'listening', 
+          true,
+          {'listeningExerciseId': exercise.id}
+        );
+      }
+
+      if (mounted && newEntryId != null) {
+        context.pushReplacement('/journal/$newEntryId');
+      }
+    } catch (e) {
+      if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Submission failed: $e")));
+         setState(() => _isSubmitting = false);
+      }
+    }
   }
 }
 </file>
@@ -4508,23 +4492,6 @@ endif()
 
 <file path="macos/Flutter/Flutter-Release.xcconfig">
 #include "ephemeral/Flutter-Generated.xcconfig"
-</file>
-
-<file path="macos/Flutter/GeneratedPluginRegistrant.swift">
-//
-//  Generated file. Do not edit.
-//
-
-import FlutterMacOS
-import Foundation
-
-import flutter_inappwebview_macos
-import shared_preferences_foundation
-
-func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  InAppWebViewFlutterPlugin.register(with: registry.registrar(forPlugin: "InAppWebViewFlutterPlugin"))
-  SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
-}
 </file>
 
 <file path="macos/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json">
@@ -7880,6 +7847,132 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
 }
 </file>
 
+<file path="lib/ui/screens/study_material_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../../theme/liquid_theme.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+
+class StudyMaterialScreen extends StatefulWidget {
+  final String title;
+  final String content; // Text for Read, VideoID for Listen
+  final String mode; // 'reading' or 'listening'
+  final String moduleId;
+
+  const StudyMaterialScreen({
+    super.key, 
+    required this.title, 
+    required this.content, 
+    required this.mode,
+    required this.moduleId,
+  });
+
+  @override
+  State<StudyMaterialScreen> createState() => _StudyMaterialScreenState();
+}
+
+class _StudyMaterialScreenState extends State<StudyMaterialScreen> {
+  YoutubePlayerController? _videoController;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.mode == 'listening') {
+      _videoController = YoutubePlayerController(
+        initialVideoId: widget.content,
+        flags: const YoutubePlayerFlags(
+          autoPlay: false,
+          mute: false,
+          forceHD: true,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isReading = widget.mode == 'reading';
+
+    return GlassScaffold(
+      title: isReading ? 'Read' : 'Listen',
+      subtitle: widget.title,
+      body: SliverFillRemaining(
+        hasScrollBody: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: GlassCard(
+                padding: isReading ? 24 : 0, // Remove padding for video
+                child: isReading 
+                    ? SingleChildScrollView(
+                        child: Text(
+                          widget.content,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 18,
+                            height: 1.6,
+                          ),
+                        ),
+                      )
+                    : _buildVideoPlayer(),
+              ),
+            ),
+            const SizedBox(height: 24),
+            LiquidButton(
+              text: "Write Summary",
+              onTap: () {
+                _videoController?.pause();
+                context.push(
+                  '/journal/new?moduleId=${widget.moduleId}&mode=${widget.mode}&topic=${Uri.encodeComponent('Summary: ${widget.title}')}',
+                );
+              },
+            ),
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoPlayer() {
+    if (_videoController == null) {
+      return const Center(
+        child: Text("Video unavailable", style: TextStyle(color: Colors.white)),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Center(
+        child: YoutubePlayer(
+          controller: _videoController!,
+          showVideoProgressIndicator: true,
+          progressIndicatorColor: LiquidTheme.primaryAccent,
+          progressColors: const ProgressBarColors(
+            playedColor: LiquidTheme.primaryAccent,
+            handleColor: LiquidTheme.secondaryAccent,
+          ),
+          bottomActions: [
+            CurrentPosition(),
+            ProgressBar(isExpanded: true),
+            RemainingDuration(),
+            const PlaybackSpeedButton(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/screens/translator_screen.dart">
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -8345,52 +8438,21 @@ class MyApp extends ConsumerWidget {
 }
 </file>
 
-<file path="windows/flutter/generated_plugin_registrant.cc">
+<file path="macos/Flutter/GeneratedPluginRegistrant.swift">
 //
 //  Generated file. Do not edit.
 //
 
-// clang-format off
+import FlutterMacOS
+import Foundation
 
-#include "generated_plugin_registrant.h"
+import flutter_inappwebview_macos
+import shared_preferences_foundation
 
-#include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
-#include <permission_handler_windows/permission_handler_windows_plugin.h>
-
-void RegisterPlugins(flutter::PluginRegistry* registry) {
-  FlutterInappwebviewWindowsPluginCApiRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
-  PermissionHandlerWindowsPluginRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("PermissionHandlerWindowsPlugin"));
+func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
+  InAppWebViewFlutterPlugin.register(with: registry.registrar(forPlugin: "InAppWebViewFlutterPlugin"))
+  SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
 }
-</file>
-
-<file path="windows/flutter/generated_plugins.cmake">
-#
-# Generated file, do not edit.
-#
-
-list(APPEND FLUTTER_PLUGIN_LIST
-  flutter_inappwebview_windows
-  permission_handler_windows
-)
-
-list(APPEND FLUTTER_FFI_PLUGIN_LIST
-)
-
-set(PLUGIN_BUNDLED_LIBRARIES)
-
-foreach(plugin ${FLUTTER_PLUGIN_LIST})
-  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})
-  target_link_libraries(${BINARY_NAME} PRIVATE ${plugin}_plugin)
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:${plugin}_plugin>)
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${plugin}_bundled_libraries})
-endforeach(plugin)
-
-foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
-  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${ffi_plugin}/windows plugins/${ffi_plugin})
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${ffi_plugin}_bundled_libraries})
-endforeach(ffi_plugin)
 </file>
 
 <file path=".gitignore">
@@ -9909,195 +9971,6 @@ class _AddLanguageDialogState extends ConsumerState<_AddLanguageDialog> {
 }
 </file>
 
-<file path="lib/ui/screens/study_screen.dart">
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../../models/srs_item.dart';
-import '../../providers/srs_provider.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-
-class StudyScreen extends ConsumerStatefulWidget {
-  const StudyScreen({super.key});
-
-  @override
-  ConsumerState<StudyScreen> createState() => _StudyScreenState();
-}
-
-class _StudyScreenState extends ConsumerState<StudyScreen> {
-  bool isFlipped = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize deck for the current language
-    Future.microtask(() => ref.read(srsProvider.notifier).loadDeck("Spanish"));
-  }
-
-  void _handleReview(int quality) {
-    setState(() => isFlipped = false);
-    ref.read(srsProvider.notifier).answerCard(quality);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final state = ref.watch(srsProvider);
-
-    return GlassScaffold(
-      title: 'Study',
-      subtitle: '${state.deck.length} cards remaining',
-      showBackButton: false,
-      body: SliverFillRemaining(
-        hasScrollBody: false,
-        child: state.isLoading 
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : state.currentCard == null 
-            ? _buildEmptyState()
-            : _buildFlashcard(state.currentCard!),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.auto_awesome, size: 80, color: Colors.white24),
-        const SizedBox(height: 16),
-        const Text("All caught up!", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-        const SizedBox(height: 8),
-        const Text("Come back later for more reviews", style: TextStyle(color: Colors.white38)),
-        const SizedBox(height: 24),
-        LiquidButton(text: "Refresh", onTap: () => ref.read(srsProvider.notifier).loadDeck("Spanish")),
-      ],
-    );
-  }
-
-  Widget _buildFlashcard(SrsItem card) {
-    return Column(
-      children: [
-        const SizedBox(height: 20),
-        // 3D Flip Animation
-        GestureDetector(
-          onTap: () => setState(() => isFlipped = !isFlipped),
-          child: TweenAnimationBuilder(
-            tween: Tween<double>(begin: 0, end: isFlipped ? 180 : 0),
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.easeOutBack,
-            builder: (context, double val, child) {
-              return Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.001) // Perspective
-                  ..rotateY(val * pi / 180),
-                child: val < 90 
-                  ? _CardContent(text: card.front, isFront: true)
-                  : Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.identity()..rotateY(pi),
-                      child: _CardContent(text: card.back, isFront: false, contextInfo: card.context),
-                    ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 40),
-        
-        // Quality Grading Buttons (Only shown when flipped)
-        if (isFlipped) 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _GradeButton(label: "Again", color: Colors.red, val: 0, onTap: _handleReview),
-              _GradeButton(label: "Hard", color: Colors.orange, val: 2, onTap: _handleReview),
-              _GradeButton(label: "Good", color: Colors.green, val: 3, onTap: _handleReview),
-              _GradeButton(label: "Easy", color: Colors.blue, val: 5, onTap: _handleReview),
-            ],
-          ).animate().fadeIn().slideY(begin: 0.2, end: 0)
-        else
-          const Text("Tap card to flip", style: TextStyle(color: Colors.white24)),
-      ],
-    );
-  }
-}
-
-class _CardContent extends StatelessWidget {
-  final String text;
-  final bool isFront;
-  final String? contextInfo;
-  
-  const _CardContent({required this.text, required this.isFront, this.contextInfo});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: 0,
-      child: Container(
-        height: 380,
-        width: double.infinity,
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              isFront ? "QUESTION" : "ANSWER",
-              style: TextStyle(color: isFront ? Colors.indigoAccent : Colors.greenAccent, letterSpacing: 2, fontSize: 12, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              text,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-            if (!isFront && contextInfo != null) ...[
-              const SizedBox(height: 20),
-              Text(
-                contextInfo!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: Colors.white38, fontStyle: FontStyle.italic),
-              ),
-            ]
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GradeButton extends StatelessWidget {
-  final String label;
-  final Color color;
-  final int val;
-  final Function(int) onTap;
-
-  const _GradeButton({required this.label, required this.color, required this.val, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onTap(val),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.5)),
-            ),
-            child: Icon(Icons.check, color: color, size: 20),
-          ),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-}
-</file>
-
 <file path="lib/ui/widgets/liquid_navigation.dart">
 // lib/ui/widgets/liquid_navigation.dart
 import 'dart:ui';
@@ -10319,6 +10192,54 @@ void main() {
       expect(find.byType(PathScreen), findsOneWidget);
   });
 }
+</file>
+
+<file path="windows/flutter/generated_plugin_registrant.cc">
+//
+//  Generated file. Do not edit.
+//
+
+// clang-format off
+
+#include "generated_plugin_registrant.h"
+
+#include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
+#include <permission_handler_windows/permission_handler_windows_plugin.h>
+
+void RegisterPlugins(flutter::PluginRegistry* registry) {
+  FlutterInappwebviewWindowsPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
+  PermissionHandlerWindowsPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("PermissionHandlerWindowsPlugin"));
+}
+</file>
+
+<file path="windows/flutter/generated_plugins.cmake">
+#
+# Generated file, do not edit.
+#
+
+list(APPEND FLUTTER_PLUGIN_LIST
+  flutter_inappwebview_windows
+  permission_handler_windows
+)
+
+list(APPEND FLUTTER_FFI_PLUGIN_LIST
+)
+
+set(PLUGIN_BUNDLED_LIBRARIES)
+
+foreach(plugin ${FLUTTER_PLUGIN_LIST})
+  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/windows plugins/${plugin})
+  target_link_libraries(${BINARY_NAME} PRIVATE ${plugin}_plugin)
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:${plugin}_plugin>)
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${plugin}_bundled_libraries})
+endforeach(plugin)
+
+foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
+  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${ffi_plugin}/windows plugins/${ffi_plugin})
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${ffi_plugin}_bundled_libraries})
+endforeach(ffi_plugin)
 </file>
 
 <file path="lib/providers/user_provider.dart">
@@ -10795,303 +10716,6 @@ class SrsService {
 final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
 </file>
 
-<file path="lib/ui/screens/module_detail_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../../providers/path_provider.dart';
-import '../../theme/liquid_theme.dart';
-
-class ModuleDetailScreen extends ConsumerWidget {
-  final String moduleId;
-  const ModuleDetailScreen({super.key, required this.moduleId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pathAsync = ref.watch(learningPathProvider);
-
-    return pathAsync.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text("Error: $e"))),
-      data: (modules) {
-        final module = modules.firstWhere((m) => m.id == moduleId, orElse: () => modules.first);
-        final activities = module.activities;
-
-        return GlassScaffold(
-          title: module.title,
-          subtitle: "Focus: ${module.targetConceptTag.replaceAll('_', ' ')}",
-          body: SliverList(
-            delegate: SliverChildListDelegate([
-              // 1. Micro Lesson
-              const Text("MICRO-LESSON", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12)),
-              const SizedBox(height: 12),
-              GlassCard(
-                child: MarkdownBody(
-                  data: module.microLesson,
-                  styleSheet: MarkdownStyleSheet(
-                    p: const TextStyle(
-                      color: Colors.white,
-                      height: 1.6,
-                      fontSize: 15,
-                    ),
-                    h1: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                    ),
-                    strong: const TextStyle(
-                      color: LiquidTheme.primaryAccent,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // 2. Dynamic Activities List
-              const Text(
-                "ACTIVITIES",
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              ..._buildActivityTiles(context, activities, moduleId),
-
-              const SizedBox(height: 32),
-
-              // 3. Completion Logic
-              if (module.status != 'COMPLETED')
-                LiquidButton(
-                  text: _isAllDone(activities)
-                      ? "Check My Understanding"
-                      : "Complete Activities to Finish",
-                  onTap: _isAllDone(activities)
-                      ? () => ref
-                            .read(pathNotifierProvider.notifier)
-                            .completeModule(module.id)
-                      : () {},
-                )
-              else
-                const Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.greenAccent),
-                      SizedBox(width: 8),
-                      Text(
-                        "Module Mastered",
-                        style: TextStyle(
-                          color: Colors.greenAccent,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ]),
-          ),
-        );
-      },
-    );
-  }
-
-  bool _isAllDone(Map<String, dynamic> activities) {
-    return activities.values.every((a) => a['completed'] == true);
-  }
-
-  List<Widget> _buildActivityTiles(
-    BuildContext context,
-    Map<String, dynamic> activities,
-    String moduleId,
-  ) {
-    List<Widget> tiles = [];
-
-    // Writing
-    if (activities.containsKey('writing')) {
-      final act = activities['writing'];
-      tiles.add(
-        _ActivityTile(
-          title: "Write a journal entry",
-          subtitle: act['title'] ?? "Apply what you've learned",
-          isCompleted: act['completed'] == true,
-          icon: Icons.edit_note,
-          onTap: () => context.push(
-            '/journal/new?moduleId=$moduleId&topic=${Uri.encodeComponent(act['title'])}',
-          ),
-        ),
-      );
-    }
-
-    // SRS
-    if (activities.containsKey('srs')) {
-      final act = activities['srs'];
-      tiles.add(
-        _ActivityTile(
-          title: "Study Session",
-          subtitle: "Reinforce with Spaced Repetition",
-          isCompleted: act['completed'] == true,
-          icon: Icons.psychology,
-          onTap: () => context.go('/study'),
-        ),
-      );
-    }
-
-    // Drill
-    if (activities.containsKey('drill')) {
-      final act = activities['drill'];
-      tiles.add(
-        _ActivityTile(
-          title: "Practice Drill",
-          subtitle: act['explanation'] ?? "Targeted exercise",
-          isCompleted: act['completed'] == true,
-          icon: Icons.ads_click,
-          onTap: () => context.push('/path/drill/$moduleId'),
-        ),
-      );
-    }
-
-    // Reading
-    if (activities.containsKey('reading')) {
-      final act = activities['reading'];
-      tiles.add(
-        _ActivityTile(
-          title: "Read & Write",
-          subtitle: "Comprehension challenge",
-          isCompleted: act['completed'] == true,
-          icon: Icons.menu_book,
-          onTap: () => context.push('/path/read?moduleId=$moduleId'),
-        ),
-      );
-    }
-
-    // Listening
-    if (activities.containsKey('listening')) {
-      final act = activities['listening'];
-      tiles.add(
-        _ActivityTile(
-          title: "Listen & Write",
-          subtitle: "Video comprehension",
-          isCompleted: act['completed'] == true,
-          icon: Icons.headset,
-          onTap: () => context.push('/path/listen?moduleId=$moduleId'),
-        ),
-      );
-    }
-
-    // Audio Journal
-    if (activities.containsKey('audio_journal')) {
-      tiles.add(
-        _ActivityTile(
-          title: "Speak a Journal Entry",
-          subtitle: "Verbal fluency practice",
-          isCompleted: activities['audio_journal']['completed'] == true,
-          icon: Icons.mic,
-          onTap: () => context.push(
-            '/journal/new?moduleId=$moduleId&mode=audio_journal&topic=${Uri.encodeComponent('Spoken Entry')}',
-          ),
-        ),
-      );
-    }
-
-    // Describe Image
-    if (activities.containsKey('describe_image')) {
-      final act = activities['describe_image'];
-      tiles.add(
-        _ActivityTile(
-          title: "Describe an Image",
-          subtitle: "Visual vocabulary practice",
-          isCompleted: act['completed'] == true,
-          icon: Icons.image,
-          onTap: () => context.push(
-            '/journal/new?moduleId=$moduleId&mode=describe_image&imageUrl=${Uri.encodeComponent(act['imageUrl'])}&topic=${Uri.encodeComponent(act['title'] ?? 'Image Description')}',
-          ),
-        ),
-      );
-    }
-
-    return tiles;
-  }
-}
-
-class _ActivityTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool isCompleted;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _ActivityTile({
-    required this.title,
-    required this.subtitle,
-    required this.isCompleted,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isCompleted ? null : onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isCompleted
-              ? Colors.greenAccent.withValues(alpha: 0.05)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isCompleted
-                ? Colors.greenAccent.withValues(alpha: 0.3)
-                : Colors.white10,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isCompleted ? Icons.check_circle : icon,
-              color: isCompleted ? Colors.greenAccent : Colors.white70,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isCompleted ? Colors.white60 : Colors.white,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            if (!isCompleted)
-              const Icon(
-                Icons.arrow_forward_ios,
-                size: 14,
-                color: Colors.white24,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-</file>
-
 <file path="lib/ui/screens/progress_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11275,6 +10899,203 @@ class ProgressScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/screens/study_screen.dart">
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../../models/srs_item.dart';
+import '../../providers/srs_provider.dart';
+import '../../providers/user_provider.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+
+class StudyScreen extends ConsumerStatefulWidget {
+  const StudyScreen({super.key});
+
+  @override
+  ConsumerState<StudyScreen> createState() => _StudyScreenState();
+}
+
+class _StudyScreenState extends ConsumerState<StudyScreen> {
+  bool isFlipped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize deck for the current active language defined in user profile
+    Future.microtask(() {
+      final lang = ref.read(activeLanguageProvider);
+      ref.read(srsProvider.notifier).loadDeck(lang);
+    });
+  }
+
+  void _handleReview(int quality) {
+    setState(() => isFlipped = false);
+    ref.read(srsProvider.notifier).answerCard(quality);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(srsProvider);
+    final activeLang = ref.watch(activeLanguageProvider);
+
+    return GlassScaffold(
+      title: 'Study',
+      subtitle: '${state.deck.length} cards remaining',
+      showBackButton: false,
+      body: SliverFillRemaining(
+        hasScrollBody: false,
+        child: state.isLoading 
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
+          : state.currentCard == null 
+            ? _buildEmptyState(activeLang)
+            : _buildFlashcard(state.currentCard!),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(String lang) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.auto_awesome, size: 80, color: Colors.white24),
+        const SizedBox(height: 16),
+        const Text("All caught up!", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+        const SizedBox(height: 8),
+        const Text("Come back later for more reviews", style: TextStyle(color: Colors.white38)),
+        const SizedBox(height: 24),
+        LiquidButton(
+          text: "Refresh",
+          onTap: () => ref.read(srsProvider.notifier).loadDeck(lang),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFlashcard(SrsItem card) {
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        // 3D Flip Animation
+        GestureDetector(
+          onTap: () => setState(() => isFlipped = !isFlipped),
+          child: TweenAnimationBuilder(
+            tween: Tween<double>(begin: 0, end: isFlipped ? 180 : 0),
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeOutBack,
+            builder: (context, double val, child) {
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.001) // Perspective
+                  ..rotateY(val * pi / 180),
+                child: val < 90 
+                  ? _CardContent(text: card.front, isFront: true)
+                  : Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.identity()..rotateY(pi),
+                      child: _CardContent(text: card.back, isFront: false, contextInfo: card.context),
+                    ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 40),
+        
+        // Quality Grading Buttons (Only shown when flipped)
+        if (isFlipped) 
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _GradeButton(label: "Again", color: Colors.red, val: 0, onTap: _handleReview),
+              _GradeButton(label: "Hard", color: Colors.orange, val: 2, onTap: _handleReview),
+              _GradeButton(label: "Good", color: Colors.green, val: 3, onTap: _handleReview),
+              _GradeButton(label: "Easy", color: Colors.blue, val: 5, onTap: _handleReview),
+            ],
+          ).animate().fadeIn().slideY(begin: 0.2, end: 0)
+        else
+          const Text("Tap card to flip", style: TextStyle(color: Colors.white24)),
+      ],
+    );
+  }
+}
+
+class _CardContent extends StatelessWidget {
+  final String text;
+  final bool isFront;
+  final String? contextInfo;
+  
+  const _CardContent({required this.text, required this.isFront, this.contextInfo});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: 0,
+      child: Container(
+        height: 380,
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              isFront ? "QUESTION" : "ANSWER",
+              style: TextStyle(color: isFront ? Colors.indigoAccent : Colors.greenAccent, letterSpacing: 2, fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            if (!isFront && contextInfo != null) ...[
+              const SizedBox(height: 20),
+              Text(
+                contextInfo!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: Colors.white38, fontStyle: FontStyle.italic),
+              ),
+            ]
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GradeButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final int val;
+  final Function(int) onTap;
+
+  const _GradeButton({required this.label, required this.color, required this.val, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onTap(val),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withValues(alpha: 0.5)),
+            ),
+            child: Icon(Icons.check, color: color, size: 20),
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }
@@ -11901,6 +11722,303 @@ class UserService {
 final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
 </file>
 
+<file path="lib/ui/screens/module_detail_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+import '../../providers/path_provider.dart';
+import '../../theme/liquid_theme.dart';
+
+class ModuleDetailScreen extends ConsumerWidget {
+  final String moduleId;
+  const ModuleDetailScreen({super.key, required this.moduleId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pathAsync = ref.watch(learningPathProvider);
+
+    return pathAsync.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(body: Center(child: Text("Error: $e"))),
+      data: (modules) {
+        final module = modules.firstWhere((m) => m.id == moduleId, orElse: () => modules.first);
+        final activities = module.activities;
+
+        return GlassScaffold(
+          title: module.title,
+          subtitle: "Focus: ${module.targetConceptTag.replaceAll('_', ' ')}",
+          body: SliverList(
+            delegate: SliverChildListDelegate([
+              // 1. Micro Lesson
+              const Text("MICRO-LESSON", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 12),
+              GlassCard(
+                child: MarkdownBody(
+                  data: module.microLesson,
+                  styleSheet: MarkdownStyleSheet(
+                    p: const TextStyle(
+                      color: Colors.white,
+                      height: 1.6,
+                      fontSize: 15,
+                    ),
+                    h1: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 22,
+                    ),
+                    strong: const TextStyle(
+                      color: LiquidTheme.primaryAccent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // 2. Dynamic Activities List
+              const Text(
+                "ACTIVITIES",
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              ..._buildActivityTiles(context, activities, moduleId),
+
+              const SizedBox(height: 32),
+
+              // 3. Completion Logic
+              if (module.status != 'COMPLETED')
+                LiquidButton(
+                  text: _isAllDone(activities)
+                      ? "Check My Understanding"
+                      : "Complete Activities to Finish",
+                  onTap: _isAllDone(activities)
+                      ? () => ref
+                            .read(pathNotifierProvider.notifier)
+                            .completeModule(module.id)
+                      : () {},
+                )
+              else
+                const Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.greenAccent),
+                      SizedBox(width: 8),
+                      Text(
+                        "Module Mastered",
+                        style: TextStyle(
+                          color: Colors.greenAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  bool _isAllDone(Map<String, dynamic> activities) {
+    return activities.values.every((a) => a['completed'] == true);
+  }
+
+  List<Widget> _buildActivityTiles(
+    BuildContext context,
+    Map<String, dynamic> activities,
+    String moduleId,
+  ) {
+    List<Widget> tiles = [];
+
+    // Writing
+    if (activities.containsKey('writing')) {
+      final act = activities['writing'];
+      tiles.add(
+        _ActivityTile(
+          title: "Write a journal entry",
+          subtitle: act['title'] ?? "Apply what you've learned",
+          isCompleted: act['completed'] == true,
+          icon: Icons.edit_note,
+          onTap: () => context.push(
+            '/journal/new?moduleId=$moduleId&topic=${Uri.encodeComponent(act['title'])}',
+          ),
+        ),
+      );
+    }
+
+    // SRS
+    if (activities.containsKey('srs')) {
+      final act = activities['srs'];
+      tiles.add(
+        _ActivityTile(
+          title: "Study Session",
+          subtitle: "Reinforce with Spaced Repetition",
+          isCompleted: act['completed'] == true,
+          icon: Icons.psychology,
+          onTap: () => context.go('/study'),
+        ),
+      );
+    }
+
+    // Drill
+    if (activities.containsKey('drill')) {
+      final act = activities['drill'];
+      tiles.add(
+        _ActivityTile(
+          title: "Practice Drill",
+          subtitle: act['explanation'] ?? "Targeted exercise",
+          isCompleted: act['completed'] == true,
+          icon: Icons.ads_click,
+          onTap: () => context.push('/path/drill/$moduleId'),
+        ),
+      );
+    }
+
+    // Reading
+    if (activities.containsKey('reading')) {
+      final act = activities['reading'];
+      tiles.add(
+        _ActivityTile(
+          title: "Read & Write",
+          subtitle: "Comprehension challenge",
+          isCompleted: act['completed'] == true,
+          icon: Icons.menu_book,
+          onTap: () => context.push('/path/read?moduleId=$moduleId'),
+        ),
+      );
+    }
+
+    // Listening
+    if (activities.containsKey('listening')) {
+      final act = activities['listening'];
+      tiles.add(
+        _ActivityTile(
+          title: "Listen & Write",
+          subtitle: "Video comprehension",
+          isCompleted: act['completed'] == true,
+          icon: Icons.headset,
+          onTap: () => context.push('/path/listen?moduleId=$moduleId'),
+        ),
+      );
+    }
+
+    // Audio Journal
+    if (activities.containsKey('audio_journal')) {
+      tiles.add(
+        _ActivityTile(
+          title: "Speak a Journal Entry",
+          subtitle: "Verbal fluency practice",
+          isCompleted: activities['audio_journal']['completed'] == true,
+          icon: Icons.mic,
+          onTap: () => context.push(
+            '/journal/new?moduleId=$moduleId&mode=audio_journal&topic=${Uri.encodeComponent('Spoken Entry')}',
+          ),
+        ),
+      );
+    }
+
+    // Describe Image
+    if (activities.containsKey('describe_image')) {
+      final act = activities['describe_image'];
+      tiles.add(
+        _ActivityTile(
+          title: "Describe an Image",
+          subtitle: "Visual vocabulary practice",
+          isCompleted: act['completed'] == true,
+          icon: Icons.image,
+          onTap: () => context.push(
+            '/journal/new?moduleId=$moduleId&mode=describe_image&imageUrl=${Uri.encodeComponent(act['imageUrl'])}&topic=${Uri.encodeComponent(act['title'] ?? 'Image Description')}',
+          ),
+        ),
+      );
+    }
+
+    return tiles;
+  }
+}
+
+class _ActivityTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool isCompleted;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _ActivityTile({
+    required this.title,
+    required this.subtitle,
+    required this.isCompleted,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isCompleted ? null : onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isCompleted
+              ? Colors.greenAccent.withValues(alpha: 0.05)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isCompleted
+                ? Colors.greenAccent.withValues(alpha: 0.3)
+                : Colors.white10,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isCompleted ? Icons.check_circle : icon,
+              color: isCompleted ? Colors.greenAccent : Colors.white70,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isCompleted ? Colors.white60 : Colors.white,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            if (!isCompleted)
+              const Icon(
+                Icons.arrow_forward_ios,
+                size: 14,
+                color: Colors.white24,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/providers/auth_provider.dart">
 // lib/providers/auth_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12066,6 +12184,173 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
     ref.watch(tokenServiceProvider(TokenType.refresh)),
   );
 });
+</file>
+
+<file path="lib/services/auth_service.dart">
+// lib/services/auth_service.dart
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+
+import 'package:lexity_mobile/services/token_service.dart';
+
+import 'logger_service.dart';
+import '../utils/constants.dart';
+
+class AuthService {
+  final Ref ref;
+  late final LoggerService _logger;
+  late final TokenService _authTokenService;
+  late final TokenService _refreshTokenService;
+
+  AuthService(this.ref) {
+    _logger = ref.read(loggerProvider);
+    _authTokenService = ref.read(tokenServiceProvider(TokenType.auth));
+    _refreshTokenService = ref.read(tokenServiceProvider(TokenType.refresh));
+  }
+
+  Future<bool> login(String email, String password) async {
+    _logger.info('AuthService: Attempting login for user: $email');
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      _logger.debug(
+        'AuthService: Login response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _logger.debug('AuthService: Login response body: $data');
+
+        if (data['access_token'] != null) {
+          await _authTokenService.saveToken(data['access_token']);
+          _logger.info(
+            'AuthService: Login successful (flat structure) for user: $email',
+          );
+
+          _logger.info('DATA FROM LOGIN RESPONSE: $data');
+          
+          // NEW: Sync user immediately after login to ensure DB profile exists
+          await _syncUser(data['access_token']);
+        }
+        if (data['refresh_token'] != null) {
+          await _refreshTokenService.saveToken(data['refresh_token']);
+          _logger.info(
+            'AuthService: Login successful (nested structure) for user: $email',
+          );
+        }
+        return true;
+      }
+
+      final body = jsonDecode(response.body);
+      final errorMsg = body['error'] ?? 'Login failed';
+      _logger.warning(
+        'AuthService: Login failed for user: $email. Reason: $errorMsg',
+      );
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('AuthService: Login error for user: $email', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<bool> signUp(String email, String password) async {
+    _logger.info('AuthService: Attempting signup for user: $email');
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      _logger.debug(
+        'AuthService: Signup response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['session'] != null &&
+            data['session']['access_token'] != null) {
+          _logger.info('DATA FROM SIGNUP RESPONSE: $data');
+          await _authTokenService.saveToken(data['session']['access_token']);
+          _logger.info('AuthService: Signup successful for user: $email');
+          return true;
+        }
+      }
+      final errorMsg = jsonDecode(response.body)['error'] ?? 'Signup failed';
+      _logger.warning(
+        'AuthService: Signup failed for user: $email. Reason: $errorMsg',
+      );
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error(
+        'AuthService: Signup error for user: $email',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  Future<List<String>> refreshToken(String refreshToken) async {
+    _logger.info('AuthService: Attempting to refresh token');
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refreshToken}),
+      );
+      List<String> authResponse = [];
+
+      _logger.debug(
+        'AuthService: Refresh token response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['access_token'] != null) {
+          await _authTokenService.saveToken(data['access_token']);
+          _logger.info('AuthService: Token refreshed successfully');
+          authResponse.add(data['access_token']);
+        }
+        if (data['refresh_token'] != null) {
+          await _refreshTokenService.saveToken(data['refresh_token']);
+          _logger.info('AuthService: Refresh token refreshed successfully');
+          authResponse.add(data['refresh_token']);
+        }
+        return authResponse;
+      }
+      final errorMsg =
+          jsonDecode(response.body)['error'] ?? 'Refresh token failed';
+      _logger.warning('AuthService: Refresh token failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('AuthService: Refresh token error', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  // NEW METHOD
+  Future<void> _syncUser(String token) async {
+    try {
+      await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/auth/sync-user'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (e) {
+      _logger.warning('AuthService: User sync failed (non-critical)', e);
+    }
+  }
+}
+
+final authServiceProvider = Provider((ref) => AuthService(ref));
 </file>
 
 <file path="pubspec.lock">
@@ -13127,173 +13412,6 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-</file>
-
-<file path="lib/services/auth_service.dart">
-// lib/services/auth_service.dart
-import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-
-import 'package:lexity_mobile/services/token_service.dart';
-
-import 'logger_service.dart';
-import '../utils/constants.dart';
-
-class AuthService {
-  final Ref ref;
-  late final LoggerService _logger;
-  late final TokenService _authTokenService;
-  late final TokenService _refreshTokenService;
-
-  AuthService(this.ref) {
-    _logger = ref.read(loggerProvider);
-    _authTokenService = ref.read(tokenServiceProvider(TokenType.auth));
-    _refreshTokenService = ref.read(tokenServiceProvider(TokenType.refresh));
-  }
-
-  Future<bool> login(String email, String password) async {
-    _logger.info('AuthService: Attempting login for user: $email');
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
-      );
-
-      _logger.debug(
-        'AuthService: Login response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _logger.debug('AuthService: Login response body: $data');
-
-        if (data['access_token'] != null) {
-          await _authTokenService.saveToken(data['access_token']);
-          _logger.info(
-            'AuthService: Login successful (flat structure) for user: $email',
-          );
-
-          _logger.info('DATA FROM LOGIN RESPONSE: $data');
-          
-          // NEW: Sync user immediately after login to ensure DB profile exists
-          await _syncUser(data['access_token']);
-        }
-        if (data['refresh_token'] != null) {
-          await _refreshTokenService.saveToken(data['refresh_token']);
-          _logger.info(
-            'AuthService: Login successful (nested structure) for user: $email',
-          );
-        }
-        return true;
-      }
-
-      final body = jsonDecode(response.body);
-      final errorMsg = body['error'] ?? 'Login failed';
-      _logger.warning(
-        'AuthService: Login failed for user: $email. Reason: $errorMsg',
-      );
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('AuthService: Login error for user: $email', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<bool> signUp(String email, String password) async {
-    _logger.info('AuthService: Attempting signup for user: $email');
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
-      );
-
-      _logger.debug(
-        'AuthService: Signup response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['session'] != null &&
-            data['session']['access_token'] != null) {
-          _logger.info('DATA FROM SIGNUP RESPONSE: $data');
-          await _authTokenService.saveToken(data['session']['access_token']);
-          _logger.info('AuthService: Signup successful for user: $email');
-          return true;
-        }
-      }
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Signup failed';
-      _logger.warning(
-        'AuthService: Signup failed for user: $email. Reason: $errorMsg',
-      );
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error(
-        'AuthService: Signup error for user: $email',
-        e,
-        stackTrace,
-      );
-      rethrow;
-    }
-  }
-
-  Future<List<String>> refreshToken(String refreshToken) async {
-    _logger.info('AuthService: Attempting to refresh token');
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refresh_token': refreshToken}),
-      );
-      List<String> authResponse = [];
-
-      _logger.debug(
-        'AuthService: Refresh token response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['access_token'] != null) {
-          await _authTokenService.saveToken(data['access_token']);
-          _logger.info('AuthService: Token refreshed successfully');
-          authResponse.add(data['access_token']);
-        }
-        if (data['refresh_token'] != null) {
-          await _refreshTokenService.saveToken(data['refresh_token']);
-          _logger.info('AuthService: Refresh token refreshed successfully');
-          authResponse.add(data['refresh_token']);
-        }
-        return authResponse;
-      }
-      final errorMsg =
-          jsonDecode(response.body)['error'] ?? 'Refresh token failed';
-      _logger.warning('AuthService: Refresh token failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('AuthService: Refresh token error', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  // NEW METHOD
-  Future<void> _syncUser(String token) async {
-    try {
-      await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/sync-user'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-    } catch (e) {
-      _logger.warning('AuthService: User sync failed (non-critical)', e);
-    }
-  }
-}
-
-final authServiceProvider = Provider((ref) => AuthService(ref));
 </file>
 
 <file path="lib/router/router.dart">

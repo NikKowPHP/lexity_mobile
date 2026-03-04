@@ -49,6 +49,8 @@ dependencies:
   fl_chart: ^0.68.0
   flutter_markdown: any
   youtube_player_flutter: ^9.0.1
+  file_picker: ^10.3.10
+  flutter_inappwebview: ^6.1.5
 
 
 dev_dependencies:

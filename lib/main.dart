@@ -8,6 +8,7 @@ import 'theme/liquid_theme.dart';
 import 'ui/widgets/liquid_components.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

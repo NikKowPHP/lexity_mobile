@@ -14,9 +14,10 @@ class LiquidNavigation extends StatelessWidget {
     (icon: LucideIcons.map, label: 'Path'),           // Index 0
     (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
     (icon: LucideIcons.penTool, label: 'Journal'),    // Index 2
-    (icon: LucideIcons.barChart2, label: 'Progress'), // Index 3
-    (icon: LucideIcons.user, label: 'Profile'),      // Index 4
-    (icon: LucideIcons.languages, label: 'Translator'), // Index 5
+    (icon: LucideIcons.library, label: 'Library'), // Index 3
+    (icon: LucideIcons.barChart2, label: 'Progress'), // Index 4
+    (icon: LucideIcons.user, label: 'Profile'), // Index 5
+    (icon: LucideIcons.languages, label: 'Translator'), // Index 6
   ];
 
   void _onTap(int index) {

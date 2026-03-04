@@ -1,0 +1,19 @@
+{
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "inlineData": {
+              "mimeType": "text/xml",
+              "data": "aGV5"
+            }
+          },
+          {
+            "text": "hey"
+          }
+        ]
+      }
+    ],
+   
+}

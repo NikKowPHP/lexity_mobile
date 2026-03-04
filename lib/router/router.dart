@@ -18,6 +18,8 @@ import '../ui/screens/drill_screen.dart';
 import '../ui/screens/study_material_screen.dart';
 import '../ui/screens/reading_screen.dart';
 import '../ui/screens/listening_screen.dart';
+import '../ui/screens/library_screen.dart';
+import '../ui/screens/book_reader_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -166,7 +168,25 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 3: Progress
+          // Branch 3: Library
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/library',
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const LibraryScreen(), state),
+                routes: [
+                  GoRoute(
+                    path: 'book/:id',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        BookReaderScreen(bookId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Branch 4: Progress
           StatefulShellBranch(
             routes: [
               GoRoute(

@@ -108,6 +108,42 @@ class AIService {
       rethrow;
     }
   }
+
+  // Call 3: Contextual Translation (for reading tooltips)
+  Future<Map<String, dynamic>> contextualTranslate({
+    required String selectedText,
+    required String context,
+    required String sourceLanguage,
+    required String targetLanguage,
+    required String nativeLanguage,
+  }) async {
+    _logger.info('AIService: Requesting contextual translation');
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/ai/contextual-translate'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'selectedText': selectedText,
+          'context': context,
+          'sourceLanguage': sourceLanguage,
+          'targetLanguage': targetLanguage,
+          'nativeLanguage': nativeLanguage,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      throw Exception('Contextual translation failed');
+    } catch (e, stackTrace) {
+      _logger.error(
+        'AIService: Error during contextualTranslate',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+  }
 }
 
 final aiServiceProvider = Provider(
