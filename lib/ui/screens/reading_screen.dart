@@ -190,7 +190,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
                 ),
               ),
             ),
-            error: (_, __) => const SizedBox(),
+            error: (_, _) => const SizedBox(),
             data: (aids) {
               if (aids == null) return const SizedBox();
               return GlassCard(

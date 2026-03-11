@@ -76,8 +76,7 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
         ),
         data: (exercise) {
           // Initialize Video Controller once
-          if (_videoController == null) {
-            _videoController = YoutubePlayerController(
+          _videoController ??= YoutubePlayerController(
               initialVideoId: exercise.videoId,
               flags: const YoutubePlayerFlags(
                 autoPlay: false,
@@ -85,7 +84,6 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
                 forceHD: true,
               ),
             );
-          }
 
           // Auto-generate tasks
           if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
@@ -235,7 +233,7 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
           // 2. WRITING AIDS
           aidsAsync.when(
             loading: () => const Padding(padding: EdgeInsets.all(16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
-            error: (_,__) => const SizedBox(),
+            error: (_,_) => const SizedBox(),
             data: (aids) {
               if (aids == null) return const SizedBox();
               return GlassCard(

@@ -140,6 +140,7 @@ ios/
 lib/
   models/
     analytics.dart
+    book.dart
     journal_entry.dart
     learning_module.dart
     listening_models.dart
@@ -151,6 +152,7 @@ lib/
   providers/
     analytics_provider.dart
     auth_provider.dart
+    book_provider.dart
     journal_provider.dart
     listening_provider.dart
     path_provider.dart
@@ -164,6 +166,7 @@ lib/
     ai_service.dart
     analytics_service.dart
     auth_service.dart
+    book_service.dart
     journal_service.dart
     learning_path_service.dart
     listening_service.dart
@@ -176,11 +179,13 @@ lib/
     liquid_theme.dart
   ui/
     screens/
+      book_reader_screen.dart
       drill_screen.dart
       home_shell.dart
       journal_detail_screen.dart
       journal_editor_screen.dart
       journal_screen.dart
+      library_screen.dart
       listening_screen.dart
       login_screen.dart
       module_detail_screen.dart
@@ -197,6 +202,7 @@ lib/
       glass_scaffold.dart
       liquid_components.dart
       liquid_navigation.dart
+      translation_tooltip.dart
   utils/
     constants.dart
   main.dart
@@ -257,6 +263,7 @@ macos/
     RunnerTests.swift
   .gitignore
 test/
+  book_test.dart
   logger_test.dart
   login_navigation_test.dart
   login_navigation_test.mocks.dart
@@ -305,64 +312,6 @@ test.sh
 
 <files>
 This section contains the contents of the repository's files.
-
-<file path="request.json">
-{
-    "contents": [
-      {
-        "role": "user",
-        "parts": [
-          {
-            "inlineData": {
-              "mimeType": "text/xml",
-              "data": "aGV5"
-            }
-          },
-          {
-            "text": "hey"
-          }
-        ]
-      }
-    ],
-   
-}
-</file>
-
-<file path="test.sh">
-#!/bin/bash
-set -e -E
-
-GEMINI_API_KEY="AIzaSyBIqqKTyMD3-i9eQbVFRGYxxgmUJcf84_o"
-MODEL_ID="gemini-3-flash-preview"
-GENERATE_CONTENT_API="streamGenerateContent"
-
-cat << EOF > request.json
-{
-    "contents": [
-      {
-        "role": "user",
-        "parts": [
-          {
-            "inlineData": {
-              "mimeType": "text/xml",
-              "data": "aGV5"
-            }
-          },
-          {
-            "text": "hey"
-          }
-        ]
-      }
-    ],
-   
-}
-EOF
-
-curl \
--X POST \
--H "Content-Type: application/json" \
-"https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:${GENERATE_CONTENT_API}?key=${GEMINI_API_KEY}" -d '@request.json'
-</file>
 
 <file path="android/app/src/debug/AndroidManifest.xml">
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -2025,6 +1974,49 @@ class PracticeConcept {
 }
 </file>
 
+<file path="lib/models/book.dart">
+class UserBook {
+  final String id;
+  final String title;
+  final String? author;
+  final String targetLanguage;
+  final String storagePath;
+  final String? coverImageUrl;
+  final String? currentCfi;
+  final double progressPct;
+  final DateTime createdAt;
+  final String? signedUrl;
+
+  UserBook({
+    required this.id,
+    required this.title,
+    this.author,
+    required this.targetLanguage,
+    required this.storagePath,
+    this.coverImageUrl,
+    this.currentCfi,
+    required this.progressPct,
+    required this.createdAt,
+    this.signedUrl,
+  });
+
+  factory UserBook.fromJson(Map<String, dynamic> json) {
+    return UserBook(
+      id: json['id'],
+      title: json['title'] ?? 'Unknown Title',
+      author: json['author'],
+      targetLanguage: json['targetLanguage'] ?? 'spanish',
+      storagePath: json['storagePath'] ?? '',
+      coverImageUrl: json['coverImageUrl'],
+      currentCfi: json['currentCfi'],
+      progressPct: (json['progressPct'] ?? 0).toDouble(),
+      createdAt: DateTime.parse(json['createdAt']),
+      signedUrl: json['signedUrl'],
+    );
+  }
+}
+</file>
+
 <file path="lib/models/journal_entry.dart">
 class JournalEntry {
   final String id;
@@ -2365,6 +2357,63 @@ final practiceAnalyticsProvider = FutureProvider.autoDispose<List<PracticeConcep
 });
 </file>
 
+<file path="lib/providers/book_provider.dart">
+import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/book.dart';
+import '../services/book_service.dart';
+
+final booksProvider = FutureProvider.autoDispose<List<UserBook>>((ref) async {
+  final service = ref.watch(bookServiceProvider);
+  return service.getBooks();
+});
+
+final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((ref, id) async {
+  final service = ref.watch(bookServiceProvider);
+  return service.getBook(id);
+});
+
+class BookNotifier extends StateNotifier<AsyncValue<void>> {
+  final BookService _service;
+  final Ref _ref;
+
+  BookNotifier(this._service, this._ref) : super(const AsyncValue.data(null));
+
+  Future<void> uploadBook(File file, String targetLanguage, String title) async {
+    state = const AsyncValue.loading();
+    try {
+      await _service.uploadBook(file, targetLanguage, title);
+      _ref.invalidate(booksProvider);
+      state = const AsyncValue.data(null);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> deleteBook(String id) async {
+    try {
+      await _service.deleteBook(id);
+      _ref.invalidate(booksProvider);
+    } catch (e) {
+      // handle error gracefully
+    }
+  }
+
+  Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    try {
+      await _service.updateProgress(id, cfi, progressPct);
+    } catch (e) {
+      // Don't interrupt reading if saving progress fails silently
+    }
+  }
+}
+
+final bookNotifierProvider = StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
+  return BookNotifier(ref.watch(bookServiceProvider), ref);
+});
+</file>
+
 <file path="lib/providers/listening_provider.dart">
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/listening_models.dart';
@@ -2586,6 +2635,123 @@ class TranslatorNotifier extends StateNotifier<TranslatorState> {
 final translatorProvider = StateNotifierProvider<TranslatorNotifier, TranslatorState>((ref) {
   return TranslatorNotifier(ref.watch(aiServiceProvider));
 });
+</file>
+
+<file path="lib/services/book_service.dart">
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/book.dart';
+import '../utils/constants.dart';
+import 'token_service.dart';
+import 'logger_service.dart';
+
+class BookService {
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  BookService(this._authTokenService, this._logger);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<UserBook>> getBooks() async {
+    _logger.info('BookService: Fetching books');
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/books'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final List data = jsonDecode(response.body);
+      return data.map((e) => UserBook.fromJson(e)).toList();
+    }
+    throw Exception('Failed to load books');
+  }
+
+  Future<UserBook> getBook(String id) async {
+    _logger.info('BookService: Fetching book details for $id');
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      return UserBook.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load book');
+  }
+
+  Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    await http.put(
+      Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
+      headers: await _getHeaders(),
+      body: jsonEncode({'currentCfi': cfi, 'progressPct': progressPct}),
+    );
+  }
+
+  Future<void> deleteBook(String id) async {
+    _logger.info('BookService: Deleting book $id');
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete book');
+    }
+  }
+
+  Future<void> uploadBook(File file, String targetLanguage, String title) async {
+    _logger.info('BookService: Uploading new EPUB book');
+    final filename = file.path.split('/').last;
+    
+    // 1. Get signed upload URL
+    final uploadUrlResponse = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
+      headers: await _getHeaders(),
+    );
+    
+    if (uploadUrlResponse.statusCode != 200) throw Exception('Failed to get upload URL');
+    
+    final uploadData = jsonDecode(uploadUrlResponse.body);
+    final signedUrl = uploadData['signedUrl'];
+    final storagePath = uploadData['path'];
+
+    // 2. Put file to Supabase storage
+    final bytes = await file.readAsBytes();
+    final uploadRes = await http.put(
+      Uri.parse(signedUrl),
+      headers: {'Content-Type': 'application/epub+zip'},
+      body: bytes,
+    );
+
+    if (uploadRes.statusCode != 200) throw Exception('Failed to upload file to storage');
+
+    // 3. Register book record in API
+    final dbRes = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/books'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'title': title,
+        'author': 'Unknown',
+        'targetLanguage': targetLanguage,
+        'storagePath': storagePath,
+      }),
+    );
+
+    if (dbRes.statusCode != 200) throw Exception('Failed to save book to database');
+  }
+}
+
+final bookServiceProvider = Provider((ref) => 
+  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
+);
 </file>
 
 <file path="lib/services/learning_path_service.dart">
@@ -2960,6 +3126,300 @@ final refreshTokenServiceProvider = Provider<TokenService>((ref) =>
 );
 </file>
 
+<file path="lib/ui/screens/book_reader_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:go_router/go_router.dart';
+import '../../providers/book_provider.dart';
+import '../../providers/user_provider.dart';
+import '../widgets/translation_tooltip.dart';
+import '../../theme/liquid_theme.dart';
+
+class BookReaderScreen extends ConsumerStatefulWidget {
+  final String bookId;
+  const BookReaderScreen({super.key, required this.bookId});
+
+  @override
+  ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
+}
+
+class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
+  InAppWebViewController? webViewController;
+  double _progress = 0.0;
+  
+  String? _selectedText;
+  String? _contextText;
+  double? _selectionX;
+  double? _selectionY;
+
+  final String _htmlTemplate = """
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    <style>
+      body { margin: 0; padding: 0; background-color: #050505; color: #ffffff; overflow: hidden; font-family: sans-serif; }
+      #viewer { width: 100vw; height: 100vh; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="viewer"></div>
+    <script>
+      let book;
+      let rendition;
+
+      async function loadBook(url, initialCfi) {
+        console.log("Starting loadBook with URL:", url);
+        try {
+          if (!url) {
+            throw new Error("URL is null or empty");
+          }
+          
+          console.log("Initializing ePub with URL...");
+          book = ePub(url);
+          
+          rendition = book.renderTo("viewer", {
+            width: "100%",
+            height: "100%",
+            spread: "none",
+            manager: "continuous",
+            flow: "paginated"
+          });
+
+          rendition.hooks.content.register(function(contents) {
+            console.log("Rendition hook: content registered");
+            var style = contents.document.createElement("style");
+            style.innerHTML = "body { color: #ffffff !important; background-color: transparent !important; font-size: 1.15em; font-family: sans-serif; line-height: 1.6; } a { color: #6366F1 !important; } ::selection { background: rgba(99, 102, 241, 0.4); }";
+            contents.document.head.appendChild(style);
+          });
+
+          rendition.on("relocated", function(location) {
+            const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
+            }
+          });
+
+          rendition.on("selected", function(cfiRange, contents) {
+            book.getRange(cfiRange).then(function(range) {
+              const selectedText = range.toString().trim();
+              const contextText = range.commonAncestorContainer.textContent || selectedText;
+              
+              const rect = range.getBoundingClientRect();
+              const iframe = contents.document.defaultView.frameElement;
+              const iframeRect = iframe.getBoundingClientRect();
+              
+              const x = rect.left + iframeRect.left + (rect.width / 2);
+              const y = rect.bottom + iframeRect.top;
+              
+              if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('onTextSelected', selectedText, contextText, x, y);
+              }
+            });
+          });
+
+          rendition.on("click", function() {
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('onClearSelection');
+            }
+          });
+
+          console.log("Displaying rendition...");
+          await rendition.display(initialCfi || undefined);
+          console.log("Rendition displayed successfully");
+          
+          if (window.flutter_inappwebview) {
+            window.flutter_inappwebview.callHandler('onReady');
+          }
+
+          book.ready.then(() => {
+            console.log("Book is ready, generating locations...");
+            return book.locations.generate(1600);
+          });
+        } catch(e) {
+          console.error("Error in loadBook:", e);
+          if (window.flutter_inappwebview) {
+            window.flutter_inappwebview.callHandler('onError', e.toString() + " | Stack: " + e.stack);
+          }
+        }
+      }
+
+      window.nextPage = function() { if(rendition) rendition.next(); };
+      window.prevPage = function() { if(rendition) rendition.prev(); };
+    </script>
+  </body>
+  </html>
+  """;
+
+  @override
+  Widget build(BuildContext context) {
+    final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
+    final profileAsync = ref.watch(userProfileProvider);
+
+    return Scaffold(
+      backgroundColor: LiquidTheme.background,
+      body: bookAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text("Error: $e", style: const TextStyle(color: Colors.white))),
+        data: (book) {
+          return SafeArea(
+            child: Stack(
+              children: [
+                Column(
+                  children:[
+                    Container(
+                      height: 60,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: const BoxDecoration(
+                        border: Border(bottom: BorderSide(color: Colors.white10)),
+                      ),
+                      child: Row(
+                        children:[
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+                            onPressed: () => context.pop(),
+                          ),
+                          Expanded(
+                            child: Text(
+                              book.title,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text("${_progress.round()}% Read", style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Stack(
+                        children:[
+                          InAppWebView(
+                            initialData: InAppWebViewInitialData(
+                              data: _htmlTemplate,
+                              baseUrl: WebUri("https://localhost/"),
+                            ),
+                            initialSettings: InAppWebViewSettings(
+                              transparentBackground: true,
+                              disableContextMenu: true,
+                              allowFileAccessFromFileURLs: true,
+                              allowUniversalAccessFromFileURLs: true,
+                            ),
+                            onWebViewCreated: (controller) {
+                              webViewController = controller;
+
+                              controller.addJavaScriptHandler(handlerName: 'onError', callback: (args) {
+                                debugPrint("EPUB ERROR: ${args[0]}");
+                              });
+
+                              controller.addJavaScriptHandler(handlerName: 'onReady', callback: (args) {
+                                debugPrint("EPUB READY");
+                              });
+
+                              controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
+                                final cfi = args[0] as String;
+                                final pct = (args[1] as num).toDouble();
+                                setState(() {
+                                  _progress = pct;
+                                });
+                                ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
+                              });
+
+                              controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
+                                setState(() {
+                                  _selectedText = args[0];
+                                  _contextText = args[1];
+                                  _selectionX = (args[2] as num).toDouble();
+                                  _selectionY = (args[3] as num).toDouble();
+                                });
+                              });
+
+                              controller.addJavaScriptHandler(handlerName: 'onClearSelection', callback: (args) {
+                                setState(() {
+                                  _selectedText = null;
+                                  _contextText = null;
+                                });
+                              });
+                            },
+                            onConsoleMessage: (controller, consoleMessage) {
+                              debugPrint(
+                                "WEBVIEW CONSOLE: ${consoleMessage.message}",
+                              );
+                            },
+                            onLoadStop: (controller, url) async {
+                              if (book.signedUrl != null) {
+                                await controller.evaluateJavascript(source: "loadBook('${book.signedUrl}', '${book.currentCfi ?? ''}');");
+                              }
+                            },
+                          ),
+                          Row(
+                            children:[
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() => _selectedText = null);
+                                    webViewController?.evaluateJavascript(source: "window.prevPage();");
+                                  },
+                                  child: Container(color: Colors.transparent),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Container(color: Colors.transparent),
+                              ),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() => _selectedText = null);
+                                    webViewController?.evaluateJavascript(source: "window.nextPage();");
+                                  },
+                                  child: Container(color: Colors.transparent),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (_selectedText != null && _selectionX != null && _selectionY != null && profileAsync.value != null)
+                  TranslationTooltip(
+                    selectedText: _selectedText!,
+                    contextText: _contextText ?? _selectedText!,
+                    sourceLang: book.targetLanguage, 
+                    targetLang: profileAsync.value!.nativeLanguage ?? 'english',
+                    x: _selectionX!,
+                    y: _selectionY! + MediaQuery.of(context).padding.top + 60,
+                    onClose: () {
+                      setState(() {
+                        _selectedText = null;
+                      });
+                      webViewController?.evaluateJavascript(source: "window.getSelection().removeAllRanges();");
+                    },
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/screens/drill_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -3255,6 +3715,166 @@ class JournalDetailScreen extends ConsumerWidget {
 }
 </file>
 
+<file path="lib/ui/screens/library_screen.dart">
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:go_router/go_router.dart';
+import '../../providers/book_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../theme/liquid_theme.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+
+class LibraryScreen extends ConsumerStatefulWidget {
+  const LibraryScreen({super.key});
+
+  @override
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  bool _isUploading = false;
+
+  Future<void> _handleUpload() async {
+    final activeLang = ref.read(activeLanguageProvider);
+    
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['epub'],
+    );
+
+    if (result != null && result.files.single.path != null) {
+      setState(() => _isUploading = true);
+      File file = File(result.files.single.path!);
+      
+      try {
+        await ref.read(bookNotifierProvider.notifier).uploadBook(
+          file, 
+          activeLang, 
+          result.files.single.name.replaceAll('.epub', '')
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Book uploaded successfully!')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        }
+      } finally {
+        if (mounted) setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  void _promptDelete(String bookId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Delete Book?', style: TextStyle(color: Colors.white)),
+        content: const Text('Are you sure you want to remove this book from your library?', style: TextStyle(color: Colors.white70)),
+        actions:[
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+          TextButton(
+            onPressed: () {
+              ref.read(bookNotifierProvider.notifier).deleteBook(bookId);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final booksAsync = ref.watch(booksProvider);
+
+    return GlassScaffold(
+      title: 'My Library',
+      subtitle: 'Read and translate your EPUBs',
+      showBackButton: false,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _isUploading ? null : _handleUpload,
+        backgroundColor: LiquidTheme.primaryAccent,
+        icon: _isUploading 
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+            : const Icon(Icons.book, color: Colors.white),
+        label: Text(_isUploading ? "Uploading..." : "Upload EPUB", style: const TextStyle(color: Colors.white)),
+      ),
+      body: booksAsync.when(
+        loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
+        error: (e, _) => SliverFillRemaining(child: Center(child: Text("Error: $e", style: const TextStyle(color: Colors.white)))),
+        data: (books) {
+          if (books.isEmpty) {
+            return const SliverFillRemaining(
+              child: Center(
+                child: Text("Your library is empty. Upload an EPUB to start reading.", style: TextStyle(color: Colors.white54)),
+              ),
+            );
+          }
+          return SliverPadding(
+            padding: const EdgeInsets.only(bottom: 100),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.65,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final book = books[index];
+                  return GestureDetector(
+                    onTap: () => context.push('/library/book/${book.id}'),
+                    onLongPress: () => _promptDelete(book.id),
+                    child: GlassCard(
+                      padding: 12,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children:[
+                          Expanded(
+                            child: Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.black26,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.menu_book, size: 48, color: Colors.white38),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(book.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
+                          const SizedBox(height: 4),
+                          Text(book.author ?? "Unknown", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                          const SizedBox(height: 12),
+                          LinearProgressIndicator(
+                            value: book.progressPct / 100,
+                            backgroundColor: Colors.white10,
+                            color: LiquidTheme.primaryAccent,
+                            minHeight: 4,
+                          ),
+                          const SizedBox(height: 6),
+                          Text("${book.progressPct.round()}% Read", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                childCount: books.length,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/screens/listening_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -3334,8 +3954,7 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
         ),
         data: (exercise) {
           // Initialize Video Controller once
-          if (_videoController == null) {
-            _videoController = YoutubePlayerController(
+          _videoController ??= YoutubePlayerController(
               initialVideoId: exercise.videoId,
               flags: const YoutubePlayerFlags(
                 autoPlay: false,
@@ -3343,7 +3962,6 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
                 forceHD: true,
               ),
             );
-          }
 
           // Auto-generate tasks
           if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
@@ -3493,7 +4111,7 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
           // 2. WRITING AIDS
           aidsAsync.when(
             loading: () => const Padding(padding: EdgeInsets.all(16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
-            error: (_,__) => const SizedBox(),
+            error: (_,_) => const SizedBox(),
             data: (aids) {
               if (aids == null) return const SizedBox();
               return GlassCard(
@@ -3624,7 +4242,6 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
 <file path="lib/ui/widgets/analysis_widgets.dart">
 import 'package:flutter/material.dart';
 import '../../models/journal_entry.dart';
-import '../../theme/liquid_theme.dart';
 import 'liquid_components.dart';
 
 class AnalysisScoreCard extends StatelessWidget {
@@ -3985,6 +4602,210 @@ class SimpleHeatmap extends StatelessWidget {
          ],
        ),
      );
+  }
+}
+</file>
+
+<file path="lib/ui/widgets/translation_tooltip.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/srs_provider.dart';
+import '../../services/ai_service.dart';
+import '../../theme/liquid_theme.dart';
+
+class TranslationTooltip extends ConsumerStatefulWidget {
+  final String selectedText;
+  final String contextText;
+  final String sourceLang; 
+  final String targetLang; 
+  final double x;
+  final double y;
+  final VoidCallback onClose;
+
+  const TranslationTooltip({
+    super.key,
+    required this.selectedText,
+    required this.contextText,
+    required this.sourceLang,
+    required this.targetLang,
+    required this.x,
+    required this.y,
+    required this.onClose,
+  });
+
+  @override
+  ConsumerState<TranslationTooltip> createState() => _TranslationTooltipState();
+}
+
+class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
+  bool _isLoading = true;
+  String? _translation;
+  String? _explanation;
+  bool _isAdding = false;
+  bool _isAdded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTranslation();
+  }
+
+  Future<void> _fetchTranslation() async {
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.contextualTranslate(
+        selectedText: widget.selectedText,
+        context: widget.contextText,
+        sourceLanguage: widget.sourceLang,
+        targetLanguage: widget.targetLang,
+        nativeLanguage: widget.targetLang,
+      );
+      if (mounted) {
+        setState(() {
+          _translation = result['translation'];
+          _explanation = result['explanation'];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _translation = "Failed to translate";
+        });
+      }
+    }
+  }
+
+  Future<void> _handleAddToDeck() async {
+    setState(() => _isAdding = true);
+    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+          front: widget.selectedText,
+          back: _translation!,
+          language: widget.sourceLang,
+          explanation: _explanation,
+        );
+
+    if (mounted) {
+      setState(() {
+        _isAdding = false;
+        if (success) _isAdded = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final tooltipWidth = 280.0;
+    
+    double left = widget.x - (tooltipWidth / 2);
+    if (left < 16) left = 16;
+    if (left + tooltipWidth > screenWidth - 16) left = screenWidth - tooltipWidth - 16;
+    
+    double top = widget.y + 10;
+    if (top > MediaQuery.of(context).size.height - 200) {
+      top = widget.y - 180;
+    }
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: tooltipWidth,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A).withOpacity(0.98),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white24),
+            boxShadow: const[
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 20,
+                offset: Offset(0, 10),
+              )
+            ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children:[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children:[
+                  Expanded(
+                    child: Text(
+                      widget.selectedText,
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: widget.onClose,
+                    child: const Icon(Icons.close, size: 18, color: Colors.white54),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.white24),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                Text(
+                  _translation ?? "",
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                if (_explanation != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children:[
+                        const Icon(Icons.lightbulb, size: 14, color: Colors.amber),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _explanation!,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isAdded ? Colors.green.withOpacity(0.2) : LiquidTheme.primaryAccent.withOpacity(0.2),
+                      foregroundColor: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
+                    icon: _isAdding 
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Icon(_isAdded ? Icons.check : Icons.add, size: 16),
+                    label: Text(_isAdded ? "Added" : "Add to Deck"),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 </file>
@@ -5916,6 +6737,56 @@ class RunnerTests: XCTestCase {
 **/xcuserdata/
 </file>
 
+<file path="test/book_test.dart">
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lexity_mobile/models/book.dart';
+
+void main() {
+  group('UserBook Model Tests', () {
+    test('fromJson should correctly parse a complete JSON map', () {
+      final json = {
+        'id': '123',
+        'title': 'Test Book',
+        'author': 'Test Author',
+        'targetLanguage': 'spanish',
+        'storagePath': 'books/test.epub',
+        'coverImageUrl': 'https://example.com/cover.jpg',
+        'currentCfi': 'epubcfi(/6/4[chap01]!/4/2/16/1:0)',
+        'progressPct': 45.5,
+        'createdAt': '2026-03-04T10:00:00Z',
+        'signedUrl': 'https://signed-url.com',
+      };
+
+      final book = UserBook.fromJson(json);
+
+      expect(book.id, '123');
+      expect(book.title, 'Test Book');
+      expect(book.author, 'Test Author');
+      expect(book.targetLanguage, 'spanish');
+      expect(book.progressPct, 45.5);
+      expect(book.currentCfi, 'epubcfi(/6/4[chap01]!/4/2/16/1:0)');
+      expect(book.signedUrl, 'https://signed-url.com');
+    });
+
+    test('fromJson should handle null author and default values', () {
+      final json = {
+        'id': '124',
+        'storagePath': 'books/test2.epub',
+        'createdAt': '2026-03-04T11:00:00Z',
+      };
+
+      final book = UserBook.fromJson(json);
+
+      expect(book.id, '124');
+      expect(book.title, 'Unknown Title');
+      expect(book.author, isNull);
+      expect(book.targetLanguage, 'spanish');
+      expect(book.progressPct, 0.0);
+    });
+  });
+}
+</file>
+
 <file path="test/logger_test.dart">
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lexity_mobile/services/logger_service.dart';
@@ -7350,6 +8221,64 @@ For help getting started with Flutter development, view the
 samples, guidance on mobile development, and a full API reference.
 </file>
 
+<file path="request.json">
+{
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "inlineData": {
+              "mimeType": "text/xml",
+              "data": "aGV5"
+            }
+          },
+          {
+            "text": "hey"
+          }
+        ]
+      }
+    ],
+   
+}
+</file>
+
+<file path="test.sh">
+#!/bin/bash
+set -e -E
+
+GEMINI_API_KEY="AIzaSyBIqqKTyMD3-i9eQbVFRGYxxgmUJcf84_o"
+MODEL_ID="gemini-3-flash-preview"
+GENERATE_CONTENT_API="streamGenerateContent"
+
+cat << EOF > request.json
+{
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "inlineData": {
+              "mimeType": "text/xml",
+              "data": "aGV5"
+            }
+          },
+          {
+            "text": "hey"
+          }
+        ]
+      }
+    ],
+   
+}
+EOF
+
+curl \
+-X POST \
+-H "Content-Type: application/json" \
+"https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:${GENERATE_CONTENT_API}?key=${GEMINI_API_KEY}" -d '@request.json'
+</file>
+
 <file path="android/app/src/main/kotlin/com/example/lexity_mobile/BubbleActivity.kt">
 package com.example.lexity_mobile
 
@@ -7674,7 +8603,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
                 ),
               ),
             ),
-            error: (_, __) => const SizedBox(),
+            error: (_, _) => const SizedBox(),
             data: (aids) {
               if (aids == null) return const SizedBox();
               return GlassCard(
@@ -8385,76 +9314,6 @@ class AppConstants {
 }
 </file>
 
-<file path="lib/main.dart">
-// lib/main.dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
-import 'providers/auth_provider.dart';
-import 'router/router.dart';
-import 'theme/liquid_theme.dart';
-import 'ui/widgets/liquid_components.dart';
-
-void main() {
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
-  runApp(const ProviderScope(child: MyApp()));
-}
-
-class MyApp extends ConsumerWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
-    final router = ref.watch(routerProvider);
-
-    // If not initialized, show a Glass loading screen
-    if (!authState.isInitialized) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: LiquidTheme.theme,
-        home: const Scaffold(
-          body: LiquidBackground(
-            child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return MaterialApp.router(
-      title: 'Lexity Mobile',
-      debugShowCheckedModeBanner: false,
-      theme: LiquidTheme.theme,
-      routerConfig: router,
-    );
-  }
-}
-</file>
-
-<file path="macos/Flutter/GeneratedPluginRegistrant.swift">
-//
-//  Generated file. Do not edit.
-//
-
-import FlutterMacOS
-import Foundation
-
-import flutter_inappwebview_macos
-import shared_preferences_foundation
-
-func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  InAppWebViewFlutterPlugin.register(with: registry.registrar(forPlugin: "InAppWebViewFlutterPlugin"))
-  SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
-}
-</file>
-
 <file path=".gitignore">
 # Miscellaneous
 *.class
@@ -8696,124 +9555,6 @@ final srsProvider = StateNotifierProvider<SrsNotifier, SrsState>((ref) {
 });
 </file>
 
-<file path="lib/services/ai_service.dart">
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/token_service.dart';
-import '../models/translation_result.dart';
-import 'logger_service.dart';
-import '../utils/constants.dart';
-
-class AIService {
-  final Ref _ref;
-
-  late final LoggerService _logger;
-  final TokenService _authTokenService;
-  AIService(this._ref, this._authTokenService) {
-    _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  // Call 1: Fast Full Translation
-  Future<String> translate(
-    String text,
-    String sourceLang,
-    String targetLang,
-  ) async {
-    _logger.info(
-      'AIService: Requesting translation from $sourceLang to $targetLang',
-    );
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/ai/translate'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'text': text,
-          'sourceLanguage': sourceLang,
-          'targetLanguage': targetLang,
-        }),
-      );
-
-      _logger.debug(
-        'AIService: translate response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _logger.info('AIService: Translation successful');
-        return data['translatedText'];
-      }
-
-      final errorMsg =
-          jsonDecode(response.body)['error'] ?? 'Translation failed';
-      _logger.warning('AIService: Translation failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('AIService: Error during translate', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  // Call 2: Detailed Breakdown
-  Future<List<TranslationSegment>> translateBreakdown(
-    String text,
-    String sourceLang,
-    String targetLang,
-  ) async {
-    _logger.info(
-      'AIService: Requesting breakdown from $sourceLang to $targetLang',
-    );
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/ai/translate-breakdown'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'text': text,
-          'sourceLanguage': sourceLang,
-          'targetLanguage': targetLang,
-        }),
-      );
-
-      _logger.debug(
-        'AIService: translateBreakdown response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List segmentsJson = data['segments'] ?? [];
-        _logger.info(
-          'AIService: Breakdown successful, found ${segmentsJson.length} segments',
-        );
-        return segmentsJson.map((s) => TranslationSegment.fromJson(s)).toList();
-      }
-
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Breakdown failed';
-      _logger.warning('AIService: Breakdown failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error(
-        'AIService: Error during translateBreakdown',
-        e,
-        stackTrace,
-      );
-      rethrow;
-    }
-  }
-}
-
-final aiServiceProvider = Provider(
-  (ref) => AIService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
-);
-</file>
-
 <file path="lib/services/analytics_service.dart">
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -9033,7 +9774,7 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                     child: LinearProgressIndicator(),
                   ),
                 ),
-                error: (_, __) => const SizedBox(),
+                error: (_, _) => const SizedBox(),
                 data: (topics) => ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: topics.length,
@@ -9971,165 +10712,76 @@ class _AddLanguageDialogState extends ConsumerState<_AddLanguageDialog> {
 }
 </file>
 
-<file path="lib/ui/widgets/liquid_navigation.dart">
-// lib/ui/widgets/liquid_navigation.dart
-import 'dart:ui';
+<file path="lib/main.dart">
+// lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import '../../theme/liquid_theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
+import 'providers/auth_provider.dart';
+import 'router/router.dart';
+import 'theme/liquid_theme.dart';
+import 'ui/widgets/liquid_components.dart';
 
-class LiquidNavigation extends StatelessWidget {
-  final StatefulNavigationShell navigationShell;
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
+  runApp(const ProviderScope(child: MyApp()));
+}
 
-  const LiquidNavigation({super.key, required this.navigationShell});
-
-  final List<({IconData icon, String label})> _items = const [
-    (icon: LucideIcons.map, label: 'Path'),           // Index 0
-    (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
-    (icon: LucideIcons.penTool, label: 'Journal'),    // Index 2
-    (icon: LucideIcons.barChart2, label: 'Progress'), // Index 3
-    (icon: LucideIcons.user, label: 'Profile'),      // Index 4
-    (icon: LucideIcons.languages, label: 'Translator'), // Index 5
-  ];
-
-  void _onTap(int index) {
-    navigationShell.goBranch(
-      index,
-      initialLocation: index == navigationShell.currentIndex,
-    );
-  }
+class MyApp extends ConsumerWidget {
+  const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final currentIndex = navigationShell.currentIndex;
-    final width = MediaQuery.of(context).size.width;
-    final isDesktop = width > 800;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+    final router = ref.watch(routerProvider);
 
-    return isDesktop
-        ? _buildSideRail(context, currentIndex)
-        : _buildBottomBar(context, currentIndex);
-  }
-
-  Widget _buildBottomBar(BuildContext context, int currentIndex) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 30, left: 20, right: 20),
-        height: 70,
-        decoration: _glassDecoration(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(35),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _items.asMap().entries.map((entry) {
-                return _NavItem(
-                  icon: entry.value.icon,
-                  label: entry.value.label,
-                  isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
-                );
-              }).toList(),
+    // If not initialized, show a Glass loading screen
+    if (!authState.isInitialized) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: LiquidTheme.theme,
+        home: const Scaffold(
+          body: LiquidBackground(
+            child: Center(
+              child: CircularProgressIndicator(color: Colors.white),
             ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildSideRail(BuildContext context, int currentIndex) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(left: 30),
-        width: 80,
-        height: 500,
-        decoration: _glassDecoration(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(40),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _items.asMap().entries.map((entry) {
-                return _NavItem(
-                  icon: entry.value.icon,
-                  label: entry.value.label,
-                  isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
-                  isVertical: true,
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  BoxDecoration _glassDecoration() {
-    return BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.2),
-      borderRadius: BorderRadius.circular(40),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.3),
-          blurRadius: 30,
-          offset: const Offset(0, 10),
-        ),
-      ],
+    return MaterialApp.router(
+      title: 'Lexity Mobile',
+      debugShowCheckedModeBanner: false,
+      theme: LiquidTheme.theme,
+      routerConfig: router,
     );
   }
 }
+</file>
 
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-  final bool isVertical;
+<file path="macos/Flutter/GeneratedPluginRegistrant.swift">
+//
+//  Generated file. Do not edit.
+//
 
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-    this.isVertical = false,
-  });
+import FlutterMacOS
+import Foundation
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutQuart,
-        padding: const EdgeInsets.all(12),
-        decoration: isActive
-            ? BoxDecoration(
-                color: LiquidTheme.primaryAccent.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: LiquidTheme.primaryAccent.withValues(alpha: 0.4),
-                    blurRadius: 15,
-                    spreadRadius: -2,
-                  )
-                ],
-              )
-            : const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
-        child: Icon(
-          icon,
-          color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
-          size: 24,
-        ),
-      ),
-    );
-  }
+import file_picker
+import flutter_inappwebview_macos
+import shared_preferences_foundation
+
+func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
+  FilePickerPlugin.register(with: registry.registrar(forPlugin: "FilePickerPlugin"))
+  InAppWebViewFlutterPlugin.register(with: registry.registrar(forPlugin: "InAppWebViewFlutterPlugin"))
+  SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
 }
 </file>
 
@@ -10341,6 +10993,160 @@ final activeLanguageProvider = Provider<String>((ref) {
 });
 </file>
 
+<file path="lib/services/ai_service.dart">
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
+import '../models/translation_result.dart';
+import 'logger_service.dart';
+import '../utils/constants.dart';
+
+class AIService {
+  final Ref _ref;
+
+  late final LoggerService _logger;
+  final TokenService _authTokenService;
+  AIService(this._ref, this._authTokenService) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  // Call 1: Fast Full Translation
+  Future<String> translate(
+    String text,
+    String sourceLang,
+    String targetLang,
+  ) async {
+    _logger.info(
+      'AIService: Requesting translation from $sourceLang to $targetLang',
+    );
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/ai/translate'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'text': text,
+          'sourceLanguage': sourceLang,
+          'targetLanguage': targetLang,
+        }),
+      );
+
+      _logger.debug(
+        'AIService: translate response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _logger.info('AIService: Translation successful');
+        return data['translatedText'];
+      }
+
+      final errorMsg =
+          jsonDecode(response.body)['error'] ?? 'Translation failed';
+      _logger.warning('AIService: Translation failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('AIService: Error during translate', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  // Call 2: Detailed Breakdown
+  Future<List<TranslationSegment>> translateBreakdown(
+    String text,
+    String sourceLang,
+    String targetLang,
+  ) async {
+    _logger.info(
+      'AIService: Requesting breakdown from $sourceLang to $targetLang',
+    );
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/ai/translate-breakdown'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'text': text,
+          'sourceLanguage': sourceLang,
+          'targetLanguage': targetLang,
+        }),
+      );
+
+      _logger.debug(
+        'AIService: translateBreakdown response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List segmentsJson = data['segments'] ?? [];
+        _logger.info(
+          'AIService: Breakdown successful, found ${segmentsJson.length} segments',
+        );
+        return segmentsJson.map((s) => TranslationSegment.fromJson(s)).toList();
+      }
+
+      final errorMsg = jsonDecode(response.body)['error'] ?? 'Breakdown failed';
+      _logger.warning('AIService: Breakdown failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error(
+        'AIService: Error during translateBreakdown',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  // Call 3: Contextual Translation (for reading tooltips)
+  Future<Map<String, dynamic>> contextualTranslate({
+    required String selectedText,
+    required String context,
+    required String sourceLanguage,
+    required String targetLanguage,
+    required String nativeLanguage,
+  }) async {
+    _logger.info('AIService: Requesting contextual translation');
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/ai/contextual-translate'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'selectedText': selectedText,
+          'context': context,
+          'sourceLanguage': sourceLanguage,
+          'targetLanguage': targetLanguage,
+          'nativeLanguage': nativeLanguage,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      throw Exception('Contextual translation failed');
+    } catch (e, stackTrace) {
+      _logger.error(
+        'AIService: Error during contextualTranslate',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+  }
+}
+
+final aiServiceProvider = Provider(
+  (ref) => AIService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
+);
+</file>
+
 <file path="lib/services/journal_service.dart">
 import 'dart:convert';
 import 'dart:io';
@@ -10468,8 +11274,9 @@ class JournalService {
       ),
       headers: await _getHeaders(),
     );
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       throw Exception('Failed to generate upload URL');
+    }
     final data = jsonDecode(response.body);
     final signedUrl = data['signedUrl'];
     final storagePath = data['path'];
@@ -10720,7 +11527,6 @@ final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServ
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 import '../../providers/analytics_provider.dart';
@@ -11376,6 +12182,169 @@ class LiquidDropdown<T> extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/widgets/liquid_navigation.dart">
+// lib/ui/widgets/liquid_navigation.dart
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import '../../theme/liquid_theme.dart';
+
+class LiquidNavigation extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
+
+  const LiquidNavigation({super.key, required this.navigationShell});
+
+  final List<({IconData icon, String label})> _items = const [
+    (icon: LucideIcons.map, label: 'Path'),           // Index 0
+    (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
+    (icon: LucideIcons.penTool, label: 'Journal'),    // Index 2
+    (icon: LucideIcons.library, label: 'Library'), // Index 3
+    (icon: LucideIcons.barChart2, label: 'Progress'), // Index 4
+    (icon: LucideIcons.user, label: 'Profile'), // Index 5
+    (icon: LucideIcons.languages, label: 'Translator'), // Index 6
+  ];
+
+  void _onTap(int index) {
+    navigationShell.goBranch(
+      index,
+      initialLocation: index == navigationShell.currentIndex,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentIndex = navigationShell.currentIndex;
+    final width = MediaQuery.of(context).size.width;
+    final isDesktop = width > 800;
+
+    return isDesktop
+        ? _buildSideRail(context, currentIndex)
+        : _buildBottomBar(context, currentIndex);
+  }
+
+  Widget _buildBottomBar(BuildContext context, int currentIndex) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 30, left: 20, right: 20),
+        height: 70,
+        decoration: _glassDecoration(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(35),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _items.asMap().entries.map((entry) {
+                return _NavItem(
+                  icon: entry.value.icon,
+                  label: entry.value.label,
+                  isActive: currentIndex == entry.key,
+                  onTap: () => _onTap(entry.key),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSideRail(BuildContext context, int currentIndex) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(left: 30),
+        width: 80,
+        height: 500,
+        decoration: _glassDecoration(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _items.asMap().entries.map((entry) {
+                return _NavItem(
+                  icon: entry.value.icon,
+                  label: entry.value.label,
+                  isActive: currentIndex == entry.key,
+                  onTap: () => _onTap(entry.key),
+                  isVertical: true,
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration _glassDecoration() {
+    return BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(40),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.3),
+          blurRadius: 30,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+  final bool isVertical;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+    this.isVertical = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutQuart,
+        padding: const EdgeInsets.all(12),
+        decoration: isActive
+            ? BoxDecoration(
+                color: LiquidTheme.primaryAccent.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: LiquidTheme.primaryAccent.withValues(alpha: 0.4),
+                    blurRadius: 15,
+                    spreadRadius: -2,
+                  )
+                ],
+              )
+            : const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
+        child: Icon(
+          icon,
+          color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
+          size: 24,
+        ),
       ),
     );
   }
@@ -12449,10 +13418,10 @@ packages:
     dependency: transitive
     description:
       name: characters
-      sha256: f71061c654a3380576a52b451dd5532377954cf9dbd272a78fc8479606670803
+      sha256: faf38497bda5ead2a8c7615f4f7939df04333478bf32e4173fcb06d428b5716b
       url: "https://pub.dev"
     source: hosted
-    version: "1.4.0"
+    version: "1.4.1"
   checked_yaml:
     dependency: transitive
     description:
@@ -12501,6 +13470,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.2"
+  cross_file:
+    dependency: transitive
+    description:
+      name: cross_file
+      sha256: "28bb3ae56f117b5aec029d702a90f57d285cd975c3c5c281eaca38dbc47c5937"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.5+2"
   crypto:
     dependency: transitive
     description:
@@ -12525,6 +13502,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.5"
+  dbus:
+    dependency: transitive
+    description:
+      name: dbus
+      sha256: d0c98dcd4f5169878b6cf8f6e0a52403a9dff371a3e2f019697accbf6f44a270
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.12"
   equatable:
     dependency: transitive
     description:
@@ -12557,6 +13542,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
+  file_picker:
+    dependency: "direct main"
+    description:
+      name: file_picker
+      sha256: "57d9a1dd5063f85fa3107fb42d1faffda52fdc948cefd5fe5ea85267a5fc7343"
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.3.10"
   fixnum:
     dependency: transitive
     description:
@@ -12587,7 +13580,7 @@ packages:
     source: hosted
     version: "4.5.2"
   flutter_inappwebview:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: flutter_inappwebview
       sha256: "80092d13d3e29b6227e25b67973c67c7210bd5e35c4b747ca908e31eb71a46d5"
@@ -12666,6 +13659,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.7+1"
+  flutter_plugin_android_lifecycle:
+    dependency: transitive
+    description:
+      name: flutter_plugin_android_lifecycle
+      sha256: ee8068e0e1cd16c4a82714119918efdeed33b3ba7772c54b5d094ab53f9b7fd1
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.33"
   flutter_riverpod:
     dependency: "direct main"
     description:
@@ -12856,18 +13857,18 @@ packages:
     dependency: transitive
     description:
       name: matcher
-      sha256: dc58c723c3c24bf8d3e2d3ad3f2f9d7bd9cf43ec6feaa64181775e60190153f2
+      sha256: dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.17"
+    version: "0.12.19"
   material_color_utilities:
     dependency: transitive
     description:
       name: material_color_utilities
-      sha256: f7142bb1154231d7ea5f96bc7bde4bda2a0945d2806bb11670e30b850d56bdec
+      sha256: "9c337007e82b1889149c82ed242ed1cb24a66044e30979c44912381e9be4c48b"
       url: "https://pub.dev"
     source: hosted
-    version: "0.11.1"
+    version: "0.13.0"
   meta:
     dependency: transitive
     description:
@@ -13020,6 +14021,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.1"
+  petitparser:
+    dependency: transitive
+    description:
+      name: petitparser
+      sha256: "91bd59303e9f769f108f8df05e371341b15d59e995e6806aefab827b58336675"
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.0.2"
   platform:
     dependency: transitive
     description:
@@ -13213,10 +14222,10 @@ packages:
     dependency: transitive
     description:
       name: test_api
-      sha256: ab2726c1a94d3176a45960b6234466ec367179b87dd74f1611adb1f3b5fb9d55
+      sha256: "8161c84903fd860b26bfdefb7963b3f0b68fee7adea0f59ef805ecca346f0c7a"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.7"
+    version: "0.7.10"
   typed_data:
     dependency: transitive
     description:
@@ -13273,6 +14282,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.3"
+  win32:
+    dependency: transitive
+    description:
+      name: win32
+      sha256: d7cb55e04cd34096cd3a79b3330245f54cb96a370a1c27adb3c84b917de8b08e
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.15.0"
   xdg_directories:
     dependency: transitive
     description:
@@ -13281,6 +14298,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.0"
+  xml:
+    dependency: transitive
+    description:
+      name: xml
+      sha256: "971043b3a0d3da28727e40ed3e0b5d18b742fa5a68665cca88e74b7876d5e025"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.6.1"
   yaml:
     dependency: transitive
     description:
@@ -13354,6 +14379,8 @@ dependencies:
   fl_chart: ^0.68.0
   flutter_markdown: any
   youtube_player_flutter: ^9.0.1
+  file_picker: ^10.3.10
+  flutter_inappwebview: ^6.1.5
 
 
 dev_dependencies:
@@ -13435,6 +14462,8 @@ import '../ui/screens/drill_screen.dart';
 import '../ui/screens/study_material_screen.dart';
 import '../ui/screens/reading_screen.dart';
 import '../ui/screens/listening_screen.dart';
+import '../ui/screens/library_screen.dart';
+import '../ui/screens/book_reader_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -13583,7 +14612,25 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 3: Progress
+          // Branch 3: Library
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/library',
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const LibraryScreen(), state),
+                routes: [
+                  GoRoute(
+                    path: 'book/:id',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        BookReaderScreen(bookId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Branch 4: Progress
           StatefulShellBranch(
             routes: [
               GoRoute(

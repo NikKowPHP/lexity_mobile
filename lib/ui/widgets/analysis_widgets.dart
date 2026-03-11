@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../models/journal_entry.dart';
-import '../../theme/liquid_theme.dart';
 import 'liquid_components.dart';
 
 class AnalysisScoreCard extends StatelessWidget {

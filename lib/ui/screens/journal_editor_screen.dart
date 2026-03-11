@@ -113,7 +113,7 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                     child: LinearProgressIndicator(),
                   ),
                 ),
-                error: (_, __) => const SizedBox(),
+                error: (_, _) => const SizedBox(),
                 data: (topics) => ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: topics.length,

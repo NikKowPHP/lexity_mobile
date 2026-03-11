@@ -124,8 +124,9 @@ class JournalService {
       ),
       headers: await _getHeaders(),
     );
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       throw Exception('Failed to generate upload URL');
+    }
     final data = jsonDecode(response.body);
     final signedUrl = data['signedUrl'];
     final storagePath = data['path'];
