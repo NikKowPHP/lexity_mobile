@@ -30,6 +30,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   double _fontSize = 115.0;
   String _theme = 'dark'; // 'light', 'dark', 'sepia'
   String? _lastCfi;
+  List<dynamic> _toc = [];
 
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
@@ -234,7 +235,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           const doc = content.document;
           if (words.length === 0) return;
           // Escape for Regex
-          const escapeRegExp = (s) => s.replace(/[.*+?^\\\$\${"{"}}()|[\\\]\\\\]/g, '\\\\\$&');
+          const escapeRegExp = (s) => s.replace(/[.*+?^\\\$${"{"}}()|[\\\]\\\\]/g, '\\\\\$&');
           const regex = new RegExp('\\\\b(' + words.map(escapeRegExp).join('|') + ')\\\\b', 'gi');
           
           const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
@@ -328,6 +329,24 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           await book.locations.generate(1600);
           console.log("BookReader JS: Locations ready.");
 
+          // RECURSIVE TOC EXTRACTION
+          const flattenToc = (items, level = 0) => {
+            return items.reduce((acc, item) => {
+              acc.push({
+                label: item.label,
+                href: item.href,
+                level: level
+              });
+              if (item.subitems && item.subitems.length > 0) {
+                acc.push(...flattenToc(item.subitems, level + 1));
+              }
+              return acc;
+            }, []);
+          };
+
+          const toc = flattenToc(book.navigation.toc);
+          window.flutter_inappwebview.callHandler('onToc', toc);
+
           const loc = rendition.currentLocation();
           if (loc && loc.start) {
               const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
@@ -385,6 +404,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           }),
           title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
           actions: [
+            if (_toc.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.list),
+                onPressed: () => _showChapterBrowser(context),
+              ),
             IconButton(
               icon: const Icon(Icons.settings),
               onPressed: () => _showSettings(context),
@@ -433,24 +457,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   final cfi = args[0] as String;
                   final pct = (args[1] as num).toDouble();
                   
-                  // Always update local state so we have the correct location for exit-save
                   if (mounted) {
                     setState(() {
-                      _progress = pct > 0 ? pct : _progress; // Keep existing percentage if new one is 0
+                      if (pct > 0) _progress = pct;
                       _lastCfi = cfi;
                     });
                   }
 
-                  // Only trigger debounced backend update if we are past the initialization phase
-                  // or if we have a real percentage value.
                   if (!_canSaveToBackend && pct <= 0) {
                       return;
                   }
 
-                  logger.debug('BookReader: Progress updated locally. CFI: $cfi');
+                  logger.debug('BookReader JS: Progress callback received. CFI: $cfi, Pct: $pct%');
                   
                   _progressDebounce?.cancel();
-                  _progressDebounce = Timer(const Duration(milliseconds: 2000), () {
+                  _progressDebounce = Timer(const Duration(milliseconds: 1500), () {
                     if (mounted) {
                       logger.info('BookReader: Saving progress to server: $cfi ($pct%)');
                       ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
@@ -461,10 +482,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   _applyHighlighting();
                 });
 
+                controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
+                  final tocData = args[0] as List<dynamic>;
+                  logger.info('BookReader JS: TOC received, ${tocData.length} items');
+                  if (mounted) setState(() => _toc = tocData);
+                });
+
                 controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
                   logger.info('BookReader JS: Rendition ready. Unblocking backend saves.');
                   
-                  // Safety buffer: allow backend updates after 2s once ready signal hits
                   Future.delayed(const Duration(milliseconds: 2000), () {
                     if (mounted) setState(() => _canSaveToBackend = true);
                   });
@@ -494,6 +520,60 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               },
             );
          },
+        ),
+      ),
+    );
+  }
+
+  void _showChapterBrowser(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (context, scrollController) => Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text("Table of Contents", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            const Divider(color: Colors.white10),
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                itemCount: _toc.length,
+                separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (context, index) {
+                  final chapter = _toc[index];
+                  final int level = chapter['level'] ?? 0;
+                  
+                  return ListTile(
+                    contentPadding: EdgeInsets.only(left: 16.0 + (level * 16.0), right: 16.0),
+                    title: Text(
+                      chapter['label'].toString().trim(), 
+                      style: TextStyle(
+                        color: level == 0 ? Colors.white : Colors.white70,
+                        fontWeight: level == 0 ? FontWeight.bold : FontWeight.normal,
+                        fontSize: level == 0 ? 15 : 14,
+                      )
+                    ),
+                    trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
+                    onTap: () {
+                      final href = chapter['href'].toString();
+                      
+                      webViewController?.evaluateJavascript(source: "rendition.display('${href}');");
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
