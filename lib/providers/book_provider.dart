@@ -35,6 +35,7 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
     try {
       await _service.deleteBook(id);
       _ref.invalidate(booksProvider);
+      _ref.invalidate(bookDetailProvider(id));
     } catch (e) {
       // handle error gracefully
     }
@@ -43,6 +44,10 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
   Future<void> updateProgress(String id, String cfi, double progressPct) async {
     try {
       await _service.updateProgress(id, cfi, progressPct);
+      // Invalidate to ensure next time we open it we get fresh data, 
+      // but don't force a UI refresh on the open screen to avoid flickering.
+      _ref.invalidate(bookDetailProvider(id));
+      _ref.invalidate(booksProvider);
     } catch (e) {
       // Don't interrupt reading if saving progress fails silently
     }

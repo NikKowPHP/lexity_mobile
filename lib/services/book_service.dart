@@ -49,17 +49,19 @@ class BookService {
   }
 
   Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    _logger.info('BookService: Updating progress for $id to $progressPct% ($cfi)');
     final response = await http.put(
       Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
       headers: await _getHeaders(),
       body: jsonEncode({
         'currentCfi': cfi, 
-        'progressPct': double.parse(progressPct.toStringAsFixed(2)),
+        'progressPct': progressPct,
       }),
     );
     
     if (response.statusCode != 200) {
       _logger.warning('Failed to update progress for book $id: ${response.statusCode}');
+      throw Exception('Failed to update progress on server');
     }
   }
 

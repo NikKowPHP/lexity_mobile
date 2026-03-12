@@ -73,6 +73,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rely exclusively on the provider for the list and progress data
     final booksAsync = ref.watch(booksProvider);
 
     return GlassScaffold(
@@ -140,6 +141,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             minHeight: 4,
                           ),
                           const SizedBox(height: 6),
+                          // This line now correctly shows the progress synchronized with the provider
                           Text("${book.progressPct.round()}% Read", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600)),
                         ],
                       ),

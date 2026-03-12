@@ -28,6 +28,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   double _progress = 0.0;
   double _fontSize = 115.0;
   String _theme = 'dark'; // 'light', 'dark', 'sepia'
+  String? _lastCfi;
 
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
@@ -37,7 +38,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   HttpServer? _localServer;
   int? _localPort;
 
-  // JavaScript function to apply styles dynamically to the EPUB rendition
+  // Track if book logic has been started to avoid double-init
+  bool _isInitialized = false;
+
   void _updateReaderStyles() {
     final colors = {
       'light': {'bg': '#ffffff', 'fg': '#000000'},
@@ -46,7 +49,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     }[_theme]!;
 
     final js = """
-      if (rendition) {
+      if (typeof rendition !== 'undefined' && rendition) {
         rendition.themes.fontSize("$_fontSize%");
         rendition.themes.register("$_theme", {
           "body": { "background": "${colors['bg']} !important", "color": "${colors['fg']} !important" },
@@ -55,7 +58,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         });
         rendition.themes.select("$_theme");
         
-        // Force inject into current contents
         rendition.getContents().forEach(c => {
           c.addStylesheetRules({
             "body": {
@@ -83,7 +85,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   void _applyHighlighting() {
     final srs = ref.read(srsProvider).deck;
     final words = srs.map((e) => e.front).toList();
-    final js = "window.highlightKnownWords(${jsonEncode(words)});";
+    final js = "if (window.highlightKnownWords) window.highlightKnownWords(${jsonEncode(words)});";
     webViewController?.evaluateJavascript(source: js);
   }
 
@@ -215,7 +217,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         rendition.getContents().forEach(content => {
           const doc = content.document;
           if (words.length === 0) return;
-          const regex = new RegExp('\\\\b(' + words.join('|') + ')\\\\b', 'gi');
+          const escapeRegExp = (s) => s.replace(/[.*+?^\\\$\${}()|[\\\]\\\\]/g, '\\\\\$&');
+          const regex = new RegExp('\\\\b(' + words.map(escapeRegExp).join('|') + ')\\\\b', 'gi');
           
           const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
           let node;
@@ -235,11 +238,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
       async function loadBook(url, initialCfi) {
         try {
-          console.log("Starting loadBook with URL: " + url);
           book = ePub(url);
-          book.ready.catch(function(err) {
-            console.error("EPUB Network/Ready Error: " + err);
-          });
           rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated", manager: "continuous" });
           
           rendition.on("relocated", (location) => {
@@ -247,7 +246,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
           });
 
-          // Helper to check selection reliably
           function checkAndReportSelection(win) {
               if (!win) return;
               const sel = win.getSelection();
@@ -256,21 +254,18 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               const text = sel.toString().trim();
               if (text.length > 0 && text !== window.lastReportedText) {
                   window.lastReportedText = text;
-                  
                   let contextText = text;
                   if (sel.rangeCount > 0) {
                       let container = sel.getRangeAt(0).commonAncestorContainer;
                       if (container && container.nodeType === 3) container = container.parentNode;
                       if (container) contextText = container.textContent.trim();
                   }
-                  
                   window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
               } else if (text.length === 0) {
                   window.lastReportedText = "";
               }
           }
 
-          // Register selectionchange listener for when dragging handles
           let selectionTimeout = null;
           rendition.hooks.content.register((contents) => {
             const win = contents.window;
@@ -278,50 +273,36 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             
             doc.addEventListener('selectionchange', () => {
               clearTimeout(selectionTimeout);
-              selectionTimeout = setTimeout(() => {
-                 checkAndReportSelection(win);
-              }, 800); // trigger 800ms after user stops adjusting selection
+              selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
             });
 
-            // Also check immediately on touchend (release of long press)
-            doc.addEventListener('touchend', (e) => {
-              setTimeout(() => {
-                 checkAndReportSelection(win);
-              }, 150);
+            doc.addEventListener('touchend', () => {
+              setTimeout(() => checkAndReportSelection(win), 150);
             });
           });
 
-          // Swipe Gestures for Pagination
           let touchStartX = 0;
-          let touchStartY = 0;
-          let touchStartTime = 0;
-          
-          rendition.on("touchstart", (e) => { 
-            touchStartX = e.changedTouches[0].screenX; 
-            touchStartY = e.changedTouches[0].screenY;
-            touchStartTime = Date.now();
-          });
-          
+          rendition.on("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; });
           rendition.on("touchend", (e) => {
-            const touchEndX = e.changedTouches[0].screenX;
-            const touchEndY = e.changedTouches[0].screenY;
-            const dx = touchStartX - touchEndX;
-            const dy = touchStartY - touchEndY;
-            const distance = Math.sqrt(dx*dx + dy*dy);
-            
-            // 1. Horizontal Swipe (Pagination)
-            if (distance > 50 && Math.abs(dy) < 50) {
+            const dx = touchStartX - e.changedTouches[0].screenX;
+            if (Math.abs(dx) > 50) {
               if (dx > 0) rendition.next();
               else rendition.prev();
             } 
           });
 
           await rendition.display(initialCfi || undefined);
-          console.log("Book displayed successfully");
           window.flutter_inappwebview.callHandler('onReady');
+          
+          await book.ready;
+          await book.locations.generate(1600);
+          const loc = rendition.currentLocation();
+          if (loc && loc.start) {
+              const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
+              window.flutter_inappwebview.callHandler('onProgress', loc.start.cfi, pct);
+          }
         } catch (error) {
           console.error("EPUB Loading Error: " + error.message);
-          console.error(error.stack);
         }
       }
     </script>
@@ -329,120 +310,124 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   </html>
   """;
 
+  Future<void> _handleImmediateSave() async {
+    if (_lastCfi != null && mounted) {
+      await ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
     final profileAsync = ref.watch(userProfileProvider);
 
-    // Trigger download when book detail is loaded
-   
     bookAsync.whenData((book) {
-      // Initialize local progress from backend data if it hasn't been set yet
-      if (_progress == 0.0 && book.progressPct > 0) {
-        Future.microtask(() => setState(() => _progress = book.progressPct));
-      }
-
-      if (!_localFileReady && !_isDownloading) {
-        Future.microtask(() => _ensureBookDownloaded(book));
+      if (!_isInitialized) {
+          _isInitialized = true;
+          setState(() {
+            _progress = book.progressPct;
+            _lastCfi = book.currentCfi;
+          });
+          _ensureBookDownloaded(book);
       }
     });
 
-    return Scaffold(
-      backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
-        title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => _showSettings(context),
-          ),
-        ],
-      ),
-      body: bookAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text("Error: $e")),
-        data: (book) {
-          if (_isDownloading) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children:[
-                  const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
-                  const SizedBox(height: 16),
-                  Text("Downloading Book... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
-                ]
-              )
-            );
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) {
+             _handleImmediateSave();
           }
-
-          if (!_localFileReady || _localPort == null) {
-            return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
-          }
-
-          return Stack(
-          children:[
-            Positioned.fill(
-              child: InAppWebView(
-                initialData: InAppWebViewInitialData(data: _htmlTemplate, baseUrl: WebUri("http://127.0.0.1:$_localPort/")),
-                initialSettings: InAppWebViewSettings(
-                  javaScriptEnabled: true,
-                  isInspectable: kDebugMode,
-                  allowUniversalAccessFromFileURLs: true,
-                  allowFileAccessFromFileURLs: true,
-                  mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-                ),
-              onConsoleMessage: (controller, consoleMessage) {
-                debugPrint('WEBVIEW: ${consoleMessage.message}');
-              },
+      },
+      child: Scaffold(
+        backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
+          title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => _showSettings(context),
+            ),
+          ],
+        ),
+        body: bookAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text("Error: $e")),
+          data: (book) {
+            if (_isDownloading) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children:[
+                    const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
+                    const SizedBox(height: 16),
+                    Text("Downloading Book... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
+                  ]
+                )
+              );
+            }
+      
+            if (!_localFileReady || _localPort == null) {
+              return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
+            }
+      
+            return InAppWebView(
+              initialData: InAppWebViewInitialData(
+                data: _htmlTemplate, 
+                baseUrl: WebUri("http://127.0.0.1:$_localPort/")
+              ),
+              initialSettings: InAppWebViewSettings(
+                javaScriptEnabled: true,
+                isInspectable: kDebugMode,
+                allowUniversalAccessFromFileURLs: true,
+                allowFileAccessFromFileURLs: true,
+                mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+              ),
               onWebViewCreated: (controller) {
                 webViewController = controller;
-
                 controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
                   final cfi = args[0] as String;
                   final pct = (args[1] as num).toDouble();
-                  if (mounted) setState(() => _progress = pct);
+                  if (mounted) {
+                    setState(() {
+                      _progress = pct;
+                      _lastCfi = cfi;
+                    });
+                  }
                   
                   _progressDebounce?.cancel();
-                  _progressDebounce = Timer(const Duration(seconds: 2), () {
+                  _progressDebounce = Timer(const Duration(milliseconds: 1000), () {
                     ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
                   });
-
-                  _applyHighlighting(); // Re-apply highlighting on page change
-                  _updateReaderStyles(); // Ensure styles are applied to new content
+                  _updateReaderStyles();
+                  _applyHighlighting();
                 });
                 controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
-                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage); // Ensure deck is loaded
+                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage);
                   _updateReaderStyles();
                   _applyHighlighting();
                 });
                 controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                  final selected = args[0].toString();
-                  final contextTxt = args[1].toString();
-                  final nativeLang = profileAsync.value?.nativeLanguage ?? 'english';
-                  
                   _showTranslationSheet(
                     context, 
-                    selectedText: selected, 
-                    contextText: contextTxt, 
+                    selectedText: args[0].toString(), 
+                    contextText: args[1].toString(), 
                     sourceLang: book.targetLanguage, 
-                    nativeLang: nativeLang,
+                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
                   );
                 });
               },
               onLoadStop: (controller, _) async {
                 if (_localPort != null) {
                    final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
-                   await controller.evaluateJavascript(source: "loadBook('$localUrl', '${book.currentCfi ?? ''}');");
+                   await controller.evaluateJavascript(source: "loadBook('$localUrl', '${_lastCfi ?? ''}');");
                 }
               },
-            ),
-            ),
-          ],
-        );
-       },
+            );
+         },
+        ),
       ),
     );
   }
@@ -508,7 +493,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       ),
     );
 
-    // Clear the selection/underscore highlight when the user closes the Bottom Sheet
     webViewController?.evaluateJavascript(source: """
       if (rendition) {
         rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
