@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../services/logger_service.dart';
 import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
@@ -21,6 +22,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _handleUpload() async {
     final activeLang = ref.read(activeLanguageProvider);
+    final logger = ref.read(loggerProvider);
+    
+    logger.info('LibraryScreen: User triggered EPUB upload');
     
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -28,6 +32,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
 
     if (result != null && result.files.single.path != null) {
+      final fileName = result.files.single.name;
+      logger.info('LibraryScreen: File selected: $fileName');
+      
       setState(() => _isUploading = true);
       File file = File(result.files.single.path!);
       
@@ -35,28 +42,31 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         await ref.read(bookNotifierProvider.notifier).uploadBook(
           file, 
           activeLang, 
-          result.files.single.name.replaceAll('.epub', '')
+          fileName.replaceAll('.epub', '')
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Book uploaded successfully!')));
         }
-      } catch (e) {
+      } catch (e, st) {
+        logger.error('LibraryScreen: Upload failed', e, st);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
         }
       } finally {
         if (mounted) setState(() => _isUploading = false);
       }
+    } else {
+      logger.info('LibraryScreen: File selection cancelled');
     }
   }
 
-  void _promptDelete(String bookId) {
+  void _promptDelete(String bookId, String title) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
         title: const Text('Delete Book?', style: TextStyle(color: Colors.white)),
-        content: const Text('Are you sure you want to remove this book from your library?', style: TextStyle(color: Colors.white70)),
+        content: Text('Are you sure you want to remove "$title" from your library?', style: const TextStyle(color: Colors.white70)),
         actions:[
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
           TextButton(
@@ -73,7 +83,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Rely exclusively on the provider for the list and progress data
     final booksAsync = ref.watch(booksProvider);
 
     return GlassScaffold(
@@ -113,7 +122,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   final book = books[index];
                   return GestureDetector(
                     onTap: () => context.push('/library/book/${book.id}'),
-                    onLongPress: () => _promptDelete(book.id),
+                    onLongPress: () => _promptDelete(book.id, book.title),
                     child: GlassCard(
                       padding: 12,
                       child: Column(
@@ -141,7 +150,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             minHeight: 4,
                           ),
                           const SizedBox(height: 6),
-                          // This line now correctly shows the progress synchronized with the provider
                           Text("${book.progressPct.round()}% Read", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600)),
                         ],
                       ),

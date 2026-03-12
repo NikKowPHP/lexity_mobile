@@ -12,6 +12,7 @@ import 'package:lexity_mobile/providers/srs_provider.dart';
 import '../../models/book.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../services/logger_service.dart';
 import '../../theme/liquid_theme.dart';
 import '../../services/ai_service.dart';
 
@@ -38,10 +39,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   HttpServer? _localServer;
   int? _localPort;
 
-  // Track if book logic has been started to avoid double-init
   bool _isInitialized = false;
+  
+  // Flag to prevent early '0%' percentage reports from overwriting DB progress
+  bool _canSaveToBackend = false;
 
   void _updateReaderStyles() {
+    final logger = ref.read(loggerProvider);
+    logger.debug('BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)');
+    
     final colors = {
       'light': {'bg': '#ffffff', 'fg': '#000000'},
       'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
@@ -83,8 +89,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   }
 
   void _applyHighlighting() {
+    final logger = ref.read(loggerProvider);
     final srs = ref.read(srsProvider).deck;
     final words = srs.map((e) => e.front).toList();
+    
+    logger.debug('BookReader: Applying highlighting for ${words.length} known words');
     final js = "if (window.highlightKnownWords) window.highlightKnownWords(${jsonEncode(words)});";
     webViewController?.evaluateJavascript(source: js);
   }
@@ -96,9 +105,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   }
 
   Future<void> _startLocalServer() async {
+    final logger = ref.read(loggerProvider);
+    logger.info('BookReader: Initializing local file server');
     try {
       _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      if (mounted) setState(() => _localPort = _localServer!.port);
+      if (mounted) {
+        setState(() => _localPort = _localServer!.port);
+        logger.info('BookReader: Local server bound to port $_localPort');
+      }
       
       _localServer!.listen((HttpRequest request) async {
         request.response.headers.add('Access-Control-Allow-Origin', '*');
@@ -116,6 +130,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
            final file = File('${dir.path}/books/$bookId.epub');
            
            if (await file.exists()) {
+             logger.debug('BookReader: Serving local EPUB file for $bookId');
              final length = await file.length();
              request.response.contentLength = length;
              request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
@@ -127,20 +142,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         request.response.statusCode = 404;
         await request.response.close();
       });
-    } catch (e) {
-      debugPrint("Local server error: $e");
+    } catch (e, st) {
+      logger.error('BookReader: Local server startup error', e, st);
     }
   }
 
-  @override
-  void dispose() {
-    _progressDebounce?.cancel();
-    _localServer?.close(force: true);
-    super.dispose();
-  }
-
   Future<void> _ensureBookDownloaded(UserBook book) async {
+    final logger = ref.read(loggerProvider);
     if (_isDownloading || _localFileReady) return;
+    
     try {
       final dir = await getApplicationDocumentsDirectory();
       final booksDir = Directory('${dir.path}/books');
@@ -148,11 +158,16 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
       final file = File('${booksDir.path}/${book.id}.epub');
       if (await file.exists()) {
+        logger.info('BookReader: Book "${book.title}" found locally');
         if (mounted) setState(() => _localFileReady = true);
         return;
       }
 
-      if (book.signedUrl == null) throw Exception("No download URL provided");
+      logger.info('BookReader: Book not found locally, starting download for "${book.title}"');
+      if (book.signedUrl == null) {
+        logger.error('BookReader: Missing signedUrl for book ${book.id}');
+        throw Exception("No download URL provided");
+      }
 
       setState(() {
         _isDownloading = true;
@@ -173,6 +188,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         },
         onDone: () async {
           await file.writeAsBytes(bytes);
+          logger.info('BookReader: Download complete for "${book.title}"');
           if (mounted) {
             setState(() {
               _isDownloading = false;
@@ -180,14 +196,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             });
           }
         },
-        onError: (e) {
+        onError: (e, st) {
+          logger.error('BookReader: Download stream error', e, st);
           if (mounted) setState(() => _isDownloading = false);
-          debugPrint("Download error: $e");
         },
       );
-    } catch (e) {
+    } catch (e, st) {
+      logger.error('BookReader: Download setup failed', e, st);
       if (mounted) setState(() => _isDownloading = false);
-      debugPrint("Setup local book error: $e");
     }
   }
 
@@ -217,7 +233,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         rendition.getContents().forEach(content => {
           const doc = content.document;
           if (words.length === 0) return;
-          const escapeRegExp = (s) => s.replace(/[.*+?^\\\$\${}()|[\\\]\\\\]/g, '\\\\\$&');
+          // Escape for Regex
+          const escapeRegExp = (s) => s.replace(/[.*+?^\\\$\${"{"}}()|[\\\]\\\\]/g, '\\\\\$&');
           const regex = new RegExp('\\\\b(' + words.map(escapeRegExp).join('|') + ')\\\\b', 'gi');
           
           const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
@@ -238,10 +255,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
       async function loadBook(url, initialCfi) {
         try {
+          console.log("BookReader JS: Initializing ePub.js engine");
           book = ePub(url);
-          rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated", manager: "continuous" });
+          
+          await book.opened;
+          console.log("BookReader JS: Book opened");
+
+          rendition = book.renderTo("viewer", { 
+            width: "100%", 
+            height: "100%", 
+            flow: "paginated", 
+            manager: "continuous" 
+          });
           
           rendition.on("relocated", (location) => {
+            // Percent is only valid after locations.generate()
             const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
             window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
           });
@@ -291,11 +319,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             } 
           });
 
+          console.log("BookReader JS: Displaying position: " + initialCfi);
           await rendition.display(initialCfi || undefined);
           window.flutter_inappwebview.callHandler('onReady');
           
           await book.ready;
+          console.log("BookReader JS: Generating locations...");
           await book.locations.generate(1600);
+          console.log("BookReader JS: Locations ready.");
+
           const loc = rendition.currentLocation();
           if (loc && loc.start) {
               const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
@@ -311,7 +343,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   """;
 
   Future<void> _handleImmediateSave() async {
+    final logger = ref.read(loggerProvider);
     if (_lastCfi != null && mounted) {
+      logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
       await ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
     }
   }
@@ -320,9 +354,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   Widget build(BuildContext context) {
     final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
     final profileAsync = ref.watch(userProfileProvider);
+    final logger = ref.read(loggerProvider);
 
     bookAsync.whenData((book) {
       if (!_isInitialized) {
+          logger.info('BookReader: Initializing state from DB. Saved CFI: ${book.currentCfi}');
           _isInitialized = true;
           setState(() {
             _progress = book.progressPct;
@@ -343,7 +379,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () {
+            logger.info('BookReader: Exiting reader');
+            context.pop();
+          }),
           title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
           actions: [
             IconButton(
@@ -354,7 +393,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         ),
         body: bookAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text("Error: $e")),
+          error: (e, st) {
+            logger.error('BookReader: Failed to load book data', e, st);
+            return Center(child: Text("Error: $e"));
+          },
           data: (book) {
             if (_isDownloading) {
               return Center(
@@ -363,7 +405,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   children:[
                     const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
                     const SizedBox(height: 16),
-                    Text("Downloading Book... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
+                    Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
                   ]
                 )
               );
@@ -390,25 +432,48 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                 controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
                   final cfi = args[0] as String;
                   final pct = (args[1] as num).toDouble();
+                  
+                  // Always update local state so we have the correct location for exit-save
                   if (mounted) {
                     setState(() {
-                      _progress = pct;
+                      _progress = pct > 0 ? pct : _progress; // Keep existing percentage if new one is 0
                       _lastCfi = cfi;
                     });
                   }
+
+                  // Only trigger debounced backend update if we are past the initialization phase
+                  // or if we have a real percentage value.
+                  if (!_canSaveToBackend && pct <= 0) {
+                      return;
+                  }
+
+                  logger.debug('BookReader: Progress updated locally. CFI: $cfi');
                   
                   _progressDebounce?.cancel();
-                  _progressDebounce = Timer(const Duration(milliseconds: 1000), () {
-                    ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
+                  _progressDebounce = Timer(const Duration(milliseconds: 2000), () {
+                    if (mounted) {
+                      logger.info('BookReader: Saving progress to server: $cfi ($pct%)');
+                      ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
+                    }
                   });
+
                   _updateReaderStyles();
                   _applyHighlighting();
                 });
+
                 controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
+                  logger.info('BookReader JS: Rendition ready. Unblocking backend saves.');
+                  
+                  // Safety buffer: allow backend updates after 2s once ready signal hits
+                  Future.delayed(const Duration(milliseconds: 2000), () {
+                    if (mounted) setState(() => _canSaveToBackend = true);
+                  });
+
                   ref.read(srsProvider.notifier).loadDeck(book.targetLanguage);
                   _updateReaderStyles();
                   _applyHighlighting();
                 });
+
                 controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
                   _showTranslationSheet(
                     context, 
@@ -422,7 +487,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               onLoadStop: (controller, _) async {
                 if (_localPort != null) {
                    final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
-                   await controller.evaluateJavascript(source: "loadBook('$localUrl', '${_lastCfi ?? ''}');");
+                   logger.info('BookReader: Injecting load command. CFI: $_lastCfi');
+                   final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                   await controller.evaluateJavascript(source: jsCall);
                 }
               },
             );
@@ -433,6 +500,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   }
 
   void _showSettings(BuildContext context) {
+    final logger = ref.read(loggerProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -448,7 +516,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
-                  onTap: () { setState(() => _theme = t); setModalState((){}); _updateReaderStyles(); },
+                  onTap: () { 
+                    logger.info('BookReader: Switched theme to $t');
+                    setState(() => _theme = t); 
+                    setModalState((){}); 
+                    _updateReaderStyles(); 
+                  },
                   child: Container(
                     width: 60, height: 60,
                     decoration: BoxDecoration(
@@ -466,7 +539,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   Expanded(
                     child: Slider(
                       value: _fontSize, min: 80, max: 200,
-                      onChanged: (v) { setState(() => _fontSize = v); setModalState((){}); _updateReaderStyles(); },
+                      onChanged: (v) { 
+                        setState(() => _fontSize = v); 
+                        setModalState((){}); 
+                      },
+                      onChangeEnd: (v) {
+                        logger.info('BookReader: Font size settled at ${v.round()}%');
+                        _updateReaderStyles();
+                      },
                     ),
                   ),
                   const Icon(Icons.text_fields, size: 24),
@@ -494,7 +574,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     );
 
     webViewController?.evaluateJavascript(source: """
-      if (rendition) {
+      if (typeof rendition !== 'undefined' && rendition) {
         rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
         window.lastReportedText = "";
       }
@@ -535,16 +615,20 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
   }
 
   Future<void> _fetchFastTranslation() async {
+    final logger = ref.read(loggerProvider);
     try {
       final aiService = ref.read(aiServiceProvider);
       final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
       if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
-    } catch (e) {
+    } catch (e, st) {
+      logger.error('BookReader: Fast translation failed', e, st);
       if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
     }
   }
 
   Future<void> _fetchContextTranslation() async {
+    final logger = ref.read(loggerProvider);
+    logger.info('BookReader: Requesting context-aware translation');
     setState(() => _isLoadingContext = true);
     try {
       final aiService = ref.read(aiServiceProvider);
@@ -562,12 +646,14 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
           _isLoadingContext = false;
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      logger.error('BookReader: Context translation failed', e, st);
       if (mounted) setState(() { _isLoadingContext = false; });
     }
   }
 
   Future<void> _handleAddToDeck() async {
+    final logger = ref.read(loggerProvider);
     setState(() => _isAdding = true);
     final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
           front: widget.selectedText,
@@ -576,7 +662,15 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
           explanation: _explanation,
         );
 
-    if (mounted) setState(() { _isAdding = false; if (success) _isAdded = true; });
+    if (mounted) {
+      setState(() { 
+        _isAdding = false; 
+        if (success) {
+          _isAdded = true;
+          logger.info('BookReader: Added to deck successfully');
+        } 
+      });
+    }
   }
 
   @override

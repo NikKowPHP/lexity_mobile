@@ -93,7 +93,9 @@ class SrsService {
           'frontContent': front,
           'backContent': back,
           'targetLanguage': language,
-          'explanation': explanation,
+          // FIX: The backend Zod schema z.string() fails if explicitly null.
+          // We provide an empty string as a fallback to satisfy the type requirement.
+          'explanation': explanation ?? "",
         }),
       );
 
@@ -106,8 +108,11 @@ class SrsService {
         return;
       }
 
-      final errorMsg =
-          jsonDecode(response.body)['error'] ?? 'Failed to create item';
+      final dynamic body = jsonDecode(response.body);
+      final String errorMsg = body is Map && body.containsKey('error') 
+          ? body['error'].toString() 
+          : body.toString();
+          
       _logger.warning(
         'SrsService: createFromTranslation failed. Reason: $errorMsg',
       );
