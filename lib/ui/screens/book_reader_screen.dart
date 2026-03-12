@@ -50,7 +50,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         rendition.themes.fontSize("$_fontSize%");
         rendition.themes.register("$_theme", {
           "body": { "background": "${colors['bg']} !important", "color": "${colors['fg']} !important" },
-          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" }
+          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
+          "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
         });
         rendition.themes.select("$_theme");
         
@@ -65,6 +66,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
               "color": "${colors['fg']} !important",
               "background": "transparent !important"
+            },
+            "::selection": {
+              "background-color": "rgba(99, 102, 241, 0.3) !important",
+              "text-decoration": "underline !important",
+              "text-decoration-color": "#6366F1 !important",
+              "color": "inherit !important"
             }
           });
         });
@@ -201,6 +208,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     <script>
       let book;
       let rendition;
+      window.lastReportedText = "";
 
       window.highlightKnownWords = function(words) {
         if (!rendition) return;
@@ -239,27 +247,73 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
           });
 
-          rendition.on("selected", (cfiRange, contents) => {
-            book.getRange(cfiRange).then(range => {
-              if (!range) return;
-              const text = range.toString().trim();
-              if (text.length === 0) return;
+          // Helper to check selection reliably
+          function checkAndReportSelection(win) {
+              if (!win) return;
+              const sel = win.getSelection();
+              if (!sel) return;
               
-              const contextText = range.commonAncestorContainer ? range.commonAncestorContainer.textContent.trim() : text;
-              window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
-              
-              // Clear selection so it doesn't get stuck
-              contents.window.getSelection().removeAllRanges();
-            }).catch(e => console.error("Selection error: ", e));
+              const text = sel.toString().trim();
+              if (text.length > 0 && text !== window.lastReportedText) {
+                  window.lastReportedText = text;
+                  
+                  let contextText = text;
+                  if (sel.rangeCount > 0) {
+                      let container = sel.getRangeAt(0).commonAncestorContainer;
+                      if (container && container.nodeType === 3) container = container.parentNode;
+                      if (container) contextText = container.textContent.trim();
+                  }
+                  
+                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
+              } else if (text.length === 0) {
+                  window.lastReportedText = "";
+              }
+          }
+
+          // Register selectionchange listener for when dragging handles
+          let selectionTimeout = null;
+          rendition.hooks.content.register((contents) => {
+            const win = contents.window;
+            const doc = contents.document;
+            
+            doc.addEventListener('selectionchange', () => {
+              clearTimeout(selectionTimeout);
+              selectionTimeout = setTimeout(() => {
+                 checkAndReportSelection(win);
+              }, 800); // trigger 800ms after user stops adjusting selection
+            });
+
+            // Also check immediately on touchend (release of long press)
+            doc.addEventListener('touchend', (e) => {
+              setTimeout(() => {
+                 checkAndReportSelection(win);
+              }, 150);
+            });
           });
 
-          // Swipe Gestures
+          // Swipe Gestures for Pagination
           let touchStartX = 0;
-          rendition.on("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; });
+          let touchStartY = 0;
+          let touchStartTime = 0;
+          
+          rendition.on("touchstart", (e) => { 
+            touchStartX = e.changedTouches[0].screenX; 
+            touchStartY = e.changedTouches[0].screenY;
+            touchStartTime = Date.now();
+          });
+          
           rendition.on("touchend", (e) => {
             const touchEndX = e.changedTouches[0].screenX;
-            if (touchStartX - touchEndX > 50) rendition.next();
-            if (touchEndX - touchStartX > 50) rendition.prev();
+            const touchEndY = e.changedTouches[0].screenY;
+            const dx = touchStartX - touchEndX;
+            const dy = touchStartY - touchEndY;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            
+            // 1. Horizontal Swipe (Pagination)
+            if (distance > 50 && Math.abs(dy) < 50) {
+              if (dx > 0) rendition.next();
+              else rendition.prev();
+            } 
           });
 
           await rendition.display(initialCfi || undefined);
@@ -341,7 +395,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
                 ),
               onConsoleMessage: (controller, consoleMessage) {
-                debugPrint("WEBVIEW: " + consoleMessage.message.toString());
+                debugPrint('WEBVIEW: ${consoleMessage.message}');
               },
               onWebViewCreated: (controller) {
                 webViewController = controller;
@@ -440,8 +494,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     );
   }
 
-  void _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) {
-    showModalBottomSheet(
+  Future<void> _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) async {
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -453,6 +507,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         targetLang: nativeLang,
       ),
     );
+
+    // Clear the selection/underscore highlight when the user closes the Bottom Sheet
+    webViewController?.evaluateJavascript(source: """
+      if (rendition) {
+        rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
+        window.lastReportedText = "";
+      }
+    """);
   }
 }
 
