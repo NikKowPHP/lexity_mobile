@@ -59,7 +59,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       if (typeof rendition !== 'undefined' && rendition) {
         rendition.themes.fontSize("$_fontSize%");
         rendition.themes.register("$_theme", {
-          "body": { "background": "${colors['bg']} !important", "color": "${colors['fg']} !important" },
+          "body": { 
+            "background": "${colors['bg']} !important", 
+            "color": "${colors['fg']} !important"
+          },
           "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
           "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
         });
@@ -72,9 +75,40 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               "color": "${colors['fg']} !important",
               "font-size": "$_fontSize% !important"
             },
+            "p": {
+              "position": "relative !important",
+              "padding-right": "45px !important",
+              "margin-bottom": "1.5em !important",
+              "color": "${colors['fg']} !important"
+            },
             "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
               "color": "${colors['fg']} !important",
               "background": "transparent !important"
+            },
+            ".para-translate-btn": {
+              "position": "absolute",
+              "right": "0px",
+              "top": "0px",
+              "width": "32px",
+              "height": "32px",
+              "border-radius": "8px",
+              "background": "rgba(99, 102, 241, 0.15)",
+              "border": "1px solid rgba(255, 255, 255, 0.1)",
+              "color": "#6366F1",
+              "display": "flex",
+              "align-items": "center",
+              "justify-content": "center",
+              "cursor": "pointer",
+              "font-size": "16px",
+              "user-select": "none",
+              "-webkit-user-select": "none",
+              "opacity": "0.6",
+              "transition": "opacity 0.2s",
+              "z-index": "10"
+            },
+            ".para-translate-btn:active": {
+              "opacity": "1.0",
+              "transform": "scale(0.95)"
             },
             "::selection": {
               "background-color": "rgba(99, 102, 241, 0.3) !important",
@@ -213,11 +247,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   <html>
   <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
     <style>
-      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: transparent; overflow: hidden; }
+      html, body { 
+        margin: 0; padding: 0; width: 100%; height: 100%; 
+        background-color: #121212;
+      }
       #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
       mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
     </style>
@@ -234,9 +271,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         rendition.getContents().forEach(content => {
           const doc = content.document;
           if (words.length === 0) return;
-          // Escape for Regex
-          const escapeRegExp = (s) => s.replace(/[.*+?^\\\$${"{"}}()|[\\\]\\\\]/g, '\\\\\$&');
-          const regex = new RegExp('\\\\b(' + words.map(escapeRegExp).join('|') + ')\\\\b', 'gi');
+          
+          // Use safe string concatenation to build the regex string
+          const regexStr = words.map(w => w.replace(/[.*+?^\\\$\${"{"}}()|[\\\]\\\\]/g, '\\\\\$&')).join('|');
+          const regex = new RegExp('\\\\b(' + regexStr + ')\\\\b', 'gi');
           
           const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
           let node;
@@ -256,11 +294,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
       async function loadBook(url, initialCfi) {
         try {
-          console.log("BookReader JS: Initializing ePub.js engine");
+          console.log("BookReader JS: Starting ePub initialization");
           book = ePub(url);
           
           await book.opened;
-          console.log("BookReader JS: Book opened");
 
           rendition = book.renderTo("viewer", { 
             width: "100%", 
@@ -270,7 +307,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           });
           
           rendition.on("relocated", (location) => {
-            // Percent is only valid after locations.generate()
             const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
             window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
           });
@@ -295,14 +331,29 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               }
           }
 
-          let selectionTimeout = null;
           rendition.hooks.content.register((contents) => {
             const win = contents.window;
             const doc = contents.document;
             
+            const paragraphs = doc.querySelectorAll('p');
+            paragraphs.forEach((p) => {
+              if (p.textContent.trim().length < 20) return;
+              if (p.querySelector('.para-translate-btn')) return;
+
+              const btn = doc.createElement('div');
+              btn.className = 'para-translate-btn';
+              btn.innerHTML = '文'; 
+              btn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
+              };
+              p.appendChild(btn);
+            });
+
             doc.addEventListener('selectionchange', () => {
-              clearTimeout(selectionTimeout);
-              selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
+              clearTimeout(window.selectionTimeout);
+              window.selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
             });
 
             doc.addEventListener('touchend', () => {
@@ -311,7 +362,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           });
 
           let touchStartX = 0;
-          rendition.on("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; });
+          rendition.on("touchstart", (e) => { 
+            touchStartX = e.changedTouches[0].screenX; 
+          });
+          
           rendition.on("touchend", (e) => {
             const dx = touchStartX - e.changedTouches[0].screenX;
             if (Math.abs(dx) > 50) {
@@ -320,38 +374,30 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             } 
           });
 
-          console.log("BookReader JS: Displaying position: " + initialCfi);
           await rendition.display(initialCfi || undefined);
           window.flutter_inappwebview.callHandler('onReady');
           
           await book.ready;
-          console.log("BookReader JS: Generating locations...");
           await book.locations.generate(1600);
-          console.log("BookReader JS: Locations ready.");
-
-          // RECURSIVE TOC EXTRACTION
-          const flattenToc = (items, level = 0) => {
-            return items.reduce((acc, item) => {
-              acc.push({
-                label: item.label,
-                href: item.href,
-                level: level
-              });
-              if (item.subitems && item.subitems.length > 0) {
-                acc.push(...flattenToc(item.subitems, level + 1));
-              }
-              return acc;
-            }, []);
-          };
-
-          const toc = flattenToc(book.navigation.toc);
-          window.flutter_inappwebview.callHandler('onToc', toc);
 
           const loc = rendition.currentLocation();
           if (loc && loc.start) {
               const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
               window.flutter_inappwebview.callHandler('onProgress', loc.start.cfi, pct);
           }
+
+          const flattenToc = (items, level = 0) => {
+            return items.reduce((acc, item) => {
+              acc.push({ label: item.label, href: item.href, level: level });
+              if (item.subitems && item.subitems.length > 0) {
+                acc.push(...flattenToc(item.subitems, level + 1));
+              }
+              return acc;
+            }, []);
+          };
+          const toc = flattenToc(book.navigation.toc);
+          window.flutter_inappwebview.callHandler('onToc', toc);
+
         } catch (error) {
           console.error("EPUB Loading Error: " + error.message);
         }
@@ -377,7 +423,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
     bookAsync.whenData((book) {
       if (!_isInitialized) {
-          logger.info('BookReader: Initializing state from DB. Saved CFI: ${book.currentCfi}');
+          logger.info('BookReader: Initializing state. Saved CFI: ${book.currentCfi}');
           _isInitialized = true;
           setState(() {
             _progress = book.progressPct;
@@ -399,7 +445,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () {
-            logger.info('BookReader: Exiting reader');
             context.pop();
           }),
           title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
@@ -418,7 +463,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         body: bookAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, st) {
-            logger.error('BookReader: Failed to load book data', e, st);
+            logger.error('BookReader: Failed to load data', e, st);
             return Center(child: Text("Error: $e"));
           },
           data: (book) {
@@ -468,12 +513,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                       return;
                   }
 
-                  logger.debug('BookReader JS: Progress callback received. CFI: $cfi, Pct: $pct%');
-                  
                   _progressDebounce?.cancel();
                   _progressDebounce = Timer(const Duration(milliseconds: 1500), () {
                     if (mounted) {
-                      logger.info('BookReader: Saving progress to server: $cfi ($pct%)');
                       ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
                     }
                   });
@@ -484,13 +526,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
                 controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
                   final tocData = args[0] as List<dynamic>;
-                  logger.info('BookReader JS: TOC received, ${tocData.length} items');
                   if (mounted) setState(() => _toc = tocData);
                 });
 
+                controller.addJavaScriptHandler(handlerName: 'onParagraphTranslate', callback: (args) {
+                  final text = args[0].toString();
+                  _showTranslationSheet(
+                    context, 
+                    selectedText: text, 
+                    contextText: text, 
+                    sourceLang: book.targetLanguage, 
+                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
+                  );
+                });
+
                 controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
-                  logger.info('BookReader JS: Rendition ready. Unblocking backend saves.');
-                  
                   Future.delayed(const Duration(milliseconds: 2000), () {
                     if (mounted) setState(() => _canSaveToBackend = true);
                   });
@@ -513,7 +563,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               onLoadStop: (controller, _) async {
                 if (_localPort != null) {
                    final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
-                   logger.info('BookReader: Injecting load command. CFI: $_lastCfi');
                    final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
                    await controller.evaluateJavascript(source: jsCall);
                 }
@@ -565,7 +614,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
                     onTap: () {
                       final href = chapter['href'].toString();
-                      
                       webViewController?.evaluateJavascript(source: "rendition.display('${href}');");
                       Navigator.pop(context);
                     },
@@ -597,7 +645,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
                   onTap: () { 
-                    logger.info('BookReader: Switched theme to $t');
                     setState(() => _theme = t); 
                     setModalState((){}); 
                     _updateReaderStyles(); 
@@ -624,7 +671,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                         setModalState((){}); 
                       },
                       onChangeEnd: (v) {
-                        logger.info('BookReader: Font size settled at ${v.round()}%');
                         _updateReaderStyles();
                       },
                     ),
@@ -747,7 +793,6 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
         _isAdding = false; 
         if (success) {
           _isAdded = true;
-          logger.info('BookReader: Added to deck successfully');
         } 
       });
     }
