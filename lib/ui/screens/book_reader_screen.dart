@@ -234,6 +234,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         try {
           console.log("Starting loadBook with URL: " + url);
           book = ePub(url);
+          book.ready.catch(function(err) {
+            console.error("EPUB Network/Ready Error: " + err);
+          });
           rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated", manager: "continuous" });
           
           rendition.on("relocated", (location) => {
@@ -329,6 +332,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   isInspectable: kDebugMode,
                   allowUniversalAccessFromFileURLs: true,
                   allowFileAccessFromFileURLs: true,
+                  mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
                 ),
               onConsoleMessage: (controller, consoleMessage) {
                 debugPrint("WEBVIEW: " + consoleMessage.message.toString());
@@ -364,6 +368,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                    await controller.evaluateJavascript(source: "loadBook('$localUrl', '${book.currentCfi ?? ''}');");
                 }
               },
+            ),
             ),
             if (_selectedText != null && profileAsync.value != null)
               TranslationTooltip(

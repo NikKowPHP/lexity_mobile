@@ -40,6 +40,9 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+.kilocode/
+  rules/
+    rules.md
 android/
   app/
     src/
@@ -312,6 +315,10 @@ test.sh
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path=".kilocode/rules/rules.md">
+after each feature implementation code fix run the type check and fix the issues until no type issues found
+</file>
 
 <file path="android/app/src/debug/AndroidManifest.xml">
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -2637,130 +2644,6 @@ final translatorProvider = StateNotifierProvider<TranslatorNotifier, TranslatorS
 });
 </file>
 
-<file path="lib/services/book_service.dart">
-import 'dart:convert';
-import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/book.dart';
-import '../utils/constants.dart';
-import 'token_service.dart';
-import 'logger_service.dart';
-
-class BookService {
-  final TokenService _authTokenService;
-  late final LoggerService _logger;
-
-  BookService(this._authTokenService, this._logger);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<List<UserBook>> getBooks() async {
-    _logger.info('BookService: Fetching books');
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/books'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      return data.map((e) => UserBook.fromJson(e)).toList();
-    }
-    throw Exception('Failed to load books');
-  }
-
-  Future<UserBook> getBook(String id) async {
-    _logger.info('BookService: Fetching book details for $id');
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      return UserBook.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to load book');
-  }
-
-  Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    final response = await http.put(
-      Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'currentCfi': cfi, 
-        'progressPct': progressPct.toDouble(), // Ensure double
-      }),
-    );
-    
-    if (response.statusCode != 200) {
-      _logger.warning('Failed to update progress for book $id: ${response.statusCode}');
-    }
-  }
-
-  Future<void> deleteBook(String id) async {
-    _logger.info('BookService: Deleting book $id');
-    final response = await http.delete(
-      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete book');
-    }
-  }
-
-  Future<void> uploadBook(File file, String targetLanguage, String title) async {
-    _logger.info('BookService: Uploading new EPUB book');
-    final filename = file.path.split('/').last;
-    
-    // 1. Get signed upload URL
-    final uploadUrlResponse = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
-      headers: await _getHeaders(),
-    );
-    
-    if (uploadUrlResponse.statusCode != 200) throw Exception('Failed to get upload URL');
-    
-    final uploadData = jsonDecode(uploadUrlResponse.body);
-    final signedUrl = uploadData['signedUrl'];
-    final storagePath = uploadData['path'];
-
-    // 2. Put file to Supabase storage
-    final bytes = await file.readAsBytes();
-    final uploadRes = await http.put(
-      Uri.parse(signedUrl),
-      headers: {'Content-Type': 'application/epub+zip'},
-      body: bytes,
-    );
-
-    if (uploadRes.statusCode != 200) throw Exception('Failed to upload file to storage');
-
-    // 3. Register book record in API
-    final dbRes = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/books'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'title': title,
-        'author': 'Unknown',
-        'targetLanguage': targetLanguage,
-        'storagePath': storagePath,
-      }),
-    );
-
-    if (dbRes.statusCode != 200) throw Exception('Failed to save book to database');
-  }
-}
-
-final bookServiceProvider = Provider((ref) => 
-  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
-);
-</file>
-
 <file path="lib/services/learning_path_service.dart">
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -3131,262 +3014,6 @@ final authTokenServiceProvider = Provider<TokenService>((ref) =>
 final refreshTokenServiceProvider = Provider<TokenService>((ref) => 
   TokenService(ref, TokenType.refresh),
 );
-</file>
-
-<file path="lib/ui/screens/book_reader_screen.dart">
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:go_router/go_router.dart';
-import 'package:lexity_mobile/providers/srs_provider.dart';
-import '../../providers/book_provider.dart';
-import '../../providers/user_provider.dart';
-import '../widgets/translation_tooltip.dart';
-import '../../theme/liquid_theme.dart';
-
-class BookReaderScreen extends ConsumerStatefulWidget {
-  final String bookId;
-  const BookReaderScreen({super.key, required this.bookId});
-
-  @override
-  ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
-}
-
-class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
-  InAppWebViewController? webViewController;
-  double _progress = 0.0;
-  double _fontSize = 115.0;
-  String _theme = 'dark'; // 'light', 'dark', 'sepia'
-  
-  String? _selectedText;
-  String? _contextText;
-  double? _selectionX;
-  double? _selectionY;
-
-  // JavaScript function to apply styles dynamically to the EPUB rendition
-  void _updateReaderStyles() {
-    final colors = {
-      'light': {'bg': '#ffffff', 'fg': '#000000'},
-      'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
-      'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
-    }[_theme]!;
-
-    final js = """
-      if (rendition) {
-        rendition.themes.fontSize("$_fontSize%");
-        rendition.themes.register("$_theme", { body: { background: "${colors['bg']} !important", color: "${colors['fg']} !important" }});
-        rendition.themes.select("$_theme");
-        
-        // Force inject into current contents
-        rendition.getContents().forEach(c => {
-          c.addStylesheetRules({
-            "body": { 
-              "background-color": "${colors['bg']} !important", 
-              "color": "${colors['fg']} !important",
-              "font-size": "$_fontSize% !important"
-            }
-          });
-        });
-      }
-    """;
-    webViewController?.evaluateJavascript(source: js);
-  }
-
-  void _applyHighlighting() {
-    final srs = ref.read(srsProvider).deck;
-    final words = srs.map((e) => e.front.replaceAll("'", "\\'")).toList();
-    final js = "window.highlightKnownWords(${jsonEncode(words)});";
-    webViewController?.evaluateJavascript(source: js);
-  }
-
-  final String _htmlTemplate = """
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
-    <style>
-      body { margin: 0; padding: 0; background-color: #050505; overflow: hidden; }
-      #viewer { width: 100vw; height: 100vh; }
-      mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
-    </style>
-  </head>
-  <body>
-    <div id="viewer"></div>
-    <script>
-      let book;
-      let rendition;
-
-      window.highlightKnownWords = function(words) {
-        if (!rendition) return;
-        rendition.getContents().forEach(content => {
-          const doc = content.document;
-          if (words.length === 0) return;
-          const regex = new RegExp('\\\\b(' + words.join('|') + ')\\\\b', 'gi');
-          
-          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-          let node;
-          const nodes = [];
-          while (node = walker.nextNode()) nodes.push(node);
-          
-          nodes.forEach(textNode => {
-            if (regex.test(textNode.nodeValue)) {
-              const span = doc.createElement('span');
-              span.innerHTML = textNode.nodeValue.replace(regex, '<mark class="known-word">\$1</mark>');
-              textNode.parentNode.replaceChild(span, textNode);
-            }
-          });
-        });
-      };
-
-      async function loadBook(url, initialCfi) {
-        book = ePub(url);
-        rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated", manager: "continuous" });
-        
-        rendition.on("relocated", (location) => {
-          const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
-          window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
-        });
-
-        rendition.on("selected", (cfiRange, contents) => {
-          book.getRange(cfiRange).then(range => {
-            const rect = range.getBoundingClientRect();
-            const iframe = contents.document.defaultView.frameElement.getBoundingClientRect();
-            window.flutter_inappwebview.callHandler('onTextSelected', range.toString(), range.commonAncestorContainer.textContent, rect.left + iframe.left + (rect.width/2), rect.bottom + iframe.top);
-          });
-        });
-
-        // Swipe Gestures
-        let touchStartX = 0;
-        rendition.on("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; });
-        rendition.on("touchend", (e) => {
-          const touchEndX = e.changedTouches[0].screenX;
-          if (touchStartX - touchEndX > 50) rendition.next();
-          if (touchEndX - touchStartX > 50) rendition.prev();
-        });
-
-        await rendition.display(initialCfi || undefined);
-        window.flutter_inappwebview.callHandler('onReady');
-      }
-    </script>
-  </body>
-  </html>
-  """;
-
-  @override
-  Widget build(BuildContext context) {
-    final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
-    final profileAsync = ref.watch(userProfileProvider);
-
-    return Scaffold(
-      backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
-        title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => _showSettings(context),
-          ),
-        ],
-      ),
-      body: bookAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text("Error: $e")),
-        data: (book) => Stack(
-          children: [
-            InAppWebView(
-              initialData: InAppWebViewInitialData(data: _htmlTemplate, baseUrl: WebUri("https://localhost/")),
-              onWebViewCreated: (controller) {
-                webViewController = controller;
-                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
-                  setState(() => _progress = (args[1] as num).toDouble());
-                  ref.read(bookNotifierProvider.notifier).updateProgress(book.id, args[0], _progress);
-                  _applyHighlighting(); // Re-apply highlighting on page change
-                  _updateReaderStyles(); // Ensure styles are applied to new content
-                });
-                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
-                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage); // Ensure deck is loaded
-                  _updateReaderStyles();
-                  _applyHighlighting();
-                });
-                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                  setState(() { _selectedText = args[0]; _contextText = args[1]; _selectionX = (args[2] as num).toDouble(); _selectionY = (args[3] as num).toDouble(); });
-                });
-              },
-              onLoadStop: (controller, _) async {
-                if (book.signedUrl != null) {
-                  await controller.evaluateJavascript(source: "loadBook('${book.signedUrl}', '${book.currentCfi ?? ''}');");
-                }
-              },
-            ),
-            if (_selectedText != null && profileAsync.value != null)
-              TranslationTooltip(
-                selectedText: _selectedText!,
-                contextText: _contextText ?? _selectedText!,
-                sourceLang: book.targetLanguage,
-                targetLang: profileAsync.value!.nativeLanguage ?? 'english',
-                x: _selectionX!, y: _selectionY!,
-                onClose: () => setState(() => _selectedText = null),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSettings(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
-                  onTap: () { setState(() => _theme = t); setModalState((){}); _updateReaderStyles(); },
-                  child: Container(
-                    width: 60, height: 60,
-                    decoration: BoxDecoration(
-                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
-                    ),
-                  ),
-                )).toList(),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  const Icon(Icons.text_fields, size: 16),
-                  Expanded(
-                    child: Slider(
-                      value: _fontSize, min: 80, max: 200,
-                      onChanged: (v) { setState(() => _fontSize = v); setModalState((){}); _updateReaderStyles(); },
-                    ),
-                  ),
-                  const Icon(Icons.text_fields, size: 24),
-                ],
-              )
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 </file>
 
 <file path="lib/ui/screens/drill_screen.dart">
@@ -4409,24 +4036,6 @@ add_custom_target(flutter_assemble DEPENDS
 )
 </file>
 
-<file path="linux/flutter/generated_plugin_registrant.cc">
-//
-//  Generated file. Do not edit.
-//
-
-// clang-format off
-
-#include "generated_plugin_registrant.h"
-
-#include <flutter_inappwebview_linux/flutter_inappwebview_linux_plugin.h>
-
-void fl_register_plugins(FlPluginRegistry* registry) {
-  g_autoptr(FlPluginRegistrar) flutter_inappwebview_linux_registrar =
-      fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterInappwebviewLinuxPlugin");
-  flutter_inappwebview_linux_plugin_register_with_registrar(flutter_inappwebview_linux_registrar);
-}
-</file>
-
 <file path="linux/flutter/generated_plugin_registrant.h">
 //
 //  Generated file. Do not edit.
@@ -4443,33 +4052,6 @@ void fl_register_plugins(FlPluginRegistry* registry) {
 void fl_register_plugins(FlPluginRegistry* registry);
 
 #endif  // GENERATED_PLUGIN_REGISTRANT_
-</file>
-
-<file path="linux/flutter/generated_plugins.cmake">
-#
-# Generated file, do not edit.
-#
-
-list(APPEND FLUTTER_PLUGIN_LIST
-  flutter_inappwebview_linux
-)
-
-list(APPEND FLUTTER_FFI_PLUGIN_LIST
-)
-
-set(PLUGIN_BUNDLED_LIBRARIES)
-
-foreach(plugin ${FLUTTER_PLUGIN_LIST})
-  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/linux plugins/${plugin})
-  target_link_libraries(${BINARY_NAME} PRIVATE ${plugin}_plugin)
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:${plugin}_plugin>)
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${plugin}_bundled_libraries})
-endforeach(plugin)
-
-foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
-  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${ffi_plugin}/linux plugins/${ffi_plugin})
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${ffi_plugin}_bundled_libraries})
-endforeach(ffi_plugin)
 </file>
 
 <file path="linux/runner/CMakeLists.txt">
@@ -7891,6 +7473,130 @@ class MainActivity: FlutterActivity() {
 </manifest>
 </file>
 
+<file path="lib/services/book_service.dart">
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/book.dart';
+import '../utils/constants.dart';
+import 'token_service.dart';
+import 'logger_service.dart';
+
+class BookService {
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  BookService(this._authTokenService, this._logger);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<UserBook>> getBooks() async {
+    _logger.info('BookService: Fetching books');
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/books'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final List data = jsonDecode(response.body);
+      return data.map((e) => UserBook.fromJson(e)).toList();
+    }
+    throw Exception('Failed to load books');
+  }
+
+  Future<UserBook> getBook(String id) async {
+    _logger.info('BookService: Fetching book details for $id');
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      return UserBook.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load book');
+  }
+
+  Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    final response = await http.put(
+      Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'currentCfi': cfi, 
+        'progressPct': progressPct.toDouble(), // Ensure double
+      }),
+    );
+    
+    if (response.statusCode != 200) {
+      _logger.warning('Failed to update progress for book $id: ${response.statusCode}');
+    }
+  }
+
+  Future<void> deleteBook(String id) async {
+    _logger.info('BookService: Deleting book $id');
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete book');
+    }
+  }
+
+  Future<void> uploadBook(File file, String targetLanguage, String title) async {
+    _logger.info('BookService: Uploading new EPUB book');
+    final filename = file.path.split('/').last;
+    
+    // 1. Get signed upload URL
+    final uploadUrlResponse = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
+      headers: await _getHeaders(),
+    );
+    
+    if (uploadUrlResponse.statusCode != 200) throw Exception('Failed to get upload URL');
+    
+    final uploadData = jsonDecode(uploadUrlResponse.body);
+    final signedUrl = uploadData['signedUrl'];
+    final storagePath = uploadData['path'];
+
+    // 2. Put file to Supabase storage
+    final bytes = await file.readAsBytes();
+    final uploadRes = await http.put(
+      Uri.parse(signedUrl),
+      headers: {'Content-Type': 'application/epub+zip'},
+      body: bytes,
+    );
+
+    if (uploadRes.statusCode != 200) throw Exception('Failed to upload file to storage');
+
+    // 3. Register book record in API
+    final dbRes = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/books'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'title': title,
+        'author': 'Unknown',
+        'targetLanguage': targetLanguage,
+        'storagePath': storagePath,
+      }),
+    );
+
+    if (dbRes.statusCode != 200) throw Exception('Failed to save book to database');
+  }
+}
+
+final bookServiceProvider = Provider((ref) => 
+  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
+);
+</file>
+
 <file path="lib/theme/liquid_theme.dart">
 // lib/theme/liquid_theme.dart
 import 'package:flutter/material.dart';
@@ -7918,6 +7624,428 @@ class LiquidTheme {
         surface: Colors.transparent, // Important for glass
       ),
       useMaterial3: true,
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/screens/book_reader_screen.dart">
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:lexity_mobile/providers/srs_provider.dart';
+import '../../models/book.dart';
+import '../../providers/book_provider.dart';
+import '../../providers/user_provider.dart';
+import '../widgets/translation_tooltip.dart';
+import '../../theme/liquid_theme.dart';
+
+class BookReaderScreen extends ConsumerStatefulWidget {
+  final String bookId;
+  const BookReaderScreen({super.key, required this.bookId});
+
+  @override
+  ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
+}
+
+class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
+  InAppWebViewController? webViewController;
+  double _progress = 0.0;
+  double _fontSize = 115.0;
+  String _theme = 'dark'; // 'light', 'dark', 'sepia'
+  
+  String? _selectedText;
+  String? _contextText;
+  double? _selectionX;
+  double? _selectionY;
+
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+  bool _localFileReady = false;
+
+  Timer? _progressDebounce;
+  HttpServer? _localServer;
+  int? _localPort;
+
+  // JavaScript function to apply styles dynamically to the EPUB rendition
+  void _updateReaderStyles() {
+    final colors = {
+      'light': {'bg': '#ffffff', 'fg': '#000000'},
+      'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
+      'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
+    }[_theme]!;
+
+    final js = """
+      if (rendition) {
+        rendition.themes.fontSize("$_fontSize%");
+        rendition.themes.register("$_theme", { body: { background: "${colors['bg']} !important", color: "${colors['fg']} !important" }});
+        rendition.themes.select("$_theme");
+        
+        // Force inject into current contents
+        rendition.getContents().forEach(c => {
+          c.addStylesheetRules({
+            "body": { 
+              "background-color": "${colors['bg']} !important", 
+              "color": "${colors['fg']} !important",
+              "font-size": "$_fontSize% !important"
+            }
+          });
+        });
+      }
+    """;
+    webViewController?.evaluateJavascript(source: js);
+  }
+
+  void _applyHighlighting() {
+    final srs = ref.read(srsProvider).deck;
+    final words = srs.map((e) => e.front).toList();
+    final js = "window.highlightKnownWords(${jsonEncode(words)});";
+    webViewController?.evaluateJavascript(source: js);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _startLocalServer();
+  }
+
+  Future<void> _startLocalServer() async {
+    try {
+      _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      if (mounted) setState(() => _localPort = _localServer!.port);
+      
+      _localServer!.listen((HttpRequest request) async {
+        request.response.headers.add('Access-Control-Allow-Origin', '*');
+        request.response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        request.response.headers.add('Access-Control-Allow-Headers', '*');
+        
+        if (request.method == 'OPTIONS') {
+           request.response.statusCode = 200;
+           await request.response.close();
+           return;
+        }
+        if (request.uri.path.startsWith('/books/')) {
+           final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
+           final dir = await getApplicationDocumentsDirectory();
+           final file = File('${dir.path}/books/$bookId.epub');
+           
+           if (await file.exists()) {
+             request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
+             await request.response.addStream(file.openRead());
+             await request.response.close();
+             return;
+           }
+        }
+        request.response.statusCode = 404;
+        await request.response.close();
+      });
+    } catch (e) {
+      debugPrint("Local server error: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _progressDebounce?.cancel();
+    _localServer?.close(force: true);
+    super.dispose();
+  }
+
+  Future<void> _ensureBookDownloaded(UserBook book) async {
+    if (_isDownloading || _localFileReady) return;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${dir.path}/books');
+      if (!await booksDir.exists()) await booksDir.create(recursive: true);
+
+      final file = File('${booksDir.path}/${book.id}.epub');
+      if (await file.exists()) {
+        if (mounted) setState(() => _localFileReady = true);
+        return;
+      }
+
+      if (book.signedUrl == null) throw Exception("No download URL provided");
+
+      setState(() {
+        _isDownloading = true;
+        _downloadProgress = 0.0;
+      });
+
+      final request = http.Request('GET', Uri.parse(book.signedUrl!));
+      final response = await request.send();
+      final total = response.contentLength ?? 0;
+      int received = 0;
+      final bytes = <int>[];
+
+      response.stream.listen(
+        (chunk) {
+          bytes.addAll(chunk);
+          received += chunk.length;
+          if (total > 0 && mounted) setState(() => _downloadProgress = received / total);
+        },
+        onDone: () async {
+          await file.writeAsBytes(bytes);
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              _localFileReady = true;
+            });
+          }
+        },
+        onError: (e) {
+          if (mounted) setState(() => _isDownloading = false);
+          debugPrint("Download error: $e");
+        },
+      );
+    } catch (e) {
+      if (mounted) setState(() => _isDownloading = false);
+      debugPrint("Setup local book error: $e");
+    }
+  }
+
+  final String _htmlTemplate = """
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    <style>
+      body { margin: 0; padding: 0; background-color: #050505; overflow: hidden; }
+      #viewer { width: 100vw; height: 100vh; }
+      mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
+    </style>
+  </head>
+  <body>
+    <div id="viewer"></div>
+    <script>
+      let book;
+      let rendition;
+
+      window.highlightKnownWords = function(words) {
+        if (!rendition) return;
+        rendition.getContents().forEach(content => {
+          const doc = content.document;
+          if (words.length === 0) return;
+          const regex = new RegExp('\\\\b(' + words.join('|') + ')\\\\b', 'gi');
+          
+          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+          let node;
+          const nodes = [];
+          while (node = walker.nextNode()) nodes.push(node);
+          
+          nodes.forEach(textNode => {
+            if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'mark') return;
+            if (regex.test(textNode.nodeValue)) {
+              const span = doc.createElement('span');
+              span.innerHTML = textNode.nodeValue.replace(regex, '<mark class="known-word">\$1</mark>');
+              textNode.parentNode.replaceChild(span, textNode);
+            }
+          });
+        });
+      };
+
+      async function loadBook(url, initialCfi) {
+        try {
+          console.log("Starting loadBook with URL: " + url);
+          book = ePub(url);
+          rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated", manager: "continuous" });
+          
+          rendition.on("relocated", (location) => {
+            const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
+            window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
+          });
+
+          rendition.on("selected", (cfiRange, contents) => {
+            book.getRange(cfiRange).then(range => {
+              const rect = range.getBoundingClientRect();
+              const iframe = contents.document.defaultView.frameElement.getBoundingClientRect();
+              window.flutter_inappwebview.callHandler('onTextSelected', range.toString(), range.commonAncestorContainer.textContent, rect.left + iframe.left + (rect.width/2), rect.bottom + iframe.top);
+            });
+          });
+
+          // Swipe Gestures
+          let touchStartX = 0;
+          rendition.on("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; });
+          rendition.on("touchend", (e) => {
+            const touchEndX = e.changedTouches[0].screenX;
+            if (touchStartX - touchEndX > 50) rendition.next();
+            if (touchEndX - touchStartX > 50) rendition.prev();
+          });
+
+          await rendition.display(initialCfi || undefined);
+          console.log("Book displayed successfully");
+          window.flutter_inappwebview.callHandler('onReady');
+        } catch (error) {
+          console.error("EPUB Loading Error: " + error.message);
+          console.error(error.stack);
+        }
+      }
+    </script>
+  </body>
+  </html>
+  """;
+
+  @override
+  Widget build(BuildContext context) {
+    final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
+    final profileAsync = ref.watch(userProfileProvider);
+
+    // Trigger download when book detail is loaded
+   
+    bookAsync.whenData((book) {
+      if (!_localFileReady && !_isDownloading) {
+        Future.microtask(() => _ensureBookDownloaded(book));
+      }
+    });
+
+    return Scaffold(
+      backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
+        title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => _showSettings(context),
+          ),
+        ],
+      ),
+      body: bookAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text("Error: $e")),
+        data: (book) {
+          if (_isDownloading) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children:[
+                  const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
+                  const SizedBox(height: 16),
+                  Text("Downloading Book... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
+                ]
+              )
+            );
+          }
+
+          if (!_localFileReady || _localPort == null) {
+            return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
+          }
+
+          return Stack(
+          children:[
+            InAppWebView(
+              initialData: InAppWebViewInitialData(data: _htmlTemplate, baseUrl: WebUri("http://127.0.0.1:$_localPort/")),
+              initialSettings: InAppWebViewSettings(
+                javaScriptEnabled: true,
+                isInspectable: true,
+                allowUniversalAccessFromFileURLs: true,
+                allowFileAccessFromFileURLs: true,
+              ),
+              onConsoleMessage: (controller, consoleMessage) {
+                debugPrint("WEBVIEW: " + consoleMessage.message.toString());
+              },
+              onWebViewCreated: (controller) {
+                webViewController = controller;
+
+                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
+                  final cfi = args[0] as String;
+                  final pct = (args[1] as num).toDouble();
+                  if (mounted) setState(() => _progress = pct);
+                  
+                  _progressDebounce?.cancel();
+                  _progressDebounce = Timer(const Duration(seconds: 2), () {
+                    ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
+                  });
+
+                  _applyHighlighting(); // Re-apply highlighting on page change
+                  _updateReaderStyles(); // Ensure styles are applied to new content
+                });
+                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
+                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage); // Ensure deck is loaded
+                  _updateReaderStyles();
+                  _applyHighlighting();
+                });
+                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
+                  setState(() { _selectedText = args[0]; _contextText = args[1]; _selectionX = (args[2] as num).toDouble(); _selectionY = (args[3] as num).toDouble(); });
+                });
+              },
+              onLoadStop: (controller, _) async {
+                if (_localPort != null) {
+                   final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
+                   await controller.evaluateJavascript(source: "loadBook('$localUrl', '${book.currentCfi ?? ''}');");
+                }
+              },
+            ),
+            if (_selectedText != null && profileAsync.value != null)
+              TranslationTooltip(
+                selectedText: _selectedText!,
+                contextText: _contextText ?? _selectedText!,
+                sourceLang: book.targetLanguage,
+                targetLang: profileAsync.value!.nativeLanguage ?? 'english',
+                x: _selectionX!, y: _selectionY!,
+                onClose: () => setState(() => _selectedText = null),
+              ),
+          ],
+        );
+       },
+      ),
+    );
+  }
+
+  void _showSettings(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
+                  onTap: () { setState(() => _theme = t); setModalState((){}); _updateReaderStyles(); },
+                  child: Container(
+                    width: 60, height: 60,
+                    decoration: BoxDecoration(
+                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
+                    ),
+                  ),
+                )).toList(),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  const Icon(Icons.text_fields, size: 16),
+                  Expanded(
+                    child: Slider(
+                      value: _fontSize, min: 80, max: 200,
+                      onChanged: (v) { setState(() => _fontSize = v); setModalState((){}); _updateReaderStyles(); },
+                    ),
+                  ),
+                  const Icon(Icons.text_fields, size: 24),
+                ],
+              )
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -8920,6 +9048,51 @@ class AppConstants {
     return lang['name']!;
   }
 }
+</file>
+
+<file path="linux/flutter/generated_plugin_registrant.cc">
+//
+//  Generated file. Do not edit.
+//
+
+// clang-format off
+
+#include "generated_plugin_registrant.h"
+
+#include <flutter_inappwebview_linux/flutter_inappwebview_linux_plugin.h>
+
+void fl_register_plugins(FlPluginRegistry* registry) {
+  g_autoptr(FlPluginRegistrar) flutter_inappwebview_linux_registrar =
+      fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterInappwebviewLinuxPlugin");
+  flutter_inappwebview_linux_plugin_register_with_registrar(flutter_inappwebview_linux_registrar);
+}
+</file>
+
+<file path="linux/flutter/generated_plugins.cmake">
+#
+# Generated file, do not edit.
+#
+
+list(APPEND FLUTTER_PLUGIN_LIST
+  flutter_inappwebview_linux
+)
+
+list(APPEND FLUTTER_FFI_PLUGIN_LIST
+)
+
+set(PLUGIN_BUNDLED_LIBRARIES)
+
+foreach(plugin ${FLUTTER_PLUGIN_LIST})
+  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${plugin}/linux plugins/${plugin})
+  target_link_libraries(${BINARY_NAME} PRIVATE ${plugin}_plugin)
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES $<TARGET_FILE:${plugin}_plugin>)
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${plugin}_bundled_libraries})
+endforeach(plugin)
+
+foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
+  add_subdirectory(flutter/ephemeral/.plugin_symlinks/${ffi_plugin}/linux plugins/${ffi_plugin})
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${${ffi_plugin}_bundled_libraries})
+endforeach(ffi_plugin)
 </file>
 
 <file path=".gitignore">
@@ -10433,91 +10606,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
 }
 </file>
 
-<file path="lib/main.dart">
-// lib/main.dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
-import 'providers/auth_provider.dart';
-import 'router/router.dart';
-import 'theme/liquid_theme.dart';
-import 'ui/widgets/liquid_components.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'dart:io';
-
-// Platform-specific imports for explicit initialization
-import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart' as linux_webview;
-import 'package:flutter_inappwebview_windows/flutter_inappwebview_windows.dart' as windows_webview;
-
-
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  if (!kIsWeb) {
-    if (Platform.isLinux) {
-      linux_webview.LinuxInAppWebViewPlatform.registerWith();
-      final platform = InAppWebViewPlatform.instance;
-      if (platform != null) {
-        await (platform as dynamic).initialize();
-      }
-    } else if (Platform.isWindows) {
-      windows_webview.WindowsInAppWebViewPlatform.registerWith();
-      final platform = InAppWebViewPlatform.instance;
-      if (platform != null) {
-        await (platform as dynamic).initialize();
-      }
-    } else if (Platform.isMacOS) {
-      // MacOS usually auto-registers, but we can call initialize if needed via dynamic
-      final platform = InAppWebViewPlatform.instance;
-      if (platform != null) {
-        await (platform as dynamic).initialize();
-      }
-    }
-  }
-
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
-  runApp(const ProviderScope(child: MyApp()));
-}
-
-class MyApp extends ConsumerWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
-    final router = ref.watch(routerProvider);
-
-    // If not initialized, show a Glass loading screen
-    if (!authState.isInitialized) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: LiquidTheme.theme,
-        home: const Scaffold(
-          body: LiquidBackground(
-            child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return MaterialApp.router(
-      title: 'Lexity Mobile',
-      debugShowCheckedModeBanner: false,
-      theme: LiquidTheme.theme,
-      routerConfig: router,
-    );
-  }
-}
-</file>
-
 <file path="macos/Flutter/GeneratedPluginRegistrant.swift">
 //
 //  Generated file. Do not edit.
@@ -11944,6 +12032,76 @@ class _NavItem extends StatelessWidget {
           size: 24,
         ),
       ),
+    );
+  }
+}
+</file>
+
+<file path="lib/main.dart">
+// lib/main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
+import 'providers/auth_provider.dart';
+import 'router/router.dart';
+import 'theme/liquid_theme.dart';
+import 'ui/widgets/liquid_components.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'dart:io';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (!kIsWeb) {
+    if (Platform.isWindows) {
+      try {
+        await WebViewEnvironment.create(
+          settings: WebViewEnvironmentSettings(userDataFolder: 'inappwebviewdata')
+        );
+      } catch (e) {
+        debugPrint("Error initializing WebView2: $e");
+      }
+    }
+  }
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
+  runApp(const ProviderScope(child: MyApp()));
+}
+
+class MyApp extends ConsumerWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+    final router = ref.watch(routerProvider);
+
+    // If not initialized, show a Glass loading screen
+    if (!authState.isInitialized) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: LiquidTheme.theme,
+        home: const Scaffold(
+          body: LiquidBackground(
+            child: Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return MaterialApp.router(
+      title: 'Lexity Mobile',
+      debugShowCheckedModeBanner: false,
+      theme: LiquidTheme.theme,
+      routerConfig: router,
     );
   }
 }
@@ -13380,8 +13538,8 @@ dependencies:
   flutter_markdown: any
   youtube_player_flutter: ^9.0.1
   file_picker: ^10.3.10
-  flutter_inappwebview: ^6.1.5
-  flutter_inappwebview_linux: ^0.1.0-beta.1
+  flutter_inappwebview: ^6.2.0-beta.3
+  
 
 
 dev_dependencies:
@@ -13703,18 +13861,18 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_inappwebview
-      sha256: "80092d13d3e29b6227e25b67973c67c7210bd5e35c4b747ca908e31eb71a46d5"
+      sha256: "3952d116ee93bad2946401377e7ade87b5ef200e95ecb5ba1affa1b6329a6867"
       url: "https://pub.dev"
     source: hosted
-    version: "6.1.5"
+    version: "6.2.0-beta.3"
   flutter_inappwebview_android:
     dependency: transitive
     description:
       name: flutter_inappwebview_android
-      sha256: "62557c15a5c2db5d195cb3892aab74fcaec266d7b86d59a6f0027abd672cddba"
+      sha256: "8dfb76bd4e507112c3942c2272eeb01fab2e42be11374e5eb226f58698e7a04b"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.3"
+    version: "1.2.0-beta.3"
   flutter_inappwebview_internal_annotations:
     dependency: transitive
     description:
@@ -13727,12 +13885,12 @@ packages:
     dependency: transitive
     description:
       name: flutter_inappwebview_ios
-      sha256: "5818cf9b26cf0cbb0f62ff50772217d41ea8d3d9cc00279c45f8aabaa1b4025d"
+      sha256: ae8a78829398771be863aa3c8804a9d40728e1815e66c9c966f86d2cc3ae4fd9
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.2"
+    version: "1.2.0-beta.3"
   flutter_inappwebview_linux:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: flutter_inappwebview_linux
       sha256: "2e1a3b09bb911fb5a8bb155cb7f1eb1428a19b6e20363b9db48beef428b8cef5"
@@ -13743,10 +13901,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_inappwebview_macos
-      sha256: c1fbb86af1a3738e3541364d7d1866315ffb0468a1a77e34198c9be571287da1
+      sha256: "545148cb5c46475ce669ab21621e9f2ad66e05f8e80b2cf49d4018879ab52393"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.2"
+    version: "1.2.0-beta.3"
   flutter_inappwebview_platform_interface:
     dependency: transitive
     description:
@@ -13759,18 +13917,18 @@ packages:
     dependency: transitive
     description:
       name: flutter_inappwebview_web
-      sha256: "55f89c83b0a0d3b7893306b3bb545ba4770a4df018204917148ebb42dc14a598"
+      sha256: e98b8875ccb6a3fd255873318db45c18ab135ed0ed22d20169abad9f5c810eb9
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.2"
+    version: "1.2.0-beta.3"
   flutter_inappwebview_windows:
     dependency: transitive
     description:
       name: flutter_inappwebview_windows
-      sha256: "8b4d3a46078a2cdc636c4a3d10d10f2a16882f6be607962dbfff8874d1642055"
+      sha256: "902edd6f6326952af822e21aa928f7426d723d45c94c15e6ce3c2d5640d28ad7"
       url: "https://pub.dev"
     source: hosted
-    version: "0.6.0"
+    version: "0.7.0-beta.3"
   flutter_lints:
     dependency: "direct dev"
     description:
