@@ -2689,11 +2689,18 @@ class BookService {
   }
 
   Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    await http.put(
+    final response = await http.put(
       Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
       headers: await _getHeaders(),
-      body: jsonEncode({'currentCfi': cfi, 'progressPct': progressPct}),
+      body: jsonEncode({
+        'currentCfi': cfi, 
+        'progressPct': progressPct.toDouble(), // Ensure double
+      }),
     );
+    
+    if (response.statusCode != 200) {
+      _logger.warning('Failed to update progress for book $id: ${response.statusCode}');
+    }
   }
 
   Future<void> deleteBook(String id) async {
@@ -3127,10 +3134,12 @@ final refreshTokenServiceProvider = Provider<TokenService>((ref) =>
 </file>
 
 <file path="lib/ui/screens/book_reader_screen.dart">
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lexity_mobile/providers/srs_provider.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
 import '../widgets/translation_tooltip.dart';
@@ -3147,23 +3156,62 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   InAppWebViewController? webViewController;
   double _progress = 0.0;
+  double _fontSize = 115.0;
+  String _theme = 'dark'; // 'light', 'dark', 'sepia'
   
   String? _selectedText;
   String? _contextText;
   double? _selectionX;
   double? _selectionY;
 
+  // JavaScript function to apply styles dynamically to the EPUB rendition
+  void _updateReaderStyles() {
+    final colors = {
+      'light': {'bg': '#ffffff', 'fg': '#000000'},
+      'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
+      'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
+    }[_theme]!;
+
+    final js = """
+      if (rendition) {
+        rendition.themes.fontSize("$_fontSize%");
+        rendition.themes.register("$_theme", { body: { background: "${colors['bg']} !important", color: "${colors['fg']} !important" }});
+        rendition.themes.select("$_theme");
+        
+        // Force inject into current contents
+        rendition.getContents().forEach(c => {
+          c.addStylesheetRules({
+            "body": { 
+              "background-color": "${colors['bg']} !important", 
+              "color": "${colors['fg']} !important",
+              "font-size": "$_fontSize% !important"
+            }
+          });
+        });
+      }
+    """;
+    webViewController?.evaluateJavascript(source: js);
+  }
+
+  void _applyHighlighting() {
+    final srs = ref.read(srsProvider).deck;
+    final words = srs.map((e) => e.front.replaceAll("'", "\\'")).toList();
+    final js = "window.highlightKnownWords(${jsonEncode(words)});";
+    webViewController?.evaluateJavascript(source: js);
+  }
+
   final String _htmlTemplate = """
   <!DOCTYPE html>
-  <html lang="en">
+  <html>
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
     <style>
-      body { margin: 0; padding: 0; background-color: #050505; color: #ffffff; overflow: hidden; font-family: sans-serif; }
-      #viewer { width: 100vw; height: 100vh; overflow: hidden; }
+      body { margin: 0; padding: 0; background-color: #050505; overflow: hidden; }
+      #viewer { width: 100vw; height: 100vh; }
+      mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
     </style>
   </head>
   <body>
@@ -3172,84 +3220,57 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       let book;
       let rendition;
 
+      window.highlightKnownWords = function(words) {
+        if (!rendition) return;
+        rendition.getContents().forEach(content => {
+          const doc = content.document;
+          if (words.length === 0) return;
+          const regex = new RegExp('\\\\b(' + words.join('|') + ')\\\\b', 'gi');
+          
+          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+          let node;
+          const nodes = [];
+          while (node = walker.nextNode()) nodes.push(node);
+          
+          nodes.forEach(textNode => {
+            if (regex.test(textNode.nodeValue)) {
+              const span = doc.createElement('span');
+              span.innerHTML = textNode.nodeValue.replace(regex, '<mark class="known-word">\$1</mark>');
+              textNode.parentNode.replaceChild(span, textNode);
+            }
+          });
+        });
+      };
+
       async function loadBook(url, initialCfi) {
-        console.log("Starting loadBook with URL:", url);
-        try {
-          if (!url) {
-            throw new Error("URL is null or empty");
-          }
-          
-          console.log("Initializing ePub with URL...");
-          book = ePub(url);
-          
-          rendition = book.renderTo("viewer", {
-            width: "100%",
-            height: "100%",
-            spread: "none",
-            manager: "continuous",
-            flow: "paginated"
-          });
+        book = ePub(url);
+        rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated", manager: "continuous" });
+        
+        rendition.on("relocated", (location) => {
+          const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
+          window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
+        });
 
-          rendition.hooks.content.register(function(contents) {
-            console.log("Rendition hook: content registered");
-            var style = contents.document.createElement("style");
-            style.innerHTML = "body { color: #ffffff !important; background-color: transparent !important; font-size: 1.15em; font-family: sans-serif; line-height: 1.6; } a { color: #6366F1 !important; } ::selection { background: rgba(99, 102, 241, 0.4); }";
-            contents.document.head.appendChild(style);
+        rendition.on("selected", (cfiRange, contents) => {
+          book.getRange(cfiRange).then(range => {
+            const rect = range.getBoundingClientRect();
+            const iframe = contents.document.defaultView.frameElement.getBoundingClientRect();
+            window.flutter_inappwebview.callHandler('onTextSelected', range.toString(), range.commonAncestorContainer.textContent, rect.left + iframe.left + (rect.width/2), rect.bottom + iframe.top);
           });
+        });
 
-          rendition.on("relocated", function(location) {
-            const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
-            if (window.flutter_inappwebview) {
-              window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
-            }
-          });
+        // Swipe Gestures
+        let touchStartX = 0;
+        rendition.on("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; });
+        rendition.on("touchend", (e) => {
+          const touchEndX = e.changedTouches[0].screenX;
+          if (touchStartX - touchEndX > 50) rendition.next();
+          if (touchEndX - touchStartX > 50) rendition.prev();
+        });
 
-          rendition.on("selected", function(cfiRange, contents) {
-            book.getRange(cfiRange).then(function(range) {
-              const selectedText = range.toString().trim();
-              const contextText = range.commonAncestorContainer.textContent || selectedText;
-              
-              const rect = range.getBoundingClientRect();
-              const iframe = contents.document.defaultView.frameElement;
-              const iframeRect = iframe.getBoundingClientRect();
-              
-              const x = rect.left + iframeRect.left + (rect.width / 2);
-              const y = rect.bottom + iframeRect.top;
-              
-              if (window.flutter_inappwebview) {
-                window.flutter_inappwebview.callHandler('onTextSelected', selectedText, contextText, x, y);
-              }
-            });
-          });
-
-          rendition.on("click", function() {
-            if (window.flutter_inappwebview) {
-              window.flutter_inappwebview.callHandler('onClearSelection');
-            }
-          });
-
-          console.log("Displaying rendition...");
-          await rendition.display(initialCfi || undefined);
-          console.log("Rendition displayed successfully");
-          
-          if (window.flutter_inappwebview) {
-            window.flutter_inappwebview.callHandler('onReady');
-          }
-
-          book.ready.then(() => {
-            console.log("Book is ready, generating locations...");
-            return book.locations.generate(1600);
-          });
-        } catch(e) {
-          console.error("Error in loadBook:", e);
-          if (window.flutter_inappwebview) {
-            window.flutter_inappwebview.callHandler('onError', e.toString() + " | Stack: " + e.stack);
-          }
-        }
+        await rendition.display(initialCfi || undefined);
+        window.flutter_inappwebview.callHandler('onReady');
       }
-
-      window.nextPage = function() { if(rendition) rendition.next(); };
-      window.prevPage = function() { if(rendition) rendition.prev(); };
     </script>
   </body>
   </html>
@@ -3261,159 +3282,107 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     final profileAsync = ref.watch(userProfileProvider);
 
     return Scaffold(
-      backgroundColor: LiquidTheme.background,
+      backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
+        title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => _showSettings(context),
+          ),
+        ],
+      ),
       body: bookAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text("Error: $e", style: const TextStyle(color: Colors.white))),
-        data: (book) {
-          return SafeArea(
-            child: Stack(
-              children: [
-                Column(
-                  children:[
-                    Container(
-                      height: 60,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: const BoxDecoration(
-                        border: Border(bottom: BorderSide(color: Colors.white10)),
-                      ),
-                      child: Row(
-                        children:[
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-                            onPressed: () => context.pop(),
-                          ),
-                          Expanded(
-                            child: Text(
-                              book.title,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white10,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text("${_progress.round()}% Read", style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Stack(
-                        children:[
-                          InAppWebView(
-                            initialData: InAppWebViewInitialData(
-                              data: _htmlTemplate,
-                              baseUrl: WebUri("https://localhost/"),
-                            ),
-                            initialSettings: InAppWebViewSettings(
-                              transparentBackground: true,
-                              disableContextMenu: true,
-                              allowFileAccessFromFileURLs: true,
-                              allowUniversalAccessFromFileURLs: true,
-                            ),
-                            onWebViewCreated: (controller) {
-                              webViewController = controller;
-
-                              controller.addJavaScriptHandler(handlerName: 'onError', callback: (args) {
-                                debugPrint("EPUB ERROR: ${args[0]}");
-                              });
-
-                              controller.addJavaScriptHandler(handlerName: 'onReady', callback: (args) {
-                                debugPrint("EPUB READY");
-                              });
-
-                              controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
-                                final cfi = args[0] as String;
-                                final pct = (args[1] as num).toDouble();
-                                setState(() {
-                                  _progress = pct;
-                                });
-                                ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
-                              });
-
-                              controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                                setState(() {
-                                  _selectedText = args[0];
-                                  _contextText = args[1];
-                                  _selectionX = (args[2] as num).toDouble();
-                                  _selectionY = (args[3] as num).toDouble();
-                                });
-                              });
-
-                              controller.addJavaScriptHandler(handlerName: 'onClearSelection', callback: (args) {
-                                setState(() {
-                                  _selectedText = null;
-                                  _contextText = null;
-                                });
-                              });
-                            },
-                            onConsoleMessage: (controller, consoleMessage) {
-                              debugPrint(
-                                "WEBVIEW CONSOLE: ${consoleMessage.message}",
-                              );
-                            },
-                            onLoadStop: (controller, url) async {
-                              if (book.signedUrl != null) {
-                                await controller.evaluateJavascript(source: "loadBook('${book.signedUrl}', '${book.currentCfi ?? ''}');");
-                              }
-                            },
-                          ),
-                          Row(
-                            children:[
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () {
-                                    setState(() => _selectedText = null);
-                                    webViewController?.evaluateJavascript(source: "window.prevPage();");
-                                  },
-                                  child: Container(color: Colors.transparent),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: Container(color: Colors.transparent),
-                              ),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () {
-                                    setState(() => _selectedText = null);
-                                    webViewController?.evaluateJavascript(source: "window.nextPage();");
-                                  },
-                                  child: Container(color: Colors.transparent),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (_selectedText != null && _selectionX != null && _selectionY != null && profileAsync.value != null)
-                  TranslationTooltip(
-                    selectedText: _selectedText!,
-                    contextText: _contextText ?? _selectedText!,
-                    sourceLang: book.targetLanguage, 
-                    targetLang: profileAsync.value!.nativeLanguage ?? 'english',
-                    x: _selectionX!,
-                    y: _selectionY! + MediaQuery.of(context).padding.top + 60,
-                    onClose: () {
-                      setState(() {
-                        _selectedText = null;
-                      });
-                      webViewController?.evaluateJavascript(source: "window.getSelection().removeAllRanges();");
-                    },
-                  ),
-              ],
+        error: (e, _) => Center(child: Text("Error: $e")),
+        data: (book) => Stack(
+          children: [
+            InAppWebView(
+              initialData: InAppWebViewInitialData(data: _htmlTemplate, baseUrl: WebUri("https://localhost/")),
+              onWebViewCreated: (controller) {
+                webViewController = controller;
+                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
+                  setState(() => _progress = (args[1] as num).toDouble());
+                  ref.read(bookNotifierProvider.notifier).updateProgress(book.id, args[0], _progress);
+                  _applyHighlighting(); // Re-apply highlighting on page change
+                  _updateReaderStyles(); // Ensure styles are applied to new content
+                });
+                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
+                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage); // Ensure deck is loaded
+                  _updateReaderStyles();
+                  _applyHighlighting();
+                });
+                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
+                  setState(() { _selectedText = args[0]; _contextText = args[1]; _selectionX = (args[2] as num).toDouble(); _selectionY = (args[3] as num).toDouble(); });
+                });
+              },
+              onLoadStop: (controller, _) async {
+                if (book.signedUrl != null) {
+                  await controller.evaluateJavascript(source: "loadBook('${book.signedUrl}', '${book.currentCfi ?? ''}');");
+                }
+              },
             ),
-          );
-        },
+            if (_selectedText != null && profileAsync.value != null)
+              TranslationTooltip(
+                selectedText: _selectedText!,
+                contextText: _contextText ?? _selectedText!,
+                sourceLang: book.targetLanguage,
+                targetLang: profileAsync.value!.nativeLanguage ?? 'english',
+                x: _selectionX!, y: _selectionY!,
+                onClose: () => setState(() => _selectedText = null),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSettings(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
+                  onTap: () { setState(() => _theme = t); setModalState((){}); _updateReaderStyles(); },
+                  child: Container(
+                    width: 60, height: 60,
+                    decoration: BoxDecoration(
+                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
+                    ),
+                  ),
+                )).toList(),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  const Icon(Icons.text_fields, size: 16),
+                  Expanded(
+                    child: Slider(
+                      value: _fontSize, min: 80, max: 200,
+                      onChanged: (v) { setState(() => _fontSize = v); setModalState((){}); _updateReaderStyles(); },
+                    ),
+                  ),
+                  const Icon(Icons.text_fields, size: 24),
+                ],
+              )
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -3869,467 +3838,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
           );
         },
-      ),
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/screens/listening_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
-import '../../theme/liquid_theme.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../../providers/listening_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/journal_provider.dart';
-import '../../providers/path_provider.dart';
-import '../../models/listening_models.dart';
-import '../../models/writing_aids.dart';
-
-class ListeningScreen extends ConsumerStatefulWidget {
-  final String? moduleId;
-  
-  const ListeningScreen({super.key, this.moduleId});
-
-  @override
-  ConsumerState<ListeningScreen> createState() => _ListeningScreenState();
-}
-
-class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final TextEditingController _responseController = TextEditingController();
-  YoutubePlayerController? _videoController;
-  bool _isSubmitting = false;
-  
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    // Pause video when switching tabs
-    _tabController.addListener(() {
-      if (_tabController.index == 1 && _videoController != null) {
-        _videoController!.pause();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _responseController.dispose();
-    _videoController?.dispose();
-    super.dispose();
-  }
-
-  void _insertText(String text) {
-    final currentText = _responseController.text;
-    if (currentText.isEmpty) {
-      _responseController.text = text;
-    } else {
-      _responseController.text = "$currentText $text";
-    }
-    _responseController.selection = TextSelection.fromPosition(TextPosition(offset: _responseController.text.length));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final exerciseAsync = ref.watch(listeningExerciseProvider);
-    final tasksAsync = ref.watch(listeningTaskProvider);
-    final aidsAsync = ref.watch(listeningAidsProvider);
-    final activeLang = ref.watch(activeLanguageProvider);
-
-    return GlassScaffold(
-      title: 'Listen & Write',
-      subtitle: 'Comprehension Practice',
-      body: exerciseAsync.when(
-        loading: () => const SliverFillRemaining(
-          child: Center(child: CircularProgressIndicator()),
-        ),
-        error: (e, _) => SliverFillRemaining(
-          child: Center(child: Text("Error loading exercise: $e", style: const TextStyle(color: Colors.white))),
-        ),
-        data: (exercise) {
-          // Initialize Video Controller once
-          _videoController ??= YoutubePlayerController(
-              initialVideoId: exercise.videoId,
-              flags: const YoutubePlayerFlags(
-                autoPlay: false,
-                mute: false,
-                forceHD: true,
-              ),
-            );
-
-          // Auto-generate tasks
-          if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
-             Future.microtask(() => 
-               ref.read(listeningTaskProvider.notifier).generate(exercise.id)
-             );
-          }
-
-          return SliverFillRemaining(
-            child: NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorColor: LiquidTheme.primaryAccent,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white54,
-                      tabs: const [
-                        Tab(text: "Watch"),
-                        Tab(text: "Write"),
-                      ],
-                    ),
-                  ),
-                )
-              ],
-              body: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildWatchTab(exercise),
-                  _buildWriteTab(tasksAsync, aidsAsync, activeLang, exercise),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildWatchTab(ListeningExercise exercise) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          // VIDEO PLAYER
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: YoutubePlayer(
-              controller: _videoController!,
-              showVideoProgressIndicator: true,
-              progressIndicatorColor: LiquidTheme.primaryAccent,
-              progressColors: const ProgressBarColors(
-                playedColor: LiquidTheme.primaryAccent,
-                handleColor: LiquidTheme.secondaryAccent,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          
-          GlassCard(
-            padding: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(exercise.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
-                if (exercise.source != null) ...[
-                  const SizedBox(height: 4),
-                  Text("Source: ${exercise.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                ],
-                const SizedBox(height: 16),
-                const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.white54, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(child: Text("Watch the video carefully. You will be asked to summarize it in the next tab.", style: TextStyle(color: Colors.white70, fontSize: 13))),
-                  ],
-                )
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 32),
-          LiquidButton(
-            text: "Start Writing",
-            onTap: () {
-               _videoController?.pause();
-               _tabController.animateTo(1);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWriteTab(
-    AsyncValue<ListeningTasksResponse?> tasksAsync, 
-    AsyncValue<WritingAids?> aidsAsync,
-    String lang,
-    ListeningExercise exercise
-  ) {
-    if (tasksAsync.isLoading) {
-      return const Center(child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text("Generating writing tasks...", style: TextStyle(color: Colors.white54)),
-        ],
-      ));
-    }
-
-    final tasks = tasksAsync.value;
-    if (tasks == null) return const SizedBox();
-
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          // 1. COMPREHENSION TASK
-          GlassCard(
-            padding: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text("Topic: ${tasks.summary.title}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
-                const SizedBox(height: 8),
-                Text(tasks.summary.prompt, style: const TextStyle(color: Colors.white70)),
-                const SizedBox(height: 12),
-                Container(
-                   padding: const EdgeInsets.all(12),
-                   decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
-                   child: Column(
-                     crossAxisAlignment: CrossAxisAlignment.start,
-                     children: [
-                       const Text("Questions to answer:", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                       const SizedBox(height: 4),
-                       Text(tasks.comprehension.prompt, style: const TextStyle(fontSize: 13, color: Colors.white70, fontStyle: FontStyle.italic)),
-                     ],
-                   ),
-                )
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 16),
-
-          // 2. WRITING AIDS
-          aidsAsync.when(
-            loading: () => const Padding(padding: EdgeInsets.all(16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
-            error: (_,_) => const SizedBox(),
-            data: (aids) {
-              if (aids == null) return const SizedBox();
-              return GlassCard(
-                padding: 16,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Sentence Starter", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: () => _insertText(aids.sentenceStarter),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        width: double.infinity,
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(child: Text('"${aids.sentenceStarter}"', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white))),
-                            const Text("Use this", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text("Vocabulary to Try", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: aids.suggestedVocab.map((vocab) => ActionChip(
-                        label: Text(vocab),
-                        backgroundColor: Colors.white.withValues(alpha: 0.1),
-                        labelStyle: const TextStyle(color: Colors.white, fontSize: 13),
-                        side: BorderSide.none,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        onPressed: () => _insertText(vocab),
-                      )).toList(),
-                    ),
-                  ],
-                ),
-              );
-            }
-          ),
-
-          const SizedBox(height: 16),
-
-          // 3. EDITOR
-          Container(
-            height: 300,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: TextField(
-              controller: _responseController,
-              maxLines: null,
-              expands: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: "Summarize the video and answer the questions...",
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-                border: InputBorder.none,
-              ),
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-
-          LiquidButton(
-            text: _isSubmitting ? "Analyzing..." : "Submit for Analysis",
-            isLoading: _isSubmitting,
-            onTap: _submitExercise,
-          ),
-          const SizedBox(height: 40),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _submitExercise() async {
-    if (_responseController.text.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please write a bit more!")));
-      return;
-    }
-
-    setState(() => _isSubmitting = true);
-    _videoController?.pause();
-
-    try {
-      final tasks = ref.read(listeningTaskProvider).value!;
-      final lang = ref.read(activeLanguageProvider);
-      final exercise = ref.read(listeningExerciseProvider).value!;
-
-      // 1. Submit Journal
-      final newEntryId = await ref.read(journalNotifierProvider.notifier).createEntry(
-        tasks.summary.title,
-        _responseController.text,
-        lang,
-        moduleId: widget.moduleId,
-      );
-
-      // 2. Mark Activity Complete (and link the specific listening exercise)
-      if (widget.moduleId != null) {
-        await ref.read(pathNotifierProvider.notifier).updateActivity(
-          widget.moduleId!, 
-          'listening', 
-          true,
-          {'listeningExerciseId': exercise.id}
-        );
-      }
-
-      if (mounted && newEntryId != null) {
-        context.pushReplacement('/journal/$newEntryId');
-      }
-    } catch (e) {
-      if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Submission failed: $e")));
-         setState(() => _isSubmitting = false);
-      }
-    }
-  }
-}
-</file>
-
-<file path="lib/ui/widgets/analysis_widgets.dart">
-import 'package:flutter/material.dart';
-import '../../models/journal_entry.dart';
-import 'liquid_components.dart';
-
-class AnalysisScoreCard extends StatelessWidget {
-  final Analysis analysis;
-
-  const AnalysisScoreCard({super.key, required this.analysis});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: 16,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _ScoreItem(label: "Grammar", score: analysis.grammarScore),
-          _ScoreItem(label: "Phrasing", score: analysis.phrasingScore),
-          _ScoreItem(label: "Vocabulary", score: analysis.vocabScore),
-        ],
-      ),
-    );
-  }
-}
-
-class _ScoreItem extends StatelessWidget {
-  final String label;
-  final int score;
-
-  const _ScoreItem({required this.label, required this.score});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          "$score",
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54)),
-      ],
-    );
-  }
-}
-
-class MistakesList extends StatelessWidget {
-  final List<Mistake> mistakes;
-
-  const MistakesList({super.key, required this.mistakes});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: mistakes.map((m) => _MistakeCard(mistake: m)).toList(),
-    );
-  }
-}
-
-class _MistakeCard extends StatelessWidget {
-  final Mistake mistake;
-
-  const _MistakeCard({required this.mistake});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GlassCard(
-        padding: 16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                 Container(
-                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                   decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
-                   child: Text(mistake.type.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(mistake.original, style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.white54)),
-            Text(mistake.corrected, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(mistake.explanation, style: const TextStyle(fontSize: 12, color: Colors.white70, fontStyle: FontStyle.italic)),
-          ],
-        ),
       ),
     );
   }
@@ -4910,8 +4418,12 @@ add_custom_target(flutter_assemble DEPENDS
 
 #include "generated_plugin_registrant.h"
 
+#include <flutter_inappwebview_linux/flutter_inappwebview_linux_plugin.h>
 
 void fl_register_plugins(FlPluginRegistry* registry) {
+  g_autoptr(FlPluginRegistrar) flutter_inappwebview_linux_registrar =
+      fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterInappwebviewLinuxPlugin");
+  flutter_inappwebview_linux_plugin_register_with_registrar(flutter_inappwebview_linux_registrar);
 }
 </file>
 
@@ -4939,6 +4451,7 @@ void fl_register_plugins(FlPluginRegistry* registry);
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  flutter_inappwebview_linux
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
@@ -8410,44 +7923,53 @@ class LiquidTheme {
 }
 </file>
 
-<file path="lib/ui/screens/reading_screen.dart">
+<file path="lib/ui/screens/listening_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
-import '../../providers/reading_provider.dart';
+import '../../providers/listening_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/path_provider.dart';
-import '../../models/reading_models.dart';
+import '../../models/listening_models.dart';
 import '../../models/writing_aids.dart';
 
-class ReadingScreen extends ConsumerStatefulWidget {
+class ListeningScreen extends ConsumerStatefulWidget {
   final String? moduleId;
   
-  const ReadingScreen({super.key, this.moduleId});
+  const ListeningScreen({super.key, this.moduleId});
 
   @override
-  ConsumerState<ReadingScreen> createState() => _ReadingScreenState();
+  ConsumerState<ListeningScreen> createState() => _ListeningScreenState();
 }
 
-class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTickerProviderStateMixin {
+class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _responseController = TextEditingController();
+  YoutubePlayerController? _videoController;
   bool _isSubmitting = false;
   
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // Pause video when switching tabs
+    _tabController.addListener(() {
+      if (_tabController.index == 1 && _videoController != null) {
+        _videoController!.pause();
+      }
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _responseController.dispose();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -8458,37 +7980,44 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
     } else {
       _responseController.text = "$currentText $text";
     }
-    _responseController.selection = TextSelection.fromPosition(
-      TextPosition(offset: _responseController.text.length),
-    );
+    _responseController.selection = TextSelection.fromPosition(TextPosition(offset: _responseController.text.length));
   }
 
   @override
   Widget build(BuildContext context) {
-    final materialAsync = ref.watch(readingMaterialProvider);
-    final tasksAsync = ref.watch(readingTaskProvider);
-    final aidsAsync = ref.watch(readingAidsProvider);
+    final exerciseAsync = ref.watch(listeningExerciseProvider);
+    final tasksAsync = ref.watch(listeningTaskProvider);
+    final aidsAsync = ref.watch(listeningAidsProvider);
     final activeLang = ref.watch(activeLanguageProvider);
 
     return GlassScaffold(
-      title: 'Read & Write',
+      title: 'Listen & Write',
       subtitle: 'Comprehension Practice',
-      body: materialAsync.when(
-        // FIX: Wrap Center in SliverFillRemaining
+      body: exerciseAsync.when(
         loading: () => const SliverFillRemaining(
           child: Center(child: CircularProgressIndicator()),
         ),
-        // FIX: Wrap Center in SliverFillRemaining
-        error: (e, _) =>
-            SliverFillRemaining(child: Center(child: Text("Error: $e"))),
-        data: (material) {
+        error: (e, _) => SliverFillRemaining(
+          child: Center(child: Text("Error loading exercise: $e", style: const TextStyle(color: Colors.white))),
+        ),
+        data: (exercise) {
+          // Initialize Video Controller once
+          _videoController ??= YoutubePlayerController(
+              initialVideoId: exercise.videoId,
+              flags: const YoutubePlayerFlags(
+                autoPlay: false,
+                mute: false,
+                forceHD: true,
+              ),
+            );
+
+          // Auto-generate tasks
           if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
              Future.microtask(() => 
-               ref.read(readingTaskProvider.notifier).generate(material.content, activeLang, material.level)
+               ref.read(listeningTaskProvider.notifier).generate(exercise.id)
              );
           }
 
-          // FIX: Wrap NestedScrollView in SliverFillRemaining
           return SliverFillRemaining(
             child: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
@@ -8501,18 +8030,18 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
                       labelColor: Colors.white,
                       unselectedLabelColor: Colors.white54,
                       tabs: const [
-                        Tab(text: "Reading"),
-                        Tab(text: "Writing Task"),
+                        Tab(text: "Watch"),
+                        Tab(text: "Write"),
                       ],
                     ),
                   ),
-                ),
+                )
               ],
               body: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildReadingTab(material),
-                  _buildWritingTab(tasksAsync, aidsAsync, activeLang, material),
+                  _buildWatchTab(exercise),
+                  _buildWriteTab(tasksAsync, aidsAsync, activeLang, exercise),
                 ],
               ),
             ),
@@ -8522,37 +8051,65 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
     );
   }
 
-  Widget _buildReadingTab(ReadingMaterial material) {
+  Widget _buildWatchTab(ListeningExercise exercise) {
     return SingleChildScrollView(
-      child: GlassCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(material.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-            const SizedBox(height: 8),
-            if (material.source != null)
-              Text("Source: ${material.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            const SizedBox(height: 20),
-            Text(
-              material.content,
-              style: const TextStyle(fontSize: 18, height: 1.6, color: Colors.white70),
+      child: Column(
+        children: [
+          // VIDEO PLAYER
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: YoutubePlayer(
+              controller: _videoController!,
+              showVideoProgressIndicator: true,
+              progressIndicatorColor: LiquidTheme.primaryAccent,
+              progressColors: const ProgressBarColors(
+                playedColor: LiquidTheme.primaryAccent,
+                handleColor: LiquidTheme.secondaryAccent,
+              ),
             ),
-            const SizedBox(height: 32),
-            LiquidButton(
-              text: "Start Writing",
-              onTap: () => _tabController.animateTo(1),
+          ),
+          const SizedBox(height: 20),
+          
+          GlassCard(
+            padding: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(exercise.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                if (exercise.source != null) ...[
+                  const SizedBox(height: 4),
+                  Text("Source: ${exercise.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                ],
+                const SizedBox(height: 16),
+                const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.white54, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(child: Text("Watch the video carefully. You will be asked to summarize it in the next tab.", style: TextStyle(color: Colors.white70, fontSize: 13))),
+                  ],
+                )
+              ],
             ),
-          ],
-        ),
+          ),
+          
+          const SizedBox(height: 32),
+          LiquidButton(
+            text: "Start Writing",
+            onTap: () {
+               _videoController?.pause();
+               _tabController.animateTo(1);
+            },
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildWritingTab(
-    AsyncValue<ReadingTasksResponse?> tasksAsync, 
+  Widget _buildWriteTab(
+    AsyncValue<ListeningTasksResponse?> tasksAsync, 
     AsyncValue<WritingAids?> aidsAsync,
-    String lang, 
-    ReadingMaterial material
+    String lang,
+    ListeningExercise exercise
   ) {
     if (tasksAsync.isLoading) {
       return const Center(child: Column(
@@ -8560,7 +8117,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
         children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
-          Text("AI is generating your tasks...", style: TextStyle(color: Colors.white54)),
+          Text("Generating writing tasks...", style: TextStyle(color: Colors.white54)),
         ],
       ));
     }
@@ -8571,39 +8128,38 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
     return SingleChildScrollView(
       child: Column(
         children: [
+          // 1. COMPREHENSION TASK
           GlassCard(
             padding: 20,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "Topic: ${tasks.summary.title}",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    fontSize: 16,
-                  ),
-                ),
+                Text("Topic: ${tasks.summary.title}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
                 const SizedBox(height: 8),
                 Text(tasks.summary.prompt, style: const TextStyle(color: Colors.white70)),
+                const SizedBox(height: 12),
+                Container(
+                   padding: const EdgeInsets.all(12),
+                   decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+                       const Text("Questions to answer:", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                       const SizedBox(height: 4),
+                       Text(tasks.comprehension.prompt, style: const TextStyle(fontSize: 13, color: Colors.white70, fontStyle: FontStyle.italic)),
+                     ],
+                   ),
+                )
               ],
             ),
           ),
           
           const SizedBox(height: 16),
 
+          // 2. WRITING AIDS
           aidsAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            ),
-            error: (_, _) => const SizedBox(),
+            loading: () => const Padding(padding: EdgeInsets.all(16.0), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
+            error: (_,_) => const SizedBox(),
             data: (aids) {
               if (aids == null) return const SizedBox();
               return GlassCard(
@@ -8611,80 +8167,37 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Sentence Starter",
-                      style: TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    const Text("Sentence Starter", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     GestureDetector(
                       onTap: () => _insertText(aids.sentenceStarter),
                       child: Container(
                         padding: const EdgeInsets.all(12),
                         width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Expanded(
-                              child: Text(
-                                '"${aids.sentenceStarter}"',
-                                style: const TextStyle(
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const Text(
-                              "Use this",
-                              style: TextStyle(
-                                color: LiquidTheme.primaryAccent,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
+                            Expanded(child: Text('"${aids.sentenceStarter}"', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.white))),
+                            const Text("Use this", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, fontSize: 12)),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      "Vocabulary to Try",
-                      style: TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    const Text("Vocabulary to Try", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: aids.suggestedVocab
-                          .map(
-                            (vocab) => ActionChip(
-                              label: Text(vocab),
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.1,
-                              ),
-                              labelStyle: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                              ),
-                              side: BorderSide.none,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              onPressed: () => _insertText(vocab),
-                            ),
-                          )
-                          .toList(),
+                      children: aids.suggestedVocab.map((vocab) => ActionChip(
+                        label: Text(vocab),
+                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        labelStyle: const TextStyle(color: Colors.white, fontSize: 13),
+                        side: BorderSide.none,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        onPressed: () => _insertText(vocab),
+                      )).toList(),
                     ),
                   ],
                 ),
@@ -8694,6 +8207,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
 
           const SizedBox(height: 16),
 
+          // 3. EDITOR
           Container(
             height: 300,
             padding: const EdgeInsets.all(16),
@@ -8708,7 +8222,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
               expands: true,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: "Start writing about \"${tasks.summary.title}\"...",
+                hintText: "Summarize the video and answer the questions...",
                 hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
                 border: InputBorder.none,
               ),
@@ -8730,34 +8244,33 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
 
   Future<void> _submitExercise() async {
     if (_responseController.text.length < 10) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please write a bit more!")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please write a bit more!")));
       return;
     }
 
     setState(() => _isSubmitting = true);
+    _videoController?.pause();
 
     try {
-      final tasks = ref.read(readingTaskProvider).value!;
+      final tasks = ref.read(listeningTaskProvider).value!;
       final lang = ref.read(activeLanguageProvider);
-      final material = ref.read(readingMaterialProvider).value!;
+      final exercise = ref.read(listeningExerciseProvider).value!;
 
-      final newEntryId = await ref
-          .read(journalNotifierProvider.notifier)
-          .createEntry(
-            tasks.summary.title,
-            _responseController.text,
-            lang,
-            moduleId: widget.moduleId,
-          );
+      // 1. Submit Journal
+      final newEntryId = await ref.read(journalNotifierProvider.notifier).createEntry(
+        tasks.summary.title,
+        _responseController.text,
+        lang,
+        moduleId: widget.moduleId,
+      );
 
+      // 2. Mark Activity Complete (and link the specific listening exercise)
       if (widget.moduleId != null) {
         await ref.read(pathNotifierProvider.notifier).updateActivity(
-          widget.moduleId!,
-          'reading',
+          widget.moduleId!, 
+          'listening', 
           true,
-          {'materialId': material.id}
+          {'listeningExerciseId': exercise.id}
         );
       }
 
@@ -8766,10 +8279,8 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Submission failed: $e")));
-        setState(() => _isSubmitting = false);
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Submission failed: $e")));
+         setState(() => _isSubmitting = false);
       }
     }
   }
@@ -9178,6 +8689,103 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/widgets/analysis_widgets.dart">
+import 'package:flutter/material.dart';
+import '../../models/journal_entry.dart';
+import 'liquid_components.dart';
+
+class AnalysisScoreCard extends StatelessWidget {
+  final Analysis analysis;
+
+  const AnalysisScoreCard({super.key, required this.analysis});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _ScoreItem(label: "Grammar", score: analysis.grammarScore),
+          _ScoreItem(label: "Phrasing", score: analysis.phrasingScore),
+          _ScoreItem(label: "Vocabulary", score: analysis.vocabScore),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScoreItem extends StatelessWidget {
+  final String label;
+  final int score;
+
+  const _ScoreItem({required this.label, required this.score});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          "$score",
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+      ],
+    );
+  }
+}
+
+class MistakesList extends StatelessWidget {
+  final List<Mistake> mistakes;
+
+  const MistakesList({super.key, required this.mistakes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: mistakes.map((m) => _MistakeCard(mistake: m)).toList(),
+    );
+  }
+}
+
+class _MistakeCard extends StatelessWidget {
+  final Mistake mistake;
+
+  const _MistakeCard({required this.mistake});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassCard(
+        padding: 16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                 Container(
+                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                   decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
+                   child: Text(mistake.type.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(mistake.original, style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.white54)),
+            Text(mistake.corrected, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(mistake.explanation, style: const TextStyle(fontSize: 12, color: Colors.white70, fontStyle: FontStyle.italic)),
           ],
         ),
       ),
@@ -9656,259 +9264,6 @@ final analyticsServiceProvider = Provider(
   (ref) =>
       AnalyticsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
 );
-</file>
-
-<file path="lib/ui/screens/journal_editor_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../../theme/liquid_theme.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../../providers/journal_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/path_provider.dart';
-
-class JournalEditorScreen extends ConsumerStatefulWidget {
-  final String? moduleId;
-  final String? initialMode;
-  final String? initialTopic;
-  final String? initialImageUrl;
-
-  const JournalEditorScreen({
-    super.key,
-    this.moduleId,
-    this.initialMode,
-    this.initialTopic,
-    this.initialImageUrl,
-  });
-
-  @override
-  ConsumerState<JournalEditorScreen> createState() => _JournalEditorScreenState();
-}
-
-class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
-  late TextEditingController _titleController;
-  late TextEditingController _contentController;
-  bool _isRecording = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController(
-      text: widget.initialTopic ?? "Free Write",
-    );
-    _contentController = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _contentController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final activeLang = ref.watch(activeLanguageProvider);
-    final topicsAsync = ref.watch(suggestedTopicsProvider);
-    final isAudioMode = widget.initialMode == 'audio_journal';
-    final isDescribeMode = widget.initialMode == 'describe_image';
-
-    return GlassScaffold(
-      title: isAudioMode ? 'Speak' : 'Write',
-      subtitle: 'Practice in $activeLang',
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. IMAGE PROMPT (For Describe Image mode)
-            if (isDescribeMode && widget.initialImageUrl != null) ...[
-              const Text(
-                "DESCRIBE THIS IMAGE",
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Image.network(
-                  widget.initialImageUrl!,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 200,
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Icon(
-                      Icons.broken_image,
-                      color: Colors.white24,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // 2. ADAPTIVE INPUT (Audio vs Text)
-            if (isAudioMode) ...[
-              _buildAudioInterface(),
-              const SizedBox(height: 24),
-            ],
-
-            const Text("Topic Suggestions", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 40,
-              child: topicsAsync.when(
-                loading: () => const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 2,
-                    child: LinearProgressIndicator(),
-                  ),
-                ),
-                error: (_, _) => const SizedBox(),
-                data: (topics) => ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: topics.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(width: 8),
-                  itemBuilder: (context, index) => ActionChip(
-                    label: Text(topics[index]),
-                    backgroundColor: Colors.white10,
-                    labelStyle: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                    onPressed: () => _titleController.text = topics[index],
-                  ),
-                ),
-              ),
-            ),
-             Align(alignment: Alignment.centerRight, child: TextButton(
-                onPressed: () => ref.read(journalNotifierProvider.notifier).refreshTopics(activeLang),
-                child: const Text("Refresh Topics", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12))
-             )),
-
-            const SizedBox(height: 16),
-            
-            GlassInput(controller: _titleController, hint: "Title / Topic"),
-            
-            const SizedBox(height: 16),
-            
-            if (!isAudioMode) ...[
-              _buildTextInterface(),
-              const SizedBox(height: 24),
-            ],
-
-            LiquidButton(
-              text: "Save & Analyze",
-              onTap: () async {
-                if (_contentController.text.isEmpty && !isAudioMode) return;
-
-                await ref
-                    .read(journalNotifierProvider.notifier)
-                    .createEntry(
-                      _titleController.text.isEmpty
-                          ? "Untitled Entry"
-                          : _titleController.text,
-                      _contentController.text,
-                      activeLang,
-                      moduleId: widget.moduleId,
-                    );
-                 
-                if (widget.moduleId != null) {
-                  // Mark module activity done
-                  final key = widget.initialMode ?? 'writing';
-                  ref
-                      .read(pathNotifierProvider.notifier)
-                      .updateActivity(widget.moduleId!, key, true);
-                }
-
-                if (context.mounted) context.pop();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAudioInterface() {
-    return GlassCard(
-      child: Column(
-        children: [
-          Icon(
-            _isRecording ? Icons.mic : Icons.mic_none,
-            size: 64,
-            color: _isRecording ? Colors.redAccent : Colors.white,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _isRecording ? "Listening..." : "Tap to Speak",
-            style: const TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: () => setState(() => _isRecording = !_isRecording),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _isRecording
-                    ? Colors.redAccent.withValues(alpha: 0.1)
-                    : Colors.white10,
-              ),
-              child: Icon(
-                _isRecording ? Icons.stop : Icons.play_arrow,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          if (!_isRecording && _contentController.text.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 20),
-              child: Text(
-                "Transcript: ${_contentController.text}",
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTextInterface() {
-    return Container(
-      height: 300,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: TextField(
-        controller: _contentController,
-        maxLines: null,
-        expands: true,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          hintText: "Start writing...",
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-          border: InputBorder.none,
-        ),
-      ),
-    );
-  }
-}
 </file>
 
 <file path="lib/ui/screens/journal_screen.dart">
@@ -10712,6 +10067,372 @@ class _AddLanguageDialogState extends ConsumerState<_AddLanguageDialog> {
 }
 </file>
 
+<file path="lib/ui/screens/reading_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../theme/liquid_theme.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+import '../../providers/reading_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/journal_provider.dart';
+import '../../providers/path_provider.dart';
+import '../../models/reading_models.dart';
+import '../../models/writing_aids.dart';
+
+class ReadingScreen extends ConsumerStatefulWidget {
+  final String? moduleId;
+  
+  const ReadingScreen({super.key, this.moduleId});
+
+  @override
+  ConsumerState<ReadingScreen> createState() => _ReadingScreenState();
+}
+
+class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final TextEditingController _responseController = TextEditingController();
+  bool _isSubmitting = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _responseController.dispose();
+    super.dispose();
+  }
+
+  void _insertText(String text) {
+    final currentText = _responseController.text;
+    if (currentText.isEmpty) {
+      _responseController.text = text;
+    } else {
+      _responseController.text = "$currentText $text";
+    }
+    _responseController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _responseController.text.length),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final materialAsync = ref.watch(readingMaterialProvider);
+    final tasksAsync = ref.watch(readingTaskProvider);
+    final aidsAsync = ref.watch(readingAidsProvider);
+    final activeLang = ref.watch(activeLanguageProvider);
+
+    return GlassScaffold(
+      title: 'Read & Write',
+      subtitle: 'Comprehension Practice',
+      body: materialAsync.when(
+        // FIX: Wrap Center in SliverFillRemaining
+        loading: () => const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        // FIX: Wrap Center in SliverFillRemaining
+        error: (e, _) =>
+            SliverFillRemaining(child: Center(child: Text("Error: $e"))),
+        data: (material) {
+          if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
+             Future.microtask(() => 
+               ref.read(readingTaskProvider.notifier).generate(material.content, activeLang, material.level)
+             );
+          }
+
+          // FIX: Wrap NestedScrollView in SliverFillRemaining
+          return SliverFillRemaining(
+            child: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorColor: LiquidTheme.primaryAccent,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: Colors.white54,
+                      tabs: const [
+                        Tab(text: "Reading"),
+                        Tab(text: "Writing Task"),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              body: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildReadingTab(material),
+                  _buildWritingTab(tasksAsync, aidsAsync, activeLang, material),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildReadingTab(ReadingMaterial material) {
+    return SingleChildScrollView(
+      child: GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(material.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+            const SizedBox(height: 8),
+            if (material.source != null)
+              Text("Source: ${material.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            const SizedBox(height: 20),
+            Text(
+              material.content,
+              style: const TextStyle(fontSize: 18, height: 1.6, color: Colors.white70),
+            ),
+            const SizedBox(height: 32),
+            LiquidButton(
+              text: "Start Writing",
+              onTap: () => _tabController.animateTo(1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWritingTab(
+    AsyncValue<ReadingTasksResponse?> tasksAsync, 
+    AsyncValue<WritingAids?> aidsAsync,
+    String lang, 
+    ReadingMaterial material
+  ) {
+    if (tasksAsync.isLoading) {
+      return const Center(child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text("AI is generating your tasks...", style: TextStyle(color: Colors.white54)),
+        ],
+      ));
+    }
+
+    final tasks = tasksAsync.value;
+    if (tasks == null) return const SizedBox();
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          GlassCard(
+            padding: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Topic: ${tasks.summary.title}",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(tasks.summary.prompt, style: const TextStyle(color: Colors.white70)),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+
+          aidsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+            error: (_, _) => const SizedBox(),
+            data: (aids) {
+              if (aids == null) return const SizedBox();
+              return GlassCard(
+                padding: 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Sentence Starter",
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => _insertText(aids.sentenceStarter),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '"${aids.sentenceStarter}"',
+                                style: const TextStyle(
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const Text(
+                              "Use this",
+                              style: TextStyle(
+                                color: LiquidTheme.primaryAccent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Vocabulary to Try",
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: aids.suggestedVocab
+                          .map(
+                            (vocab) => ActionChip(
+                              label: Text(vocab),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.1,
+                              ),
+                              labelStyle: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                              ),
+                              side: BorderSide.none,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              onPressed: () => _insertText(vocab),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
+              );
+            }
+          ),
+
+          const SizedBox(height: 16),
+
+          Container(
+            height: 300,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: TextField(
+              controller: _responseController,
+              maxLines: null,
+              expands: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: "Start writing about \"${tasks.summary.title}\"...",
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+
+          LiquidButton(
+            text: _isSubmitting ? "Analyzing..." : "Submit for Analysis",
+            isLoading: _isSubmitting,
+            onTap: _submitExercise,
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitExercise() async {
+    if (_responseController.text.length < 10) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please write a bit more!")));
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final tasks = ref.read(readingTaskProvider).value!;
+      final lang = ref.read(activeLanguageProvider);
+      final material = ref.read(readingMaterialProvider).value!;
+
+      final newEntryId = await ref
+          .read(journalNotifierProvider.notifier)
+          .createEntry(
+            tasks.summary.title,
+            _responseController.text,
+            lang,
+            moduleId: widget.moduleId,
+          );
+
+      if (widget.moduleId != null) {
+        await ref.read(pathNotifierProvider.notifier).updateActivity(
+          widget.moduleId!,
+          'reading',
+          true,
+          {'materialId': material.id}
+        );
+      }
+
+      if (mounted && newEntryId != null) {
+        context.pushReplacement('/journal/$newEntryId');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Submission failed: $e")));
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+}
+</file>
+
 <file path="lib/main.dart">
 // lib/main.dart
 import 'package:flutter/material.dart';
@@ -10721,9 +10442,40 @@ import 'providers/auth_provider.dart';
 import 'router/router.dart';
 import 'theme/liquid_theme.dart';
 import 'ui/widgets/liquid_components.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'dart:io';
 
-void main() {
+// Platform-specific imports for explicit initialization
+import 'package:flutter_inappwebview_linux/flutter_inappwebview_linux.dart' as linux_webview;
+import 'package:flutter_inappwebview_windows/flutter_inappwebview_windows.dart' as windows_webview;
+
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (!kIsWeb) {
+    if (Platform.isLinux) {
+      linux_webview.LinuxInAppWebViewPlatform.registerWith();
+      final platform = InAppWebViewPlatform.instance;
+      if (platform != null) {
+        await (platform as dynamic).initialize();
+      }
+    } else if (Platform.isWindows) {
+      windows_webview.WindowsInAppWebViewPlatform.registerWith();
+      final platform = InAppWebViewPlatform.instance;
+      if (platform != null) {
+        await (platform as dynamic).initialize();
+      }
+    } else if (Platform.isMacOS) {
+      // MacOS usually auto-registers, but we can call initialize if needed via dynamic
+      final platform = InAppWebViewPlatform.instance;
+      if (platform != null) {
+        await (platform as dynamic).initialize();
+      }
+    }
+  }
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -11147,225 +10899,6 @@ final aiServiceProvider = Provider(
 );
 </file>
 
-<file path="lib/services/journal_service.dart">
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/token_service.dart';
-import 'logger_service.dart';
-import '../models/journal_entry.dart';
-import '../models/writing_aids.dart';
-import '../utils/constants.dart';
-
-class JournalService {
-  final Ref _ref;
-  final TokenService _authTokenService;
-  late final LoggerService _logger;
-
-  JournalService(this._ref, this._authTokenService) {
-    _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<List<JournalEntry>> getHistory(String targetLanguage) async {
-    _logger.info('JournalService: Fetching history for $targetLanguage');
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/journal?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      return data.map((e) => JournalEntry.fromJson(e)).toList();
-    }
-    throw Exception('Failed to load journal history');
-  }
-
-  Future<JournalEntry> getEntry(String id) async {
-    _logger.info('JournalService: Fetching entry $id');
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      return JournalEntry.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to load entry');
-  }
-
-  // MODIFIED: Accept optional moduleId
-  Future<JournalEntry> createEntry(
-    String content,
-    String title,
-    String targetLanguage, {
-    String? moduleId,
-  }) async {
-    _logger.info('JournalService: Creating entry');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'content': content,
-        'topicTitle': title,
-        'targetLanguage': targetLanguage,
-        'mode': 'free_write',
-        'moduleId': moduleId, // Include moduleId if present
-      }),
-    );
-
-    if (response.statusCode == 201) {
-      return JournalEntry.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to create entry');
-  }
-
-  Future<void> updateEntry(String id, String content, String title) async {
-     _logger.info('JournalService: Updating entry $id');
-     final response = await http.put(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-       headers: await _getHeaders(),
-       body: jsonEncode({
-         'content': content,
-        'topicId':
-            title, // Note: Web API might expect ID, but here we pass title/ID logic based on your implementation
-       })
-     );
-      if (response.statusCode != 200) throw Exception('Failed to update entry');
-  }
-
-  // NEW METHODS FOR AUDIO UPLOAD
-  Future<void> _uploadFileToSupabase(String signedUrl, File file) async {
-    final bytes = await file.readAsBytes();
-    // Using simple PUT as required by Supabase Storage signed URLs
-    final response = await http.put(
-      Uri.parse(signedUrl),
-      headers: {'Content-Type': 'audio/webm'}, // Adjust mime type as needed
-      body: bytes,
-    );
-    if (response.statusCode != 200) throw Exception('Failed to upload file');
-  }
-
-  Future<JournalEntry> createAudioEntry(
-    String filePath,
-    String targetLanguage, {
-    String? moduleId,
-  }) async {
-    _logger.info('JournalService: Starting audio journal creation');
-
-    final file = File(filePath);
-    final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.webm';
-
-    // 1. Get Signed URL
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/journal/generate-upload-url?filename=$filename',
-      ),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode != 200) {
-      throw Exception('Failed to generate upload URL');
-    }
-    final data = jsonDecode(response.body);
-    final signedUrl = data['signedUrl'];
-    final storagePath = data['path'];
-
-    // 2. Upload Binary
-    await _uploadFileToSupabase(signedUrl, file);
-
-    // 3. Create Journal Record
-    final createResponse = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/audio'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'path': storagePath,
-        'targetLanguage': targetLanguage,
-        'moduleId': moduleId,
-        'aidsUsage': [],
-      }),
-    );
-
-    if (createResponse.statusCode == 201) {
-      return JournalEntry.fromJson(jsonDecode(createResponse.body));
-    }
-    throw Exception('Failed to create audio journal record');
-  }
-
-  Future<void> deleteEntry(String id) async {
-    _logger.info('JournalService: Deleting entry $id');
-    final response = await http.delete(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete entry');
-    }
-  }
-
-  Future<void> analyzeEntry(String id) async {
-    _logger.info('JournalService: Starting analysis for $id');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/analyze'),
-      headers: await _getHeaders(),
-      body: jsonEncode({'journalId': id}),
-    );
-    if (response.statusCode != 200) throw Exception('Failed to start analysis');
-  }
-
-  Future<List<String>> getSuggestedTopics(String targetLanguage) async {
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/user/suggested-topics?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return List<String>.from(data['topics'] ?? []);
-    }
-    return [];
-  }
-  
-  Future<void> generateTopics(String targetLanguage) async {
-     await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/user/generate-topics?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
-    );
-  }
-
-  Future<WritingAids> getWritingAids(
-    String topic,
-    String targetLanguage,
-  ) async {
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/helpers'),
-      headers: await _getHeaders(),
-      body: jsonEncode({'topic': topic, 'targetLanguage': targetLanguage}),
-    );
-
-    if (response.statusCode == 200) {
-      return WritingAids.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to load writing aids');
-  }
-}
-
-final journalServiceProvider = Provider((ref) => JournalService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
-</file>
-
 <file path="lib/services/srs_service.dart">
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -11523,188 +11056,253 @@ class SrsService {
 final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
 </file>
 
-<file path="lib/ui/screens/progress_screen.dart">
+<file path="lib/ui/screens/journal_editor_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
+import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
-import '../../providers/analytics_provider.dart';
-import '../widgets/analytics_components.dart';
+import '../../providers/journal_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/path_provider.dart';
 
-class ProgressScreen extends ConsumerWidget {
-  const ProgressScreen({super.key});
+class JournalEditorScreen extends ConsumerStatefulWidget {
+  final String? moduleId;
+  final String? initialMode;
+  final String? initialTopic;
+  final String? initialImageUrl;
+
+  const JournalEditorScreen({
+    super.key,
+    this.moduleId,
+    this.initialMode,
+    this.initialTopic,
+    this.initialImageUrl,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final analyticsAsync = ref.watch(analyticsDataProvider);
-    final goalProgressAsync = ref.watch(goalProgressProvider);
-    final heatmapAsync = ref.watch(activityHeatmapProvider);
-    final userProfile = ref.watch(userProfileProvider).value;
+  ConsumerState<JournalEditorScreen> createState() => _JournalEditorScreenState();
+}
+
+class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
+  late TextEditingController _titleController;
+  late TextEditingController _contentController;
+  bool _isRecording = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(
+      text: widget.initialTopic ?? "Free Write",
+    );
+    _contentController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _contentController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeLang = ref.watch(activeLanguageProvider);
+    final topicsAsync = ref.watch(suggestedTopicsProvider);
+    final isAudioMode = widget.initialMode == 'audio_journal';
+    final isDescribeMode = widget.initialMode == 'describe_image';
 
     return GlassScaffold(
-      title: 'Analytics',
-      subtitle: 'Your fluency timeline',
-      showBackButton: false,
-      body: analyticsAsync.when(
-        loading: () => const SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(
-            child: Padding(
-              padding: EdgeInsets.all(40),
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          ),
-        ),
-        error: (e, _) => SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(
-            child: Text(
-              "Error: $e",
-              style: const TextStyle(color: Colors.white),
-            ),
-          ),
-        ),
-        data: (analytics) {
-          final hasData = analytics.totalEntries > 0;
-
-          if (!hasData) {
-            return SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: GlassCard(
-                  padding: 32,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.show_chart,
-                        size: 60,
-                        color: Colors.white24,
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        "No Progress Yet",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        "Write your first journal entry to start tracking.",
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                      const SizedBox(height: 24),
-                      LiquidButton(
-                        text: "Start Writing",
-                        onTap: () {} /* Nav to journal */,
-                      ),
-                    ],
+      title: isAudioMode ? 'Speak' : 'Write',
+      subtitle: 'Practice in $activeLang',
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. IMAGE PROMPT (For Describe Image mode)
+            if (isDescribeMode && widget.initialImageUrl != null) ...[
+              const Text(
+                "DESCRIBE THIS IMAGE",
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.network(
+                  widget.initialImageUrl!,
+                  height: 200,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(
+                      Icons.broken_image,
+                      color: Colors.white24,
+                    ),
                   ),
                 ),
               ),
-            );
-          }
+              const SizedBox(height: 24),
+            ],
 
-          return SliverList(
-            delegate: SliverChildListDelegate(
-              [
-                // 1. Dashboard Summary
-                Row(
-                  children: [
-                    Expanded(
-                      child: DashboardSummaryCard(
-                        label: "Total Entries",
-                        value: analytics.totalEntries.toString(),
-                      ),
+            // 2. ADAPTIVE INPUT (Audio vs Text)
+            if (isAudioMode) ...[
+              _buildAudioInterface(),
+              const SizedBox(height: 24),
+            ],
+
+            const Text("Topic Suggestions", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 40,
+              child: topicsAsync.when(
+                loading: () => const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 2,
+                    child: LinearProgressIndicator(),
+                  ),
+                ),
+                error: (_, _) => const SizedBox(),
+                data: (topics) => ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: topics.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (context, index) => ActionChip(
+                    label: Text(topics[index]),
+                    backgroundColor: Colors.white10,
+                    labelStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DashboardSummaryCard(
-                        label: "Avg. Score",
-                        value: "${analytics.averageScore.toStringAsFixed(1)}%",
-                      ),
-                    ),
-                  ],
+                    onPressed: () => _titleController.text = topics[index],
+                  ),
+                ),
               ),
-                const SizedBox(height: 12),
-                if (userProfile != null)
-                  DashboardSummaryCard(
-                    label: "Streak",
-                    value: "${userProfile.currentStreak} Days",
-                    subValue: "Longest: ${userProfile.longestStreak}",
-                  ),
-              
-                const SizedBox(height: 24),
-
-                // 2. Weekly Goal & Study Time
-                if (goalProgressAsync.hasValue)
-                  GoalProgressWidget(progress: goalProgressAsync.value!),
-
-                const SizedBox(height: 12),
-
-                GlassCard(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Time Studied Today",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            "Includes writing & review",
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        "${(analytics.studyTimeToday / 60).round()} min",
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // 3. Proficiency Chart (PRO only logic can be added here)
-                ProficiencyLineChart(
-                  history: analytics.proficiencyOverTime,
-                  prediction: analytics.predictedProficiencyOverTime,
-                ),
-
-                const SizedBox(height: 24),
-
-                // 4. SRS Forecast
-                SrsForecastWidget(counts: analytics.dueCounts),
-
-                const SizedBox(height: 24),
-
-                // 5. Heatmap
-                if (heatmapAsync.hasValue)
-                  SimpleHeatmap(data: heatmapAsync.value!),
-
-                const SizedBox(height: 40),
-              ].animate(interval: 100.ms).fadeIn().slideY(begin: 0.1, end: 0),
             ),
-          );
-        },
+             Align(alignment: Alignment.centerRight, child: TextButton(
+                onPressed: () => ref.read(journalNotifierProvider.notifier).refreshTopics(activeLang),
+                child: const Text("Refresh Topics", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12))
+             )),
+
+            const SizedBox(height: 16),
+            
+            GlassInput(controller: _titleController, hint: "Title / Topic"),
+            
+            const SizedBox(height: 16),
+            
+            if (!isAudioMode) ...[
+              _buildTextInterface(),
+              const SizedBox(height: 24),
+            ],
+
+            LiquidButton(
+              text: "Save & Analyze",
+              onTap: () async {
+                if (_contentController.text.isEmpty && !isAudioMode) return;
+
+                await ref
+                    .read(journalNotifierProvider.notifier)
+                    .createEntry(
+                      _titleController.text.isEmpty
+                          ? "Untitled Entry"
+                          : _titleController.text,
+                      _contentController.text,
+                      activeLang,
+                      moduleId: widget.moduleId,
+                    );
+                 
+                if (widget.moduleId != null) {
+                  // Mark module activity done
+                  final key = widget.initialMode ?? 'writing';
+                  ref
+                      .read(pathNotifierProvider.notifier)
+                      .updateActivity(widget.moduleId!, key, true);
+                }
+
+                if (context.mounted) context.pop();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAudioInterface() {
+    return GlassCard(
+      child: Column(
+        children: [
+          Icon(
+            _isRecording ? Icons.mic : Icons.mic_none,
+            size: 64,
+            color: _isRecording ? Colors.redAccent : Colors.white,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _isRecording ? "Listening..." : "Tap to Speak",
+            style: const TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: () => setState(() => _isRecording = !_isRecording),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _isRecording
+                    ? Colors.redAccent.withValues(alpha: 0.1)
+                    : Colors.white10,
+              ),
+              child: Icon(
+                _isRecording ? Icons.stop : Icons.play_arrow,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          if (!_isRecording && _contentController.text.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 20),
+              child: Text(
+                "Transcript: ${_contentController.text}",
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextInterface() {
+    return Container(
+      height: 300,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: TextField(
+        controller: _contentController,
+        maxLines: null,
+        expands: true,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: "Start writing...",
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+          border: InputBorder.none,
+        ),
       ),
     );
   }
@@ -12481,6 +12079,225 @@ class UserProfile {
 }
 </file>
 
+<file path="lib/services/journal_service.dart">
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
+import 'logger_service.dart';
+import '../models/journal_entry.dart';
+import '../models/writing_aids.dart';
+import '../utils/constants.dart';
+
+class JournalService {
+  final Ref _ref;
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  JournalService(this._ref, this._authTokenService) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<JournalEntry>> getHistory(String targetLanguage) async {
+    _logger.info('JournalService: Fetching history for $targetLanguage');
+    final response = await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/journal?targetLanguage=$targetLanguage',
+      ),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final List data = jsonDecode(response.body);
+      return data.map((e) => JournalEntry.fromJson(e)).toList();
+    }
+    throw Exception('Failed to load journal history');
+  }
+
+  Future<JournalEntry> getEntry(String id) async {
+    _logger.info('JournalService: Fetching entry $id');
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      return JournalEntry.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load entry');
+  }
+
+  // MODIFIED: Accept optional moduleId
+  Future<JournalEntry> createEntry(
+    String content,
+    String title,
+    String targetLanguage, {
+    String? moduleId,
+  }) async {
+    _logger.info('JournalService: Creating entry');
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'content': content,
+        'topicTitle': title,
+        'targetLanguage': targetLanguage,
+        'mode': 'free_write',
+        'moduleId': moduleId, // Include moduleId if present
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return JournalEntry.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to create entry');
+  }
+
+  Future<void> updateEntry(String id, String content, String title) async {
+     _logger.info('JournalService: Updating entry $id');
+     final response = await http.put(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
+       headers: await _getHeaders(),
+       body: jsonEncode({
+         'content': content,
+        'topicId':
+            title, // Note: Web API might expect ID, but here we pass title/ID logic based on your implementation
+       })
+     );
+      if (response.statusCode != 200) throw Exception('Failed to update entry');
+  }
+
+  // NEW METHODS FOR AUDIO UPLOAD
+  Future<void> _uploadFileToSupabase(String signedUrl, File file) async {
+    final bytes = await file.readAsBytes();
+    // Using simple PUT as required by Supabase Storage signed URLs
+    final response = await http.put(
+      Uri.parse(signedUrl),
+      headers: {'Content-Type': 'audio/webm'}, // Adjust mime type as needed
+      body: bytes,
+    );
+    if (response.statusCode != 200) throw Exception('Failed to upload file');
+  }
+
+  Future<JournalEntry> createAudioEntry(
+    String filePath,
+    String targetLanguage, {
+    String? moduleId,
+  }) async {
+    _logger.info('JournalService: Starting audio journal creation');
+
+    final file = File(filePath);
+    final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.webm';
+
+    // 1. Get Signed URL
+    final response = await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/journal/generate-upload-url?filename=$filename',
+      ),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to generate upload URL');
+    }
+    final data = jsonDecode(response.body);
+    final signedUrl = data['signedUrl'];
+    final storagePath = data['path'];
+
+    // 2. Upload Binary
+    await _uploadFileToSupabase(signedUrl, file);
+
+    // 3. Create Journal Record
+    final createResponse = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/audio'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'path': storagePath,
+        'targetLanguage': targetLanguage,
+        'moduleId': moduleId,
+        'aidsUsage': [],
+      }),
+    );
+
+    if (createResponse.statusCode == 201) {
+      return JournalEntry.fromJson(jsonDecode(createResponse.body));
+    }
+    throw Exception('Failed to create audio journal record');
+  }
+
+  Future<void> deleteEntry(String id) async {
+    _logger.info('JournalService: Deleting entry $id');
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete entry');
+    }
+  }
+
+  Future<void> analyzeEntry(String id) async {
+    _logger.info('JournalService: Starting analysis for $id');
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/analyze'),
+      headers: await _getHeaders(),
+      body: jsonEncode({'journalId': id}),
+    );
+    if (response.statusCode != 200) throw Exception('Failed to start analysis');
+  }
+
+  Future<List<String>> getSuggestedTopics(String targetLanguage) async {
+    final response = await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/user/suggested-topics?targetLanguage=$targetLanguage',
+      ),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return List<String>.from(data['topics'] ?? []);
+    }
+    return [];
+  }
+  
+  Future<void> generateTopics(String targetLanguage) async {
+     await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/user/generate-topics?targetLanguage=$targetLanguage',
+      ),
+      headers: await _getHeaders(),
+    );
+  }
+
+  Future<WritingAids> getWritingAids(
+    String topic,
+    String targetLanguage,
+  ) async {
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/helpers'),
+      headers: await _getHeaders(),
+      body: jsonEncode({'topic': topic, 'targetLanguage': targetLanguage}),
+    );
+
+    if (response.statusCode == 200) {
+      return WritingAids.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load writing aids');
+  }
+}
+
+final journalServiceProvider = Provider((ref) => JournalService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
+</file>
+
 <file path="lib/services/user_service.dart">
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -12988,6 +12805,194 @@ class _ActivityTile extends StatelessWidget {
 }
 </file>
 
+<file path="lib/ui/screens/progress_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+import '../../providers/analytics_provider.dart';
+import '../widgets/analytics_components.dart';
+import '../../providers/user_provider.dart';
+
+class ProgressScreen extends ConsumerWidget {
+  const ProgressScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final analyticsAsync = ref.watch(analyticsDataProvider);
+    final goalProgressAsync = ref.watch(goalProgressProvider);
+    final heatmapAsync = ref.watch(activityHeatmapProvider);
+    final userProfile = ref.watch(userProfileProvider).value;
+
+    return GlassScaffold(
+      title: 'Analytics',
+      subtitle: 'Your fluency timeline',
+      showBackButton: false,
+      body: analyticsAsync.when(
+        loading: () => const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          ),
+        ),
+        error: (e, _) => SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(
+              "Error: $e",
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ),
+        data: (analytics) {
+          final hasData = analytics.totalEntries > 0;
+
+          if (!hasData) {
+            return SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: GlassCard(
+                  padding: 32,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.show_chart,
+                        size: 60,
+                        color: Colors.white24,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        "No Progress Yet",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        "Write your first journal entry to start tracking.",
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                      const SizedBox(height: 24),
+                      LiquidButton(
+                        text: "Start Writing",
+                        onTap: () {} /* Nav to journal */,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return SliverList(
+            delegate: SliverChildListDelegate(
+              [
+                // 1. Dashboard Summary
+                Row(
+                  children: [
+                    Expanded(
+                      child: DashboardSummaryCard(
+                        label: "Total Entries",
+                        value: analytics.totalEntries.toString(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DashboardSummaryCard(
+                        label: "Avg. Score",
+                        value: "${analytics.averageScore.toStringAsFixed(1)}%",
+                      ),
+                    ),
+                  ],
+              ),
+                const SizedBox(height: 12),
+                if (userProfile != null)
+                  DashboardSummaryCard(
+                    label: "Streak",
+                    value: "${userProfile.currentStreak} Days",
+                    subValue: "Longest: ${userProfile.longestStreak}",
+                  ),
+              
+                const SizedBox(height: 24),
+
+                // 2. Weekly Goal & Study Time
+                if (goalProgressAsync.hasValue)
+                  GoalProgressWidget(progress: goalProgressAsync.value!),
+
+                const SizedBox(height: 12),
+
+                GlassCard(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Time Studied Today",
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            "Includes writing & review",
+                            style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        "${(analytics.studyTimeToday / 60).round()} min",
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // 3. Proficiency Chart (PRO only logic can be added here)
+                ProficiencyLineChart(
+                  history: analytics.proficiencyOverTime,
+                  prediction: analytics.predictedProficiencyOverTime,
+                ),
+
+                const SizedBox(height: 24),
+
+                // 4. SRS Forecast
+                SrsForecastWidget(counts: analytics.dueCounts),
+
+                const SizedBox(height: 24),
+
+                // 5. Heatmap
+                if (heatmapAsync.hasValue)
+                  SimpleHeatmap(data: heatmapAsync.value!),
+
+                const SizedBox(height: 40),
+              ].animate(interval: 100.ms).fadeIn().slideY(begin: 0.1, end: 0),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/providers/auth_provider.dart">
 // lib/providers/auth_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13322,6 +13327,121 @@ class AuthService {
 final authServiceProvider = Provider((ref) => AuthService(ref));
 </file>
 
+<file path="pubspec.yaml">
+name: lexity_mobile
+description: "A new Flutter project."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.8
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.5.1
+  http: ^1.2.1
+  shared_preferences: ^2.2.2
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.0
+  glass_kit: ^3.0.0
+  logger: ^2.0.2
+  path_provider: ^2.1.1
+  intl: ^0.19.0
+  lucide_icons: ^0.257.0
+  go_router: ^17.1.0
+  permission_handler: ^11.3.0
+  fl_chart: ^0.68.0
+  flutter_markdown: any
+  youtube_player_flutter: ^9.0.1
+  file_picker: ^10.3.10
+  flutter_inappwebview: ^6.1.5
+  flutter_inappwebview_linux: ^0.1.0-beta.1
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mockito: ^5.4.4
+  build_runner: ^2.4.8
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/a_dot_burr.jpeg
+  #   - images/a_dot_ham.jpeg
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package
+</file>
+
 <file path="pubspec.lock">
 # Generated by pub
 # See https://dart.dev/tools/pub/glossary#lockfile
@@ -13378,10 +13498,10 @@ packages:
     dependency: transitive
     description:
       name: build_config
-      sha256: "4f64382b97504dc2fcdf487d5aae33418e08b4703fc21249e4db6d804a4d0187"
+      sha256: "4070d2a59f8eec34c97c86ceb44403834899075f66e8a9d59706f8e7834f6f71"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.0"
+    version: "1.3.0"
   build_daemon:
     dependency: transitive
     description:
@@ -13394,10 +13514,10 @@ packages:
     dependency: "direct dev"
     description:
       name: build_runner
-      sha256: "39ad4ca8a2876779737c60e4228b4bcd35d4352ef7e14e47514093edc012c734"
+      sha256: "7981eb922842c77033026eb4341d5af651562008cdb116bdfa31fc46516b6462"
       url: "https://pub.dev"
     source: hosted
-    version: "2.11.1"
+    version: "2.12.2"
   built_collection:
     dependency: transitive
     description:
@@ -13410,10 +13530,10 @@ packages:
     dependency: transitive
     description:
       name: built_value
-      sha256: "7931c90b84bc573fef103548e354258ae4c9d28d140e41961df6843c5d60d4d8"
+      sha256: "6ae8a6435a8c6520c7077b107e77f1fb4ba7009633259a4d49a8afd8e7efc5e9"
       url: "https://pub.dev"
     source: hosted
-    version: "8.12.3"
+    version: "8.12.4"
   characters:
     dependency: transitive
     description:
@@ -13498,10 +13618,10 @@ packages:
     dependency: transitive
     description:
       name: dart_style
-      sha256: "15a7db352c8fc6a4d2bc475ba901c25b39fe7157541da4c16eacce6f8be83e49"
+      sha256: "29f7ecc274a86d32920b1d9cfc7502fa87220da41ec60b55f329559d5732e2b2"
       url: "https://pub.dev"
     source: hosted
-    version: "3.1.5"
+    version: "3.1.7"
   dbus:
     dependency: transitive
     description:
@@ -13530,10 +13650,10 @@ packages:
     dependency: transitive
     description:
       name: ffi
-      sha256: d07d37192dbf97461359c1518788f203b0c9102cfd2c35a716b823741219542c
+      sha256: "6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45"
       url: "https://pub.dev"
     source: hosted
-    version: "2.1.5"
+    version: "2.2.0"
   file:
     dependency: transitive
     description:
@@ -13611,6 +13731,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.2"
+  flutter_inappwebview_linux:
+    dependency: "direct main"
+    description:
+      name: flutter_inappwebview_linux
+      sha256: "2e1a3b09bb911fb5a8bb155cb7f1eb1428a19b6e20363b9db48beef428b8cef5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.0-beta.1"
   flutter_inappwebview_macos:
     dependency: transitive
     description:
@@ -13623,10 +13751,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_inappwebview_platform_interface
-      sha256: cf5323e194096b6ede7a1ca808c3e0a078e4b33cc3f6338977d75b4024ba2500
+      sha256: e3522c76e6760d1c0a9ff690e30e1503f226783d3277fa4d26675911977e9766
       url: "https://pub.dev"
     source: hosted
-    version: "1.3.0+1"
+    version: "1.4.0-beta.3"
   flutter_inappwebview_web:
     dependency: transitive
     description:
@@ -13737,10 +13865,10 @@ packages:
     dependency: transitive
     description:
       name: hooks
-      sha256: "7a08a0d684cb3b8fb604b78455d5d352f502b68079f7b80b831c62220ab0a4f6"
+      sha256: e79ed1e8e1929bc6ecb6ec85f0cb519c887aa5b423705ded0d0f2d9226def388
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.1"
+    version: "1.0.2"
   http:
     dependency: "direct main"
     description:
@@ -13785,10 +13913,10 @@ packages:
     dependency: transitive
     description:
       name: json_annotation
-      sha256: "805fa86df56383000f640384b282ce0cb8431f1a7a2396de92fb66186d8c57df"
+      sha256: cb09e7dac6210041fad964ed7fbee004f14258b4eca4040f72d1234062ace4c8
       url: "https://pub.dev"
     source: hosted
-    version: "4.10.0"
+    version: "4.11.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -13897,10 +14025,10 @@ packages:
     dependency: transitive
     description:
       name: native_toolchain_c
-      sha256: "89e83885ba09da5fdf2cdacc8002a712ca238c28b7f717910b34bcd27b0d03ac"
+      sha256: "92b2ca62c8bd2b8d2f267cdfccf9bfbdb7322f778f8f91b3ce5b5cda23a3899f"
       url: "https://pub.dev"
     source: hosted
-    version: "0.17.4"
+    version: "0.17.5"
   objective_c:
     dependency: transitive
     description:
@@ -14089,10 +14217,10 @@ packages:
     dependency: transitive
     description:
       name: shared_preferences_android
-      sha256: cbc40be9be1c5af4dab4d6e0de4d5d3729e6f3d65b89d21e1815d57705644a6f
+      sha256: "8374d6200ab33ac99031a852eba4c8eb2170c4bf20778b3e2c9eccb45384fb41"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.20"
+    version: "2.4.21"
   shared_preferences_foundation:
     dependency: transitive
     description:
@@ -14325,120 +14453,6 @@ packages:
 sdks:
   dart: ">=3.10.8 <4.0.0"
   flutter: ">=3.38.4"
-</file>
-
-<file path="pubspec.yaml">
-name: lexity_mobile
-description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-
-# The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
-
-environment:
-  sdk: ^3.10.8
-
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
-dependencies:
-  flutter:
-    sdk: flutter
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
-  flutter_riverpod: ^2.5.1
-  http: ^1.2.1
-  shared_preferences: ^2.2.2
-  google_fonts: ^6.2.1
-  flutter_animate: ^4.5.0
-  glass_kit: ^3.0.0
-  logger: ^2.0.2
-  path_provider: ^2.1.1
-  intl: ^0.19.0
-  lucide_icons: ^0.257.0
-  go_router: ^17.1.0
-  permission_handler: ^11.3.0
-  fl_chart: ^0.68.0
-  flutter_markdown: any
-  youtube_player_flutter: ^9.0.1
-  file_picker: ^10.3.10
-  flutter_inappwebview: ^6.1.5
-
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  mockito: ^5.4.4
-  build_runner: ^2.4.8
-  path_provider_platform_interface: ^2.1.2
-  plugin_platform_interface: ^2.1.8
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
-  flutter_lints: ^6.0.0
-
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
-flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
-  uses-material-design: true
-
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
-
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
 </file>
 
 <file path="lib/router/router.dart">

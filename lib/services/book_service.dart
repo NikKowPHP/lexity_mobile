@@ -49,11 +49,18 @@ class BookService {
   }
 
   Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    await http.put(
+    final response = await http.put(
       Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
       headers: await _getHeaders(),
-      body: jsonEncode({'currentCfi': cfi, 'progressPct': progressPct}),
+      body: jsonEncode({
+        'currentCfi': cfi, 
+        'progressPct': progressPct.toDouble(), // Ensure double
+      }),
     );
+    
+    if (response.statusCode != 200) {
+      _logger.warning('Failed to update progress for book $id: ${response.statusCode}');
+    }
   }
 
   Future<void> deleteBook(String id) async {

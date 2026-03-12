@@ -50,7 +50,8 @@ dependencies:
   flutter_markdown: any
   youtube_player_flutter: ^9.0.1
   file_picker: ^10.3.10
-  flutter_inappwebview: ^6.1.5
+  flutter_inappwebview: ^6.2.0-beta.3
+  
 
 
 dev_dependencies:
