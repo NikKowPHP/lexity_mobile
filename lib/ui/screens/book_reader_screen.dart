@@ -12,8 +12,8 @@ import 'package:lexity_mobile/providers/srs_provider.dart';
 import '../../models/book.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
-import '../widgets/translation_tooltip.dart';
 import '../../theme/liquid_theme.dart';
+import '../../services/ai_service.dart';
 
 class BookReaderScreen extends ConsumerStatefulWidget {
   final String bookId;
@@ -28,11 +28,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   double _progress = 0.0;
   double _fontSize = 115.0;
   String _theme = 'dark'; // 'light', 'dark', 'sepia'
-  
-  String? _selectedText;
-  String? _contextText;
-  double? _selectionX;
-  double? _selectionY;
 
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
@@ -246,10 +241,16 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
           rendition.on("selected", (cfiRange, contents) => {
             book.getRange(cfiRange).then(range => {
-              const rect = range.getBoundingClientRect();
-              const iframe = contents.document.defaultView.frameElement.getBoundingClientRect();
-              window.flutter_inappwebview.callHandler('onTextSelected', range.toString(), range.commonAncestorContainer.textContent, rect.left + iframe.left + (rect.width/2), rect.bottom + iframe.top);
-            });
+              if (!range) return;
+              const text = range.toString().trim();
+              if (text.length === 0) return;
+              
+              const contextText = range.commonAncestorContainer ? range.commonAncestorContainer.textContent.trim() : text;
+              window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
+              
+              // Clear selection so it doesn't get stuck
+              contents.window.getSelection().removeAllRanges();
+            }).catch(e => console.error("Selection error: ", e));
           });
 
           // Swipe Gestures
@@ -282,6 +283,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     // Trigger download when book detail is loaded
    
     bookAsync.whenData((book) {
+      // Initialize local progress from backend data if it hasn't been set yet
+      if (_progress == 0.0 && book.progressPct > 0) {
+        Future.microtask(() => setState(() => _progress = book.progressPct));
+      }
+
       if (!_localFileReady && !_isDownloading) {
         Future.microtask(() => _ensureBookDownloaded(book));
       }
@@ -359,7 +365,17 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   _applyHighlighting();
                 });
                 controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                  setState(() { _selectedText = args[0]; _contextText = args[1]; _selectionX = (args[2] as num).toDouble(); _selectionY = (args[3] as num).toDouble(); });
+                  final selected = args[0].toString();
+                  final contextTxt = args[1].toString();
+                  final nativeLang = profileAsync.value?.nativeLanguage ?? 'english';
+                  
+                  _showTranslationSheet(
+                    context, 
+                    selectedText: selected, 
+                    contextText: contextTxt, 
+                    sourceLang: book.targetLanguage, 
+                    nativeLang: nativeLang,
+                  );
                 });
               },
               onLoadStop: (controller, _) async {
@@ -370,15 +386,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               },
             ),
             ),
-            if (_selectedText != null && profileAsync.value != null)
-              TranslationTooltip(
-                selectedText: _selectedText!,
-                contextText: _contextText ?? _selectedText!,
-                sourceLang: book.targetLanguage,
-                targetLang: profileAsync.value!.nativeLanguage ?? 'english',
-                x: _selectionX!, y: _selectionY!,
-                onClose: () => setState(() => _selectedText = null),
-              ),
           ],
         );
        },
@@ -429,6 +436,158 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => _TranslationBottomSheet(
+        selectedText: selectedText,
+        contextText: contextText,
+        sourceLang: sourceLang,
+        targetLang: nativeLang,
+      ),
+    );
+  }
+}
+
+class _TranslationBottomSheet extends ConsumerStatefulWidget {
+  final String selectedText;
+  final String contextText;
+  final String sourceLang;
+  final String targetLang;
+
+  const _TranslationBottomSheet({
+    required this.selectedText,
+    required this.contextText,
+    required this.sourceLang,
+    required this.targetLang,
+  });
+
+  @override
+  ConsumerState<_TranslationBottomSheet> createState() => _TranslationBottomSheetState();
+}
+
+class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet> {
+  bool _isLoadingFast = true;
+  bool _isLoadingContext = false;
+  String? _fastTranslation;
+  String? _contextualTranslation;
+  String? _explanation;
+  bool _isAdding = false;
+  bool _isAdded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFastTranslation();
+  }
+
+  Future<void> _fetchFastTranslation() async {
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
+      if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
+    } catch (e) {
+      if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
+    }
+  }
+
+  Future<void> _fetchContextTranslation() async {
+    setState(() => _isLoadingContext = true);
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.contextualTranslate(
+        selectedText: widget.selectedText,
+        context: widget.contextText,
+        sourceLanguage: widget.sourceLang,
+        targetLanguage: widget.targetLang,
+        nativeLanguage: widget.targetLang,
+      );
+      if (mounted) {
+        setState(() {
+          _contextualTranslation = result['translation'];
+          _explanation = result['explanation'];
+          _isLoadingContext = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _isLoadingContext = false; });
+    }
+  }
+
+  Future<void> _handleAddToDeck() async {
+    setState(() => _isAdding = true);
+    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+          front: widget.selectedText,
+          back: _contextualTranslation ?? _fastTranslation!,
+          language: widget.sourceLang,
+          explanation: _explanation,
+        );
+
+    if (mounted) setState(() { _isAdding = false; if (success) _isAdded = true; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children:[
+          Text(widget.selectedText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+          const SizedBox(height: 16),
+          
+          if (_isLoadingFast)
+            const CircularProgressIndicator()
+          else
+            Text(_fastTranslation ?? "", style: const TextStyle(fontSize: 18, color: LiquidTheme.primaryAccent, fontWeight: FontWeight.w600)),
+            
+          const SizedBox(height: 24),
+          
+          if (_contextualTranslation == null && !_isLoadingContext)
+            OutlinedButton.icon(
+              onPressed: _fetchContextTranslation,
+              icon: const Icon(Icons.auto_awesome, color: Colors.white),
+              label: const Text("Deep Translate with Context", style: TextStyle(color: Colors.white)),
+              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+            )
+          else if (_isLoadingContext)
+            const Center(child: CircularProgressIndicator(color: LiquidTheme.secondaryAccent))
+          else ...[
+             Container(
+               padding: const EdgeInsets.all(16),
+               decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[
+                 Text(_contextualTranslation!, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
+                 const SizedBox(height: 8),
+                 Text(_explanation ?? "", style: const TextStyle(fontSize: 14, color: Colors.white70)),
+               ]),
+             )
+          ],
+          
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent,
+                foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              onPressed: (_isLoadingFast || _isAdded || _isAdding) ? null : _handleAddToDeck,
+              icon: _isAdding ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_isAdded ? Icons.check : Icons.add),
+              label: Text(_isAdded ? "Added to Deck" : "Add to Study Deck", style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
       ),
     );
   }

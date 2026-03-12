@@ -54,7 +54,7 @@ class BookService {
       headers: await _getHeaders(),
       body: jsonEncode({
         'currentCfi': cfi, 
-        'progressPct': progressPct.toDouble(), // Ensure double
+        'progressPct': double.parse(progressPct.toStringAsFixed(2)),
       }),
     );
     
