@@ -115,22 +115,6 @@ class ModuleDetailScreen extends ConsumerWidget {
   ) {
     List<Widget> tiles = [];
 
-    // Writing
-    if (activities.containsKey('writing')) {
-      final act = activities['writing'];
-      tiles.add(
-        _ActivityTile(
-          title: "Write a journal entry",
-          subtitle: act['title'] ?? "Apply what you've learned",
-          isCompleted: act['completed'] == true,
-          icon: Icons.edit_note,
-          onTap: () => context.push(
-            '/journal/new?moduleId=$moduleId&topic=${Uri.encodeComponent(act['title'])}',
-          ),
-        ),
-      );
-    }
-
     // SRS
     if (activities.containsKey('srs')) {
       final act = activities['srs'];
@@ -187,36 +171,8 @@ class ModuleDetailScreen extends ConsumerWidget {
       );
     }
 
-    // Audio Journal
-    if (activities.containsKey('audio_journal')) {
-      tiles.add(
-        _ActivityTile(
-          title: "Speak a Journal Entry",
-          subtitle: "Verbal fluency practice",
-          isCompleted: activities['audio_journal']['completed'] == true,
-          icon: Icons.mic,
-          onTap: () => context.push(
-            '/journal/new?moduleId=$moduleId&mode=audio_journal&topic=${Uri.encodeComponent('Spoken Entry')}',
-          ),
-        ),
-      );
-    }
-
-    // Describe Image
-    if (activities.containsKey('describe_image')) {
-      final act = activities['describe_image'];
-      tiles.add(
-        _ActivityTile(
-          title: "Describe an Image",
-          subtitle: "Visual vocabulary practice",
-          isCompleted: act['completed'] == true,
-          icon: Icons.image,
-          onTap: () => context.push(
-            '/journal/new?moduleId=$moduleId&mode=describe_image&imageUrl=${Uri.encodeComponent(act['imageUrl'])}&topic=${Uri.encodeComponent(act['title'] ?? 'Image Description')}',
-          ),
-        ),
-      );
-    }
+    // Audio Journal (removed from learning path - handled separately)
+    // Describe Image (removed from learning path - handled separately)
 
     return tiles;
   }

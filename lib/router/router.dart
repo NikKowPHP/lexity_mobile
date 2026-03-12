@@ -68,6 +68,25 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const TranslatorScreen(isBubbleMode: true),
       ),
 
+      // STANDALONE JOURNAL ROUTES (Needed by modules but removed from main nav)
+      GoRoute(
+        path: '/journal/new',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => JournalEditorScreen(
+          moduleId: state.uri.queryParameters['moduleId'],
+          initialMode: state.uri.queryParameters['mode'],
+          initialTopic: state.uri.queryParameters['topic'],
+          initialImageUrl: state.uri.queryParameters['imageUrl'],
+        ),
+      ),
+      GoRoute(
+        path: '/journal/:id',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => JournalDetailScreen(
+          journalId: state.pathParameters['id']!,
+        ),
+      ),
+
       // APPLICATION SHELL (The Liquid UI)
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
@@ -139,36 +158,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 2: Journal
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/journal',
-                pageBuilder: (context, state) => _buildFadePage(const JournalScreen(), state),
-                routes: [
-                  GoRoute(
-                    path: 'new',
-                    parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) => JournalEditorScreen(
-                      moduleId: state.uri.queryParameters['moduleId'],
-                      initialMode: state.uri.queryParameters['mode'],
-                      initialTopic: state.uri.queryParameters['topic'],
-                      initialImageUrl: state.uri.queryParameters['imageUrl'],
-                    ),
-                  ),
-                  GoRoute(
-                    path: ':id',
-                    parentNavigatorKey:
-                        _rootNavigatorKey, // Open full screen over shell
-                    builder: (context, state) => JournalDetailScreen(
-                      journalId: state.pathParameters['id']!,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          // Branch 3: Library
+          // Branch 2: Library
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -186,7 +176,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 4: Progress
+          // Branch 3: Progress
           StatefulShellBranch(
             routes: [
               GoRoute(

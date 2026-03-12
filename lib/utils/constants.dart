@@ -3,8 +3,22 @@ import 'package:flutter/foundation.dart';
 
 class AppConstants {
   static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:3555';
-    if (Platform.isAndroid) return 'http://10.0.2.2:3555';
+    // Determine if we are in production mode. 
+    // Uses kReleaseMode (true for release builds) or a custom --dart-define=IS_PROD=true flag.
+    const bool isProd = bool.fromEnvironment('IS_PROD', defaultValue: kReleaseMode);
+
+    if (isProd) {
+      return 'https://www.lexity.app';
+    }
+
+    // Development fallbacks
+    if (kIsWeb) {
+      return 'http://localhost:3555';
+    }
+    if (Platform.isAndroid) {
+      // 10.0.2.2 is the alias for the host loopback interface in the Android emulator
+      return 'http://10.0.2.2:3555';
+    }
     return 'http://localhost:3555';
   }
 

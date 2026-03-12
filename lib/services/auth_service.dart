@@ -21,7 +21,7 @@ class AuthService {
   }
 
   Future<bool> login(String email, String password) async {
-    _logger.info('AuthService: Attempting login for user: $email');
+    _logger.info('AuthService: Attempting login for user: $email and ${AppConstants.baseUrl}');
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/auth/login'),

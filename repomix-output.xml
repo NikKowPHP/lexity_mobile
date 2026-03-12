@@ -1,10 +1,10 @@
-This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
 
 <file_summary>
 This section contains a summary of this file.
 
 <purpose>
-This file contains a packed representation of the entire repository's contents.
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 </purpose>
@@ -32,6 +32,7 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: docs/**, a.md, repomix-output.xml, TASKS.md, apply_changes.sh
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -309,6 +310,7 @@ app_logs.txt
 pubspec.lock
 pubspec.yaml
 README.md
+repomix.config.json
 request.json
 test.sh
 </directory_structure>
@@ -2315,63 +2317,6 @@ final practiceAnalyticsProvider = FutureProvider.autoDispose<List<PracticeConcep
 });
 </file>
 
-<file path="lib/providers/book_provider.dart">
-import 'dart:io';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/book.dart';
-import '../services/book_service.dart';
-
-final booksProvider = FutureProvider.autoDispose<List<UserBook>>((ref) async {
-  final service = ref.watch(bookServiceProvider);
-  return service.getBooks();
-});
-
-final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((ref, id) async {
-  final service = ref.watch(bookServiceProvider);
-  return service.getBook(id);
-});
-
-class BookNotifier extends StateNotifier<AsyncValue<void>> {
-  final BookService _service;
-  final Ref _ref;
-
-  BookNotifier(this._service, this._ref) : super(const AsyncValue.data(null));
-
-  Future<void> uploadBook(File file, String targetLanguage, String title) async {
-    state = const AsyncValue.loading();
-    try {
-      await _service.uploadBook(file, targetLanguage, title);
-      _ref.invalidate(booksProvider);
-      state = const AsyncValue.data(null);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      rethrow;
-    }
-  }
-
-  Future<void> deleteBook(String id) async {
-    try {
-      await _service.deleteBook(id);
-      _ref.invalidate(booksProvider);
-    } catch (e) {
-      // handle error gracefully
-    }
-  }
-
-  Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    try {
-      await _service.updateProgress(id, cfi, progressPct);
-    } catch (e) {
-      // Don't interrupt reading if saving progress fails silently
-    }
-  }
-}
-
-final bookNotifierProvider = StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
-  return BookNotifier(ref.watch(bookServiceProvider), ref);
-});
-</file>
-
 <file path="lib/providers/listening_provider.dart">
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/listening_models.dart';
@@ -3257,166 +3202,6 @@ class JournalDetailScreen extends ConsumerWidget {
           ),
         );
       },
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/screens/library_screen.dart">
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:go_router/go_router.dart';
-import '../../providers/book_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../theme/liquid_theme.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-
-class LibraryScreen extends ConsumerStatefulWidget {
-  const LibraryScreen({super.key});
-
-  @override
-  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
-}
-
-class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  bool _isUploading = false;
-
-  Future<void> _handleUpload() async {
-    final activeLang = ref.read(activeLanguageProvider);
-    
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['epub'],
-    );
-
-    if (result != null && result.files.single.path != null) {
-      setState(() => _isUploading = true);
-      File file = File(result.files.single.path!);
-      
-      try {
-        await ref.read(bookNotifierProvider.notifier).uploadBook(
-          file, 
-          activeLang, 
-          result.files.single.name.replaceAll('.epub', '')
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Book uploaded successfully!')));
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
-        }
-      } finally {
-        if (mounted) setState(() => _isUploading = false);
-      }
-    }
-  }
-
-  void _promptDelete(String bookId) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Delete Book?', style: TextStyle(color: Colors.white)),
-        content: const Text('Are you sure you want to remove this book from your library?', style: TextStyle(color: Colors.white70)),
-        actions:[
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
-          TextButton(
-            onPressed: () {
-              ref.read(bookNotifierProvider.notifier).deleteBook(bookId);
-              Navigator.pop(ctx);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final booksAsync = ref.watch(booksProvider);
-
-    return GlassScaffold(
-      title: 'My Library',
-      subtitle: 'Read and translate your EPUBs',
-      showBackButton: false,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isUploading ? null : _handleUpload,
-        backgroundColor: LiquidTheme.primaryAccent,
-        icon: _isUploading 
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-            : const Icon(Icons.book, color: Colors.white),
-        label: Text(_isUploading ? "Uploading..." : "Upload EPUB", style: const TextStyle(color: Colors.white)),
-      ),
-      body: booksAsync.when(
-        loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
-        error: (e, _) => SliverFillRemaining(child: Center(child: Text("Error: $e", style: const TextStyle(color: Colors.white)))),
-        data: (books) {
-          if (books.isEmpty) {
-            return const SliverFillRemaining(
-              child: Center(
-                child: Text("Your library is empty. Upload an EPUB to start reading.", style: TextStyle(color: Colors.white54)),
-              ),
-            );
-          }
-          return SliverPadding(
-            padding: const EdgeInsets.only(bottom: 100),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.65,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final book = books[index];
-                  return GestureDetector(
-                    onTap: () => context.push('/library/book/${book.id}'),
-                    onLongPress: () => _promptDelete(book.id),
-                    child: GlassCard(
-                      padding: 12,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children:[
-                          Expanded(
-                            child: Container(
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: Colors.black26,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(Icons.menu_book, size: 48, color: Colors.white38),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(book.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
-                          const SizedBox(height: 4),
-                          Text(book.author ?? "Unknown", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                          const SizedBox(height: 12),
-                          LinearProgressIndicator(
-                            value: book.progressPct / 100,
-                            backgroundColor: Colors.white10,
-                            color: LiquidTheme.primaryAccent,
-                            minHeight: 4,
-                          ),
-                          const SizedBox(height: 6),
-                          Text("${book.progressPct.round()}% Read", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-                childCount: books.length,
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
 }
@@ -7267,6 +7052,16 @@ For help getting started with Flutter development, view the
 samples, guidance on mobile development, and a full API reference.
 </file>
 
+<file path="repomix.config.json">
+{
+
+
+"ignore": {
+    "customPatterns": [ "docs/**", "a.md", "repomix-output.xml", "TASKS.md", "apply_changes.sh"]
+  }
+}
+</file>
+
 <file path="request.json">
 {
     "contents": [
@@ -7414,6 +7209,11 @@ class MainActivity: FlutterActivity() {
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -8419,8 +8219,22 @@ import 'package:flutter/foundation.dart';
 
 class AppConstants {
   static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:3555';
-    if (Platform.isAndroid) return 'http://10.0.2.2:3555';
+    // Determine if we are in production mode. 
+    // Uses kReleaseMode (true for release builds) or a custom --dart-define=IS_PROD=true flag.
+    const bool isProd = bool.fromEnvironment('IS_PROD', defaultValue: kReleaseMode);
+
+    if (isProd) {
+      return 'https://www.lexity.app';
+    }
+
+    // Development fallbacks
+    if (kIsWeb) {
+      return 'http://localhost:3555';
+    }
+    if (Platform.isAndroid) {
+      // 10.0.2.2 is the alias for the host loopback interface in the Android emulator
+      return 'http://10.0.2.2:3555';
+    }
     return 'http://localhost:3555';
   }
 
@@ -8499,55 +8313,6 @@ foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
 endforeach(ffi_plugin)
 </file>
 
-<file path=".gitignore">
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-./app_logs.txt
-</file>
-
 <file path="app_logs.txt">
 [2026-02-11 14:01:17] [error] Test error message
 Error: Exception: Test exception
@@ -8612,6 +8377,79 @@ Error: Exception: Test exception
         </intent>
     </queries>
 </manifest>
+</file>
+
+<file path="lib/providers/book_provider.dart">
+import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/book.dart';
+import '../services/book_service.dart';
+import '../services/logger_service.dart';
+
+final booksProvider = FutureProvider.autoDispose<List<UserBook>>((ref) async {
+  final service = ref.watch(bookServiceProvider);
+  return service.getBooks();
+});
+
+final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((ref, id) async {
+  final service = ref.watch(bookServiceProvider);
+  return service.getBook(id);
+});
+
+class BookNotifier extends StateNotifier<AsyncValue<void>> {
+  final BookService _service;
+  final LoggerService _logger;
+  final Ref _ref;
+
+  BookNotifier(this._service, this._logger, this._ref) : super(const AsyncValue.data(null));
+
+  Future<void> uploadBook(File file, String targetLanguage, String title) async {
+    _logger.info('BookNotifier: Starting upload process for "$title" ($targetLanguage)');
+    state = const AsyncValue.loading();
+    try {
+      await _service.uploadBook(file, targetLanguage, title);
+      _ref.invalidate(booksProvider);
+      state = const AsyncValue.data(null);
+      _logger.info('BookNotifier: Upload successful');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Upload failed', e, st);
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> deleteBook(String id) async {
+    _logger.info('BookNotifier: Deleting book $id');
+    try {
+      await _service.deleteBook(id);
+      _ref.invalidate(booksProvider);
+      _ref.invalidate(bookDetailProvider(id));
+      _logger.info('BookNotifier: Deletion completed for $id');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Deletion failed for $id', e, st);
+    }
+  }
+
+  Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
+    try {
+      await _service.updateProgress(id, cfi, progressPct);
+      _ref.invalidate(bookDetailProvider(id));
+      _ref.invalidate(booksProvider);
+      _logger.info('BookNotifier: Progress update successful for $id');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Progress update failed for $id', e, st);
+    }
+  }
+}
+
+final bookNotifierProvider = StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
+  return BookNotifier(
+    ref.watch(bookServiceProvider), 
+    ref.read(loggerProvider),
+    ref
+  );
+});
 </file>
 
 <file path="lib/providers/journal_provider.dart">
@@ -8902,130 +8740,6 @@ final analyticsServiceProvider = Provider(
 );
 </file>
 
-<file path="lib/services/book_service.dart">
-import 'dart:convert';
-import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/book.dart';
-import '../utils/constants.dart';
-import 'token_service.dart';
-import 'logger_service.dart';
-
-class BookService {
-  final TokenService _authTokenService;
-  late final LoggerService _logger;
-
-  BookService(this._authTokenService, this._logger);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<List<UserBook>> getBooks() async {
-    _logger.info('BookService: Fetching books');
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/books'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      return data.map((e) => UserBook.fromJson(e)).toList();
-    }
-    throw Exception('Failed to load books');
-  }
-
-  Future<UserBook> getBook(String id) async {
-    _logger.info('BookService: Fetching book details for $id');
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      return UserBook.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to load book');
-  }
-
-  Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    final response = await http.put(
-      Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'currentCfi': cfi, 
-        'progressPct': double.parse(progressPct.toStringAsFixed(2)),
-      }),
-    );
-    
-    if (response.statusCode != 200) {
-      _logger.warning('Failed to update progress for book $id: ${response.statusCode}');
-    }
-  }
-
-  Future<void> deleteBook(String id) async {
-    _logger.info('BookService: Deleting book $id');
-    final response = await http.delete(
-      Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete book');
-    }
-  }
-
-  Future<void> uploadBook(File file, String targetLanguage, String title) async {
-    _logger.info('BookService: Uploading new EPUB book');
-    final filename = file.path.split('/').last;
-    
-    // 1. Get signed upload URL
-    final uploadUrlResponse = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
-      headers: await _getHeaders(),
-    );
-    
-    if (uploadUrlResponse.statusCode != 200) throw Exception('Failed to get upload URL');
-    
-    final uploadData = jsonDecode(uploadUrlResponse.body);
-    final signedUrl = uploadData['signedUrl'];
-    final storagePath = uploadData['path'];
-
-    // 2. Put file to Supabase storage
-    final bytes = await file.readAsBytes();
-    final uploadRes = await http.put(
-      Uri.parse(signedUrl),
-      headers: {'Content-Type': 'application/epub+zip'},
-      body: bytes,
-    );
-
-    if (uploadRes.statusCode != 200) throw Exception('Failed to upload file to storage');
-
-    // 3. Register book record in API
-    final dbRes = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/books'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'title': title,
-        'author': 'Unknown',
-        'targetLanguage': targetLanguage,
-        'storagePath': storagePath,
-      }),
-    );
-
-    if (dbRes.statusCode != 200) throw Exception('Failed to save book to database');
-  }
-}
-
-final bookServiceProvider = Provider((ref) => 
-  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
-);
-</file>
-
 <file path="lib/ui/screens/journal_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9145,6 +8859,176 @@ class JournalScreen extends ConsumerWidget {
                 ),
               );
             }, childCount: entries.length),
+          );
+        },
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/screens/library_screen.dart">
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:go_router/go_router.dart';
+import '../../providers/book_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../services/logger_service.dart';
+import '../../theme/liquid_theme.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+
+class LibraryScreen extends ConsumerStatefulWidget {
+  const LibraryScreen({super.key});
+
+  @override
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  bool _isUploading = false;
+
+  Future<void> _handleUpload() async {
+    final activeLang = ref.read(activeLanguageProvider);
+    final logger = ref.read(loggerProvider);
+    
+    logger.info('LibraryScreen: User triggered EPUB upload');
+    
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['epub'],
+    );
+
+    if (result != null && result.files.single.path != null) {
+      final fileName = result.files.single.name;
+      logger.info('LibraryScreen: File selected: $fileName');
+      
+      setState(() => _isUploading = true);
+      File file = File(result.files.single.path!);
+      
+      try {
+        await ref.read(bookNotifierProvider.notifier).uploadBook(
+          file, 
+          activeLang, 
+          fileName.replaceAll('.epub', '')
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Book uploaded successfully!')));
+        }
+      } catch (e, st) {
+        logger.error('LibraryScreen: Upload failed', e, st);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        }
+      } finally {
+        if (mounted) setState(() => _isUploading = false);
+      }
+    } else {
+      logger.info('LibraryScreen: File selection cancelled');
+    }
+  }
+
+  void _promptDelete(String bookId, String title) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('Delete Book?', style: TextStyle(color: Colors.white)),
+        content: Text('Are you sure you want to remove "$title" from your library?', style: const TextStyle(color: Colors.white70)),
+        actions:[
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+          TextButton(
+            onPressed: () {
+              ref.read(bookNotifierProvider.notifier).deleteBook(bookId);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final booksAsync = ref.watch(booksProvider);
+
+    return GlassScaffold(
+      title: 'My Library',
+      subtitle: 'Read and translate your EPUBs',
+      showBackButton: false,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _isUploading ? null : _handleUpload,
+        backgroundColor: LiquidTheme.primaryAccent,
+        icon: _isUploading 
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+            : const Icon(Icons.book, color: Colors.white),
+        label: Text(_isUploading ? "Uploading..." : "Upload EPUB", style: const TextStyle(color: Colors.white)),
+      ),
+      body: booksAsync.when(
+        loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
+        error: (e, _) => SliverFillRemaining(child: Center(child: Text("Error: $e", style: const TextStyle(color: Colors.white)))),
+        data: (books) {
+          if (books.isEmpty) {
+            return const SliverFillRemaining(
+              child: Center(
+                child: Text("Your library is empty. Upload an EPUB to start reading.", style: TextStyle(color: Colors.white54)),
+              ),
+            );
+          }
+          return SliverPadding(
+            padding: const EdgeInsets.only(bottom: 100),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.65,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final book = books[index];
+                  return GestureDetector(
+                    onTap: () => context.push('/library/book/${book.id}'),
+                    onLongPress: () => _promptDelete(book.id, book.title),
+                    child: GlassCard(
+                      padding: 12,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children:[
+                          Expanded(
+                            child: Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.black26,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.menu_book, size: 48, color: Colors.white38),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(book.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14)),
+                          const SizedBox(height: 4),
+                          Text(book.author ?? "Unknown", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                          const SizedBox(height: 12),
+                          LinearProgressIndicator(
+                            value: book.progressPct / 100,
+                            backgroundColor: Colors.white10,
+                            color: LiquidTheme.primaryAccent,
+                            minHeight: 4,
+                          ),
+                          const SizedBox(height: 6),
+                          Text("${book.progressPct.round()}% Read", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                childCount: books.length,
+              ),
+            ),
           );
         },
       ),
@@ -10321,6 +10205,57 @@ foreach(ffi_plugin ${FLUTTER_FFI_PLUGIN_LIST})
 endforeach(ffi_plugin)
 </file>
 
+<file path=".gitignore">
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+./app_logs.txt
+a.md
+TASKS.md
+</file>
+
 <file path="lib/providers/user_provider.dart">
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/user_service.dart';
@@ -10572,163 +10507,6 @@ class AIService {
 final aiServiceProvider = Provider(
   (ref) => AIService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
 );
-</file>
-
-<file path="lib/services/srs_service.dart">
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/token_service.dart';
-import '../models/srs_item.dart';
-import 'logger_service.dart';
-import '../utils/constants.dart';
-
-class SrsService {
-  final Ref _ref;
-  final TokenService _authTokenService;
-  late final LoggerService _logger;
-
-  SrsService(this._ref, this._authTokenService) {
-    _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<List<SrsItem>> fetchDeck(String language) async {
-    _logger.info('SrsService: Fetching SRS deck for language: $language');
-    try {
-      final response = await http.get(
-        Uri.parse(
-          '${AppConstants.baseUrl}/api/srs/deck?targetLanguage=$language',
-        ),
-        headers: await _getHeaders(),
-      );
-
-      _logger.debug('SrsService: fetchDeck response status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info('SrsService: Deck fetched successfully, found ${data.length} items');
-        return data.map((item) => SrsItem.fromJson(item)).toList();
-      }
-
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to load deck';
-      _logger.warning('SrsService: Deck fetch failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('SrsService: Error during fetchDeck', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<void> reviewItem(String id, int quality) async {
-    _logger.info('SrsService: Submitting review for item: $id, quality: $quality');
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/srs/review'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'srsItemId': id,
-          'quality': quality,
-        }),
-      );
-
-      _logger.debug('SrsService: reviewItem response status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        _logger.info('SrsService: Review submitted successfully');
-        return;
-      }
-
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to submit review';
-      _logger.warning('SrsService: Review submission failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('SrsService: Error during reviewItem', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<void> createFromTranslation({
-    required String front,
-    required String back,
-    required String language,
-    String? explanation,
-  }) async {
-    _logger.info('SrsService: Creating SRS item from translation');
-    try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/srs/create-from-translation'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'frontContent': front,
-          'backContent': back,
-          'targetLanguage': language,
-          'explanation': explanation,
-        }),
-      );
-
-      _logger.debug(
-        'SrsService: createFromTranslation response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        _logger.info('SrsService: SRS item created successfully');
-        return;
-      }
-
-      final errorMsg =
-          jsonDecode(response.body)['error'] ?? 'Failed to create item';
-      _logger.warning(
-        'SrsService: createFromTranslation failed. Reason: $errorMsg',
-      );
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error(
-        'SrsService: Error in createFromTranslation',
-        e,
-        stackTrace,
-      );
-      rethrow;
-    }
-  }
-
-  Future<List<SrsItem>> fetchDrillItems(String language) async {
-    _logger.info('SrsService: Fetching drill items for $language');
-    try {
-      final response = await http.get(
-        Uri.parse(
-          '${AppConstants.baseUrl}/api/srs/drill?targetLanguage=$language',
-        ),
-        headers: await _getHeaders(),
-      );
-
-      _logger.debug(
-        'SrsService: fetchDrillItems response status: ${response.statusCode}',
-      );
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info(
-          'SrsService: Drill items fetched successfully, found ${data.length} items',
-        );
-        return data.map((item) => SrsItem.fromJson(item)).toList();
-      }
-      return [];
-    } catch (e, stackTrace) {
-      _logger.error('SrsService: Error fetching drill items', e, stackTrace);
-      return [];
-    }
-  }
-}
-
-final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
 </file>
 
 <file path="lib/ui/screens/journal_editor_screen.dart">
@@ -11824,6 +11602,178 @@ class UserProfile {
 }
 </file>
 
+<file path="lib/services/book_service.dart">
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/book.dart';
+import '../utils/constants.dart';
+import 'token_service.dart';
+import 'logger_service.dart';
+
+class BookService {
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  BookService(this._authTokenService, this._logger);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<UserBook>> getBooks() async {
+    _logger.info('BookService: Fetching books list from backend');
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/books'),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info('BookService: Successfully fetched ${data.length} books');
+        return data.map((e) => UserBook.fromJson(e)).toList();
+      }
+      _logger.error('BookService: Failed to fetch books. Status: ${response.statusCode}');
+      throw Exception('Failed to load books');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in getBooks', e, st);
+      rethrow;
+    }
+  }
+
+  Future<UserBook> getBook(String id) async {
+    _logger.info('BookService: Fetching book details for ID: $id');
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _logger.info('BookService: Successfully fetched details for "${data['title']}"');
+        return UserBook.fromJson(data);
+      }
+      _logger.error('BookService: Failed to fetch book $id. Status: ${response.statusCode}');
+      throw Exception('Failed to load book');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in getBook $id', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    _logger.info('BookService: Requesting progress update for $id to $progressPct% ($cfi)');
+    try {
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'currentCfi': cfi, 
+          'progressPct': progressPct,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        _logger.info('BookService: Progress update confirmed by server for $id');
+        return;
+      }
+      _logger.warning('BookService: Server rejected progress update for $id. Status: ${response.statusCode}');
+      throw Exception('Failed to update progress on server');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in updateProgress for $id', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> deleteBook(String id) async {
+    _logger.info('BookService: Requesting deletion of book $id');
+    try {
+      final response = await http.delete(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+        headers: await _getHeaders(),
+      );
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        _logger.info('BookService: Deletion successful for $id');
+        return;
+      }
+      _logger.error('BookService: Failed to delete book $id. Status: ${response.statusCode}');
+      throw Exception('Failed to delete book');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in deleteBook $id', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> uploadBook(File file, String targetLanguage, String title) async {
+    _logger.info('BookService: Starting EPUB upload sequence for "$title"');
+    try {
+      final filename = file.path.split('/').last;
+      
+      _logger.info('BookService: Requesting signed upload URL for $filename');
+      final uploadUrlResponse = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
+        headers: await _getHeaders(),
+      );
+      
+      if (uploadUrlResponse.statusCode != 200) {
+        _logger.error('BookService: Failed to get upload URL. Status: ${uploadUrlResponse.statusCode}');
+        throw Exception('Failed to get upload URL');
+      }
+      
+      final uploadData = jsonDecode(uploadUrlResponse.body);
+      final signedUrl = uploadData['signedUrl'];
+      final storagePath = uploadData['path'];
+
+      _logger.info('BookService: Uploading binary to storage path: $storagePath');
+      final bytes = await file.readAsBytes();
+      final uploadRes = await http.put(
+        Uri.parse(signedUrl),
+        headers: {'Content-Type': 'application/epub+zip'},
+        body: bytes,
+      );
+
+      if (uploadRes.statusCode != 200) {
+        _logger.error('BookService: Storage upload failed. Status: ${uploadRes.statusCode}');
+        throw Exception('Failed to upload file to storage');
+      }
+
+      _logger.info('BookService: Registering book record in database');
+      final dbRes = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/books'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'title': title,
+          'author': 'Unknown',
+          'targetLanguage': targetLanguage,
+          'storagePath': storagePath,
+        }),
+      );
+
+      if (dbRes.statusCode == 200 || dbRes.statusCode == 201) {
+        _logger.info('BookService: Upload and registration complete for "$title"');
+        return;
+      }
+      _logger.error('BookService: Database registration failed. Status: ${dbRes.statusCode}');
+      throw Exception('Failed to save book to database');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in uploadBook', e, st);
+      rethrow;
+    }
+  }
+}
+
+final bookServiceProvider = Provider((ref) => 
+  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
+);
+</file>
+
 <file path="lib/services/journal_service.dart">
 import 'dart:convert';
 import 'dart:io';
@@ -12041,6 +11991,168 @@ class JournalService {
 }
 
 final journalServiceProvider = Provider((ref) => JournalService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
+</file>
+
+<file path="lib/services/srs_service.dart">
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
+import '../models/srs_item.dart';
+import 'logger_service.dart';
+import '../utils/constants.dart';
+
+class SrsService {
+  final Ref _ref;
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  SrsService(this._ref, this._authTokenService) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<SrsItem>> fetchDeck(String language) async {
+    _logger.info('SrsService: Fetching SRS deck for language: $language');
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${AppConstants.baseUrl}/api/srs/deck?targetLanguage=$language',
+        ),
+        headers: await _getHeaders(),
+      );
+
+      _logger.debug('SrsService: fetchDeck response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info('SrsService: Deck fetched successfully, found ${data.length} items');
+        return data.map((item) => SrsItem.fromJson(item)).toList();
+      }
+
+      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to load deck';
+      _logger.warning('SrsService: Deck fetch failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('SrsService: Error during fetchDeck', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> reviewItem(String id, int quality) async {
+    _logger.info('SrsService: Submitting review for item: $id, quality: $quality');
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/srs/review'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'srsItemId': id,
+          'quality': quality,
+        }),
+      );
+
+      _logger.debug('SrsService: reviewItem response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        _logger.info('SrsService: Review submitted successfully');
+        return;
+      }
+
+      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to submit review';
+      _logger.warning('SrsService: Review submission failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('SrsService: Error during reviewItem', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> createFromTranslation({
+    required String front,
+    required String back,
+    required String language,
+    String? explanation,
+  }) async {
+    _logger.info('SrsService: Creating SRS item from translation');
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/srs/create-from-translation'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'frontContent': front,
+          'backContent': back,
+          'targetLanguage': language,
+          // FIX: The backend Zod schema z.string() fails if explicitly null.
+          // We provide an empty string as a fallback to satisfy the type requirement.
+          'explanation': explanation ?? "",
+        }),
+      );
+
+      _logger.debug(
+        'SrsService: createFromTranslation response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _logger.info('SrsService: SRS item created successfully');
+        return;
+      }
+
+      final dynamic body = jsonDecode(response.body);
+      final String errorMsg = body is Map && body.containsKey('error') 
+          ? body['error'].toString() 
+          : body.toString();
+          
+      _logger.warning(
+        'SrsService: createFromTranslation failed. Reason: $errorMsg',
+      );
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error(
+        'SrsService: Error in createFromTranslation',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  Future<List<SrsItem>> fetchDrillItems(String language) async {
+    _logger.info('SrsService: Fetching drill items for $language');
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${AppConstants.baseUrl}/api/srs/drill?targetLanguage=$language',
+        ),
+        headers: await _getHeaders(),
+      );
+
+      _logger.debug(
+        'SrsService: fetchDrillItems response status: ${response.statusCode}',
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info(
+          'SrsService: Drill items fetched successfully, found ${data.length} items',
+        );
+        return data.map((item) => SrsItem.fromJson(item)).toList();
+      }
+      return [];
+    } catch (e, stackTrace) {
+      _logger.error('SrsService: Error fetching drill items', e, stackTrace);
+      return [];
+    }
+  }
+}
+
+final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
 </file>
 
 <file path="lib/services/user_service.dart">
@@ -12905,665 +13017,6 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
 });
 </file>
 
-<file path="lib/ui/screens/book_reader_screen.dart">
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter/foundation.dart';
-import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:lexity_mobile/providers/srs_provider.dart';
-import '../../models/book.dart';
-import '../../providers/book_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../theme/liquid_theme.dart';
-import '../../services/ai_service.dart';
-
-class BookReaderScreen extends ConsumerStatefulWidget {
-  final String bookId;
-  const BookReaderScreen({super.key, required this.bookId});
-
-  @override
-  ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
-}
-
-class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
-  InAppWebViewController? webViewController;
-  double _progress = 0.0;
-  double _fontSize = 115.0;
-  String _theme = 'dark'; // 'light', 'dark', 'sepia'
-
-  bool _isDownloading = false;
-  double _downloadProgress = 0.0;
-  bool _localFileReady = false;
-
-  Timer? _progressDebounce;
-  HttpServer? _localServer;
-  int? _localPort;
-
-  // JavaScript function to apply styles dynamically to the EPUB rendition
-  void _updateReaderStyles() {
-    final colors = {
-      'light': {'bg': '#ffffff', 'fg': '#000000'},
-      'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
-      'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
-    }[_theme]!;
-
-    final js = """
-      if (rendition) {
-        rendition.themes.fontSize("$_fontSize%");
-        rendition.themes.register("$_theme", {
-          "body": { "background": "${colors['bg']} !important", "color": "${colors['fg']} !important" },
-          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
-          "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
-        });
-        rendition.themes.select("$_theme");
-        
-        // Force inject into current contents
-        rendition.getContents().forEach(c => {
-          c.addStylesheetRules({
-            "body": {
-              "background-color": "${colors['bg']} !important",
-              "color": "${colors['fg']} !important",
-              "font-size": "$_fontSize% !important"
-            },
-            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
-              "color": "${colors['fg']} !important",
-              "background": "transparent !important"
-            },
-            "::selection": {
-              "background-color": "rgba(99, 102, 241, 0.3) !important",
-              "text-decoration": "underline !important",
-              "text-decoration-color": "#6366F1 !important",
-              "color": "inherit !important"
-            }
-          });
-        });
-      }
-    """;
-    webViewController?.evaluateJavascript(source: js);
-  }
-
-  void _applyHighlighting() {
-    final srs = ref.read(srsProvider).deck;
-    final words = srs.map((e) => e.front).toList();
-    final js = "window.highlightKnownWords(${jsonEncode(words)});";
-    webViewController?.evaluateJavascript(source: js);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _startLocalServer();
-  }
-
-  Future<void> _startLocalServer() async {
-    try {
-      _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      if (mounted) setState(() => _localPort = _localServer!.port);
-      
-      _localServer!.listen((HttpRequest request) async {
-        request.response.headers.add('Access-Control-Allow-Origin', '*');
-        request.response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        request.response.headers.add('Access-Control-Allow-Headers', '*');
-        
-        if (request.method == 'OPTIONS') {
-           request.response.statusCode = 200;
-           await request.response.close();
-           return;
-        }
-        if (request.uri.path.startsWith('/books/')) {
-           final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
-           final dir = await getApplicationDocumentsDirectory();
-           final file = File('${dir.path}/books/$bookId.epub');
-           
-           if (await file.exists()) {
-             final length = await file.length();
-             request.response.contentLength = length;
-             request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
-             await request.response.addStream(file.openRead());
-             await request.response.close();
-             return;
-           }
-        }
-        request.response.statusCode = 404;
-        await request.response.close();
-      });
-    } catch (e) {
-      debugPrint("Local server error: $e");
-    }
-  }
-
-  @override
-  void dispose() {
-    _progressDebounce?.cancel();
-    _localServer?.close(force: true);
-    super.dispose();
-  }
-
-  Future<void> _ensureBookDownloaded(UserBook book) async {
-    if (_isDownloading || _localFileReady) return;
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final booksDir = Directory('${dir.path}/books');
-      if (!await booksDir.exists()) await booksDir.create(recursive: true);
-
-      final file = File('${booksDir.path}/${book.id}.epub');
-      if (await file.exists()) {
-        if (mounted) setState(() => _localFileReady = true);
-        return;
-      }
-
-      if (book.signedUrl == null) throw Exception("No download URL provided");
-
-      setState(() {
-        _isDownloading = true;
-        _downloadProgress = 0.0;
-      });
-
-      final request = http.Request('GET', Uri.parse(book.signedUrl!));
-      final response = await request.send();
-      final total = response.contentLength ?? 0;
-      int received = 0;
-      final bytes = <int>[];
-
-      response.stream.listen(
-        (chunk) {
-          bytes.addAll(chunk);
-          received += chunk.length;
-          if (total > 0 && mounted) setState(() => _downloadProgress = received / total);
-        },
-        onDone: () async {
-          await file.writeAsBytes(bytes);
-          if (mounted) {
-            setState(() {
-              _isDownloading = false;
-              _localFileReady = true;
-            });
-          }
-        },
-        onError: (e) {
-          if (mounted) setState(() => _isDownloading = false);
-          debugPrint("Download error: $e");
-        },
-      );
-    } catch (e) {
-      if (mounted) setState(() => _isDownloading = false);
-      debugPrint("Setup local book error: $e");
-    }
-  }
-
-  final String _htmlTemplate = """
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
-    <style>
-      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: transparent; overflow: hidden; }
-      #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-      mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
-    </style>
-  </head>
-  <body>
-    <div id="viewer"></div>
-    <script>
-      let book;
-      let rendition;
-      window.lastReportedText = "";
-
-      window.highlightKnownWords = function(words) {
-        if (!rendition) return;
-        rendition.getContents().forEach(content => {
-          const doc = content.document;
-          if (words.length === 0) return;
-          const regex = new RegExp('\\\\b(' + words.join('|') + ')\\\\b', 'gi');
-          
-          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-          let node;
-          const nodes = [];
-          while (node = walker.nextNode()) nodes.push(node);
-          
-          nodes.forEach(textNode => {
-            if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'mark') return;
-            if (regex.test(textNode.nodeValue)) {
-              const span = doc.createElement('span');
-              span.innerHTML = textNode.nodeValue.replace(regex, '<mark class="known-word">\$1</mark>');
-              textNode.parentNode.replaceChild(span, textNode);
-            }
-          });
-        });
-      };
-
-      async function loadBook(url, initialCfi) {
-        try {
-          console.log("Starting loadBook with URL: " + url);
-          book = ePub(url);
-          book.ready.catch(function(err) {
-            console.error("EPUB Network/Ready Error: " + err);
-          });
-          rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated", manager: "continuous" });
-          
-          rendition.on("relocated", (location) => {
-            const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
-            window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
-          });
-
-          // Helper to check selection reliably
-          function checkAndReportSelection(win) {
-              if (!win) return;
-              const sel = win.getSelection();
-              if (!sel) return;
-              
-              const text = sel.toString().trim();
-              if (text.length > 0 && text !== window.lastReportedText) {
-                  window.lastReportedText = text;
-                  
-                  let contextText = text;
-                  if (sel.rangeCount > 0) {
-                      let container = sel.getRangeAt(0).commonAncestorContainer;
-                      if (container && container.nodeType === 3) container = container.parentNode;
-                      if (container) contextText = container.textContent.trim();
-                  }
-                  
-                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
-              } else if (text.length === 0) {
-                  window.lastReportedText = "";
-              }
-          }
-
-          // Register selectionchange listener for when dragging handles
-          let selectionTimeout = null;
-          rendition.hooks.content.register((contents) => {
-            const win = contents.window;
-            const doc = contents.document;
-            
-            doc.addEventListener('selectionchange', () => {
-              clearTimeout(selectionTimeout);
-              selectionTimeout = setTimeout(() => {
-                 checkAndReportSelection(win);
-              }, 800); // trigger 800ms after user stops adjusting selection
-            });
-
-            // Also check immediately on touchend (release of long press)
-            doc.addEventListener('touchend', (e) => {
-              setTimeout(() => {
-                 checkAndReportSelection(win);
-              }, 150);
-            });
-          });
-
-          // Swipe Gestures for Pagination
-          let touchStartX = 0;
-          let touchStartY = 0;
-          let touchStartTime = 0;
-          
-          rendition.on("touchstart", (e) => { 
-            touchStartX = e.changedTouches[0].screenX; 
-            touchStartY = e.changedTouches[0].screenY;
-            touchStartTime = Date.now();
-          });
-          
-          rendition.on("touchend", (e) => {
-            const touchEndX = e.changedTouches[0].screenX;
-            const touchEndY = e.changedTouches[0].screenY;
-            const dx = touchStartX - touchEndX;
-            const dy = touchStartY - touchEndY;
-            const distance = Math.sqrt(dx*dx + dy*dy);
-            
-            // 1. Horizontal Swipe (Pagination)
-            if (distance > 50 && Math.abs(dy) < 50) {
-              if (dx > 0) rendition.next();
-              else rendition.prev();
-            } 
-          });
-
-          await rendition.display(initialCfi || undefined);
-          console.log("Book displayed successfully");
-          window.flutter_inappwebview.callHandler('onReady');
-        } catch (error) {
-          console.error("EPUB Loading Error: " + error.message);
-          console.error(error.stack);
-        }
-      }
-    </script>
-  </body>
-  </html>
-  """;
-
-  @override
-  Widget build(BuildContext context) {
-    final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
-    final profileAsync = ref.watch(userProfileProvider);
-
-    // Trigger download when book detail is loaded
-   
-    bookAsync.whenData((book) {
-      // Initialize local progress from backend data if it hasn't been set yet
-      if (_progress == 0.0 && book.progressPct > 0) {
-        Future.microtask(() => setState(() => _progress = book.progressPct));
-      }
-
-      if (!_localFileReady && !_isDownloading) {
-        Future.microtask(() => _ensureBookDownloaded(book));
-      }
-    });
-
-    return Scaffold(
-      backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.pop()),
-        title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => _showSettings(context),
-          ),
-        ],
-      ),
-      body: bookAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text("Error: $e")),
-        data: (book) {
-          if (_isDownloading) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children:[
-                  const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
-                  const SizedBox(height: 16),
-                  Text("Downloading Book... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
-                ]
-              )
-            );
-          }
-
-          if (!_localFileReady || _localPort == null) {
-            return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
-          }
-
-          return Stack(
-          children:[
-            Positioned.fill(
-              child: InAppWebView(
-                initialData: InAppWebViewInitialData(data: _htmlTemplate, baseUrl: WebUri("http://127.0.0.1:$_localPort/")),
-                initialSettings: InAppWebViewSettings(
-                  javaScriptEnabled: true,
-                  isInspectable: kDebugMode,
-                  allowUniversalAccessFromFileURLs: true,
-                  allowFileAccessFromFileURLs: true,
-                  mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-                ),
-              onConsoleMessage: (controller, consoleMessage) {
-                debugPrint('WEBVIEW: ${consoleMessage.message}');
-              },
-              onWebViewCreated: (controller) {
-                webViewController = controller;
-
-                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
-                  final cfi = args[0] as String;
-                  final pct = (args[1] as num).toDouble();
-                  if (mounted) setState(() => _progress = pct);
-                  
-                  _progressDebounce?.cancel();
-                  _progressDebounce = Timer(const Duration(seconds: 2), () {
-                    ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
-                  });
-
-                  _applyHighlighting(); // Re-apply highlighting on page change
-                  _updateReaderStyles(); // Ensure styles are applied to new content
-                });
-                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
-                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage); // Ensure deck is loaded
-                  _updateReaderStyles();
-                  _applyHighlighting();
-                });
-                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                  final selected = args[0].toString();
-                  final contextTxt = args[1].toString();
-                  final nativeLang = profileAsync.value?.nativeLanguage ?? 'english';
-                  
-                  _showTranslationSheet(
-                    context, 
-                    selectedText: selected, 
-                    contextText: contextTxt, 
-                    sourceLang: book.targetLanguage, 
-                    nativeLang: nativeLang,
-                  );
-                });
-              },
-              onLoadStop: (controller, _) async {
-                if (_localPort != null) {
-                   final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
-                   await controller.evaluateJavascript(source: "loadBook('$localUrl', '${book.currentCfi ?? ''}');");
-                }
-              },
-            ),
-            ),
-          ],
-        );
-       },
-      ),
-    );
-  }
-
-  void _showSettings(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
-                  onTap: () { setState(() => _theme = t); setModalState((){}); _updateReaderStyles(); },
-                  child: Container(
-                    width: 60, height: 60,
-                    decoration: BoxDecoration(
-                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
-                    ),
-                  ),
-                )).toList(),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  const Icon(Icons.text_fields, size: 16),
-                  Expanded(
-                    child: Slider(
-                      value: _fontSize, min: 80, max: 200,
-                      onChanged: (v) { setState(() => _fontSize = v); setModalState((){}); _updateReaderStyles(); },
-                    ),
-                  ),
-                  const Icon(Icons.text_fields, size: 24),
-                ],
-              )
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => _TranslationBottomSheet(
-        selectedText: selectedText,
-        contextText: contextText,
-        sourceLang: sourceLang,
-        targetLang: nativeLang,
-      ),
-    );
-
-    // Clear the selection/underscore highlight when the user closes the Bottom Sheet
-    webViewController?.evaluateJavascript(source: """
-      if (rendition) {
-        rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
-        window.lastReportedText = "";
-      }
-    """);
-  }
-}
-
-class _TranslationBottomSheet extends ConsumerStatefulWidget {
-  final String selectedText;
-  final String contextText;
-  final String sourceLang;
-  final String targetLang;
-
-  const _TranslationBottomSheet({
-    required this.selectedText,
-    required this.contextText,
-    required this.sourceLang,
-    required this.targetLang,
-  });
-
-  @override
-  ConsumerState<_TranslationBottomSheet> createState() => _TranslationBottomSheetState();
-}
-
-class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet> {
-  bool _isLoadingFast = true;
-  bool _isLoadingContext = false;
-  String? _fastTranslation;
-  String? _contextualTranslation;
-  String? _explanation;
-  bool _isAdding = false;
-  bool _isAdded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchFastTranslation();
-  }
-
-  Future<void> _fetchFastTranslation() async {
-    try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
-      if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
-    } catch (e) {
-      if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
-    }
-  }
-
-  Future<void> _fetchContextTranslation() async {
-    setState(() => _isLoadingContext = true);
-    try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.contextualTranslate(
-        selectedText: widget.selectedText,
-        context: widget.contextText,
-        sourceLanguage: widget.sourceLang,
-        targetLanguage: widget.targetLang,
-        nativeLanguage: widget.targetLang,
-      );
-      if (mounted) {
-        setState(() {
-          _contextualTranslation = result['translation'];
-          _explanation = result['explanation'];
-          _isLoadingContext = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() { _isLoadingContext = false; });
-    }
-  }
-
-  Future<void> _handleAddToDeck() async {
-    setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
-          front: widget.selectedText,
-          back: _contextualTranslation ?? _fastTranslation!,
-          language: widget.sourceLang,
-          explanation: _explanation,
-        );
-
-    if (mounted) setState(() { _isAdding = false; if (success) _isAdded = true; });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children:[
-          Text(widget.selectedText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-          const SizedBox(height: 16),
-          
-          if (_isLoadingFast)
-            const CircularProgressIndicator()
-          else
-            Text(_fastTranslation ?? "", style: const TextStyle(fontSize: 18, color: LiquidTheme.primaryAccent, fontWeight: FontWeight.w600)),
-            
-          const SizedBox(height: 24),
-          
-          if (_contextualTranslation == null && !_isLoadingContext)
-            OutlinedButton.icon(
-              onPressed: _fetchContextTranslation,
-              icon: const Icon(Icons.auto_awesome, color: Colors.white),
-              label: const Text("Deep Translate with Context", style: TextStyle(color: Colors.white)),
-              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
-            )
-          else if (_isLoadingContext)
-            const Center(child: CircularProgressIndicator(color: LiquidTheme.secondaryAccent))
-          else ...[
-             Container(
-               padding: const EdgeInsets.all(16),
-               decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
-               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[
-                 Text(_contextualTranslation!, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
-                 const SizedBox(height: 8),
-                 Text(_explanation ?? "", style: const TextStyle(fontSize: 14, color: Colors.white70)),
-               ]),
-             )
-          ],
-          
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent,
-                foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              onPressed: (_isLoadingFast || _isAdded || _isAdding) ? null : _handleAddToDeck,
-              icon: _isAdding ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_isAdded ? Icons.check : Icons.add),
-              label: Text(_isAdded ? "Added to Deck" : "Add to Study Deck", style: const TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ),
-          const SizedBox(height: 32),
-        ],
-      ),
-    );
-  }
-}
-</file>
-
 <file path="lib/services/auth_service.dart">
 // lib/services/auth_service.dart
 import 'dart:convert';
@@ -13588,7 +13041,7 @@ class AuthService {
   }
 
   Future<bool> login(String email, String password) async {
-    _logger.info('AuthService: Attempting login for user: $email');
+    _logger.info('AuthService: Attempting login for user: $email and ${AppConstants.baseUrl}');
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/auth/login'),
@@ -13844,6 +13297,868 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+</file>
+
+<file path="lib/ui/screens/book_reader_screen.dart">
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:lexity_mobile/providers/srs_provider.dart';
+import '../../models/book.dart';
+import '../../providers/book_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../services/logger_service.dart';
+import '../../theme/liquid_theme.dart';
+import '../../services/ai_service.dart';
+
+class BookReaderScreen extends ConsumerStatefulWidget {
+  final String bookId;
+  const BookReaderScreen({super.key, required this.bookId});
+
+  @override
+  ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
+}
+
+class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
+  InAppWebViewController? webViewController;
+  double _progress = 0.0;
+  double _fontSize = 115.0;
+  String _theme = 'dark'; // 'light', 'dark', 'sepia'
+  String? _lastCfi;
+  List<dynamic> _toc = [];
+
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+  bool _localFileReady = false;
+
+  Timer? _progressDebounce;
+  HttpServer? _localServer;
+  int? _localPort;
+
+  bool _isInitialized = false;
+  
+  // Flag to prevent early '0%' percentage reports from overwriting DB progress
+  bool _canSaveToBackend = false;
+
+  void _updateReaderStyles() {
+    final logger = ref.read(loggerProvider);
+    logger.debug('BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)');
+    
+    final colors = {
+      'light': {'bg': '#ffffff', 'fg': '#000000'},
+      'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
+      'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
+    }[_theme]!;
+
+    final js = """
+      if (typeof rendition !== 'undefined' && rendition) {
+        rendition.themes.fontSize("$_fontSize%");
+        rendition.themes.register("$_theme", {
+          "body": { 
+            "background": "${colors['bg']} !important", 
+            "color": "${colors['fg']} !important"
+          },
+          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
+          "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
+        });
+        rendition.themes.select("$_theme");
+        
+        rendition.getContents().forEach(c => {
+          c.addStylesheetRules({
+            "body": {
+              "background-color": "${colors['bg']} !important",
+              "color": "${colors['fg']} !important",
+              "font-size": "$_fontSize% !important"
+            },
+            "p": {
+              "position": "relative !important",
+              "padding-right": "45px !important",
+              "margin-bottom": "1.5em !important",
+              "color": "${colors['fg']} !important"
+            },
+            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
+              "color": "${colors['fg']} !important",
+              "background": "transparent !important"
+            },
+            ".para-translate-btn": {
+              "position": "absolute",
+              "right": "0px",
+              "top": "0px",
+              "width": "32px",
+              "height": "32px",
+              "border-radius": "8px",
+              "background": "rgba(99, 102, 241, 0.15)",
+              "border": "1px solid rgba(255, 255, 255, 0.1)",
+              "color": "#6366F1",
+              "display": "flex",
+              "align-items": "center",
+              "justify-content": "center",
+              "cursor": "pointer",
+              "font-size": "16px",
+              "user-select": "none",
+              "-webkit-user-select": "none",
+              "opacity": "0.6",
+              "transition": "opacity 0.2s",
+              "z-index": "10"
+            },
+            ".para-translate-btn:active": {
+              "opacity": "1.0",
+              "transform": "scale(0.95)"
+            },
+            "::selection": {
+              "background-color": "rgba(99, 102, 241, 0.3) !important",
+              "text-decoration": "underline !important",
+              "text-decoration-color": "#6366F1 !important",
+              "color": "inherit !important"
+            }
+          });
+        });
+      }
+    """;
+    webViewController?.evaluateJavascript(source: js);
+  }
+
+  void _applyHighlighting() {
+    final logger = ref.read(loggerProvider);
+    final srs = ref.read(srsProvider).deck;
+    final words = srs.map((e) => e.front).toList();
+    
+    logger.debug('BookReader: Applying highlighting for ${words.length} known words');
+    final js = "if (window.highlightKnownWords) window.highlightKnownWords(${jsonEncode(words)});";
+    webViewController?.evaluateJavascript(source: js);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _startLocalServer();
+  }
+
+  Future<void> _startLocalServer() async {
+    final logger = ref.read(loggerProvider);
+    logger.info('BookReader: Initializing local file server');
+    try {
+      _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      if (mounted) {
+        setState(() => _localPort = _localServer!.port);
+        logger.info('BookReader: Local server bound to port $_localPort');
+      }
+      
+      _localServer!.listen((HttpRequest request) async {
+        request.response.headers.add('Access-Control-Allow-Origin', '*');
+        request.response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        request.response.headers.add('Access-Control-Allow-Headers', '*');
+        
+        if (request.method == 'OPTIONS') {
+           request.response.statusCode = 200;
+           await request.response.close();
+           return;
+        }
+        if (request.uri.path.startsWith('/books/')) {
+           final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
+           final dir = await getApplicationDocumentsDirectory();
+           final file = File('${dir.path}/books/$bookId.epub');
+           
+           if (await file.exists()) {
+             logger.debug('BookReader: Serving local EPUB file for $bookId');
+             final length = await file.length();
+             request.response.contentLength = length;
+             request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
+             await request.response.addStream(file.openRead());
+             await request.response.close();
+             return;
+           }
+        }
+        request.response.statusCode = 404;
+        await request.response.close();
+      });
+    } catch (e, st) {
+      logger.error('BookReader: Local server startup error', e, st);
+    }
+  }
+
+  Future<void> _ensureBookDownloaded(UserBook book) async {
+    final logger = ref.read(loggerProvider);
+    if (_isDownloading || _localFileReady) return;
+    
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${dir.path}/books');
+      if (!await booksDir.exists()) await booksDir.create(recursive: true);
+
+      final file = File('${booksDir.path}/${book.id}.epub');
+      if (await file.exists()) {
+        logger.info('BookReader: Book "${book.title}" found locally');
+        if (mounted) setState(() => _localFileReady = true);
+        return;
+      }
+
+      logger.info('BookReader: Book not found locally, starting download for "${book.title}"');
+      if (book.signedUrl == null) {
+        logger.error('BookReader: Missing signedUrl for book ${book.id}');
+        throw Exception("No download URL provided");
+      }
+
+      setState(() {
+        _isDownloading = true;
+        _downloadProgress = 0.0;
+      });
+
+      final request = http.Request('GET', Uri.parse(book.signedUrl!));
+      final response = await request.send();
+      final total = response.contentLength ?? 0;
+      int received = 0;
+      final bytes = <int>[];
+
+      response.stream.listen(
+        (chunk) {
+          bytes.addAll(chunk);
+          received += chunk.length;
+          if (total > 0 && mounted) setState(() => _downloadProgress = received / total);
+        },
+        onDone: () async {
+          await file.writeAsBytes(bytes);
+          logger.info('BookReader: Download complete for "${book.title}"');
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              _localFileReady = true;
+            });
+          }
+        },
+        onError: (e, st) {
+          logger.error('BookReader: Download stream error', e, st);
+          if (mounted) setState(() => _isDownloading = false);
+        },
+      );
+    } catch (e, st) {
+      logger.error('BookReader: Download setup failed', e, st);
+      if (mounted) setState(() => _isDownloading = false);
+    }
+  }
+
+  final String _htmlTemplate = """
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    <style>
+      html, body { 
+        margin: 0; padding: 0; width: 100%; height: 100%; 
+        background-color: #121212;
+      }
+      #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+      mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
+    </style>
+  </head>
+  <body>
+    <div id="viewer"></div>
+    <script>
+      let book;
+      let rendition;
+      window.lastReportedText = "";
+
+      window.highlightKnownWords = function(words) {
+        if (!rendition) return;
+        rendition.getContents().forEach(content => {
+          const doc = content.document;
+          if (words.length === 0) return;
+          
+          // Use safe string concatenation to build the regex string
+          const regexStr = words.map(w => w.replace(/[.*+?^\\\$\${"{"}}()|[\\\]\\\\]/g, '\\\\\$&')).join('|');
+          const regex = new RegExp('\\\\b(' + regexStr + ')\\\\b', 'gi');
+          
+          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+          let node;
+          const nodes = [];
+          while (node = walker.nextNode()) nodes.push(node);
+          
+          nodes.forEach(textNode => {
+            if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'mark') return;
+            if (regex.test(textNode.nodeValue)) {
+              const span = doc.createElement('span');
+              span.innerHTML = textNode.nodeValue.replace(regex, '<mark class="known-word">\$1</mark>');
+              textNode.parentNode.replaceChild(span, textNode);
+            }
+          });
+        });
+      };
+
+      async function loadBook(url, initialCfi) {
+        try {
+          console.log("BookReader JS: Starting ePub initialization");
+          book = ePub(url);
+          
+          await book.opened;
+
+          rendition = book.renderTo("viewer", { 
+            width: "100%", 
+            height: "100%", 
+            flow: "paginated", 
+            manager: "continuous" 
+          });
+          
+          rendition.on("relocated", (location) => {
+            const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
+            window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
+          });
+
+          function checkAndReportSelection(win) {
+              if (!win) return;
+              const sel = win.getSelection();
+              if (!sel) return;
+              
+              const text = sel.toString().trim();
+              if (text.length > 0 && text !== window.lastReportedText) {
+                  window.lastReportedText = text;
+                  let contextText = text;
+                  if (sel.rangeCount > 0) {
+                      let container = sel.getRangeAt(0).commonAncestorContainer;
+                      if (container && container.nodeType === 3) container = container.parentNode;
+                      if (container) contextText = container.textContent.trim();
+                  }
+                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
+              } else if (text.length === 0) {
+                  window.lastReportedText = "";
+              }
+          }
+
+          rendition.hooks.content.register((contents) => {
+            const win = contents.window;
+            const doc = contents.document;
+            
+            const paragraphs = doc.querySelectorAll('p');
+            paragraphs.forEach((p) => {
+              if (p.textContent.trim().length < 20) return;
+              if (p.querySelector('.para-translate-btn')) return;
+
+              const btn = doc.createElement('div');
+              btn.className = 'para-translate-btn';
+              btn.innerHTML = '文'; 
+              btn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
+              };
+              p.appendChild(btn);
+            });
+
+            doc.addEventListener('selectionchange', () => {
+              clearTimeout(window.selectionTimeout);
+              window.selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
+            });
+
+            doc.addEventListener('touchend', () => {
+              setTimeout(() => checkAndReportSelection(win), 150);
+            });
+          });
+
+          let touchStartX = 0;
+          rendition.on("touchstart", (e) => { 
+            touchStartX = e.changedTouches[0].screenX; 
+          });
+          
+          rendition.on("touchend", (e) => {
+            const dx = touchStartX - e.changedTouches[0].screenX;
+            if (Math.abs(dx) > 50) {
+              if (dx > 0) rendition.next();
+              else rendition.prev();
+            } 
+          });
+
+          await rendition.display(initialCfi || undefined);
+          window.flutter_inappwebview.callHandler('onReady');
+          
+          await book.ready;
+          await book.locations.generate(1600);
+
+          const loc = rendition.currentLocation();
+          if (loc && loc.start) {
+              const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
+              window.flutter_inappwebview.callHandler('onProgress', loc.start.cfi, pct);
+          }
+
+          const flattenToc = (items, level = 0) => {
+            return items.reduce((acc, item) => {
+              acc.push({ label: item.label, href: item.href, level: level });
+              if (item.subitems && item.subitems.length > 0) {
+                acc.push(...flattenToc(item.subitems, level + 1));
+              }
+              return acc;
+            }, []);
+          };
+          const toc = flattenToc(book.navigation.toc);
+          window.flutter_inappwebview.callHandler('onToc', toc);
+
+        } catch (error) {
+          console.error("EPUB Loading Error: " + error.message);
+        }
+      }
+    </script>
+  </body>
+  </html>
+  """;
+
+  Future<void> _handleImmediateSave() async {
+    final logger = ref.read(loggerProvider);
+    if (_lastCfi != null && mounted) {
+      logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
+      await ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
+    final profileAsync = ref.watch(userProfileProvider);
+    final logger = ref.read(loggerProvider);
+
+    bookAsync.whenData((book) {
+      if (!_isInitialized) {
+          logger.info('BookReader: Initializing state. Saved CFI: ${book.currentCfi}');
+          _isInitialized = true;
+          setState(() {
+            _progress = book.progressPct;
+            _lastCfi = book.currentCfi;
+          });
+          _ensureBookDownloaded(book);
+      }
+    });
+
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) {
+             _handleImmediateSave();
+          }
+      },
+      child: Scaffold(
+        backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () {
+            context.pop();
+          }),
+          title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
+          actions: [
+            if (_toc.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.list),
+                onPressed: () => _showChapterBrowser(context),
+              ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => _showSettings(context),
+            ),
+          ],
+        ),
+        body: bookAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, st) {
+            logger.error('BookReader: Failed to load data', e, st);
+            return Center(child: Text("Error: $e"));
+          },
+          data: (book) {
+            if (_isDownloading) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children:[
+                    const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
+                    const SizedBox(height: 16),
+                    Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
+                  ]
+                )
+              );
+            }
+      
+            if (!_localFileReady || _localPort == null) {
+              return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
+            }
+      
+            return InAppWebView(
+              initialData: InAppWebViewInitialData(
+                data: _htmlTemplate, 
+                baseUrl: WebUri("http://127.0.0.1:$_localPort/")
+              ),
+              initialSettings: InAppWebViewSettings(
+                javaScriptEnabled: true,
+                isInspectable: kDebugMode,
+                allowUniversalAccessFromFileURLs: true,
+                allowFileAccessFromFileURLs: true,
+                mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+              ),
+              onWebViewCreated: (controller) {
+                webViewController = controller;
+                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
+                  final cfi = args[0] as String;
+                  final pct = (args[1] as num).toDouble();
+                  
+                  if (mounted) {
+                    setState(() {
+                      if (pct > 0) _progress = pct;
+                      _lastCfi = cfi;
+                    });
+                  }
+
+                  if (!_canSaveToBackend && pct <= 0) {
+                      return;
+                  }
+
+                  _progressDebounce?.cancel();
+                  _progressDebounce = Timer(const Duration(milliseconds: 1500), () {
+                    if (mounted) {
+                      ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
+                    }
+                  });
+
+                  _updateReaderStyles();
+                  _applyHighlighting();
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
+                  final tocData = args[0] as List<dynamic>;
+                  if (mounted) setState(() => _toc = tocData);
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onParagraphTranslate', callback: (args) {
+                  final text = args[0].toString();
+                  _showTranslationSheet(
+                    context, 
+                    selectedText: text, 
+                    contextText: text, 
+                    sourceLang: book.targetLanguage, 
+                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
+                  );
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
+                  Future.delayed(const Duration(milliseconds: 2000), () {
+                    if (mounted) setState(() => _canSaveToBackend = true);
+                  });
+
+                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage);
+                  _updateReaderStyles();
+                  _applyHighlighting();
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
+                  _showTranslationSheet(
+                    context, 
+                    selectedText: args[0].toString(), 
+                    contextText: args[1].toString(), 
+                    sourceLang: book.targetLanguage, 
+                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
+                  );
+                });
+              },
+              onLoadStop: (controller, _) async {
+                if (_localPort != null) {
+                   final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
+                   final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                   await controller.evaluateJavascript(source: jsCall);
+                }
+              },
+            );
+         },
+        ),
+      ),
+    );
+  }
+
+  void _showChapterBrowser(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (context, scrollController) => Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text("Table of Contents", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            const Divider(color: Colors.white10),
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                itemCount: _toc.length,
+                separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (context, index) {
+                  final chapter = _toc[index];
+                  final int level = chapter['level'] ?? 0;
+                  
+                  return ListTile(
+                    contentPadding: EdgeInsets.only(left: 16.0 + (level * 16.0), right: 16.0),
+                    title: Text(
+                      chapter['label'].toString().trim(), 
+                      style: TextStyle(
+                        color: level == 0 ? Colors.white : Colors.white70,
+                        fontWeight: level == 0 ? FontWeight.bold : FontWeight.normal,
+                        fontSize: level == 0 ? 15 : 14,
+                      )
+                    ),
+                    trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
+                    onTap: () {
+                      final href = chapter['href'].toString();
+                      webViewController?.evaluateJavascript(source: "rendition.display('${href}');");
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSettings(BuildContext context) {
+    final logger = ref.read(loggerProvider);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
+                  onTap: () { 
+                    setState(() => _theme = t); 
+                    setModalState((){}); 
+                    _updateReaderStyles(); 
+                  },
+                  child: Container(
+                    width: 60, height: 60,
+                    decoration: BoxDecoration(
+                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
+                    ),
+                  ),
+                )).toList(),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  const Icon(Icons.text_fields, size: 16),
+                  Expanded(
+                    child: Slider(
+                      value: _fontSize, min: 80, max: 200,
+                      onChanged: (v) { 
+                        setState(() => _fontSize = v); 
+                        setModalState((){}); 
+                      },
+                      onChangeEnd: (v) {
+                        _updateReaderStyles();
+                      },
+                    ),
+                  ),
+                  const Icon(Icons.text_fields, size: 24),
+                ],
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => _TranslationBottomSheet(
+        selectedText: selectedText,
+        contextText: contextText,
+        sourceLang: sourceLang,
+        targetLang: nativeLang,
+      ),
+    );
+
+    webViewController?.evaluateJavascript(source: """
+      if (typeof rendition !== 'undefined' && rendition) {
+        rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
+        window.lastReportedText = "";
+      }
+    """);
+  }
+}
+
+class _TranslationBottomSheet extends ConsumerStatefulWidget {
+  final String selectedText;
+  final String contextText;
+  final String sourceLang;
+  final String targetLang;
+
+  const _TranslationBottomSheet({
+    required this.selectedText,
+    required this.contextText,
+    required this.sourceLang,
+    required this.targetLang,
+  });
+
+  @override
+  ConsumerState<_TranslationBottomSheet> createState() => _TranslationBottomSheetState();
+}
+
+class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet> {
+  bool _isLoadingFast = true;
+  bool _isLoadingContext = false;
+  String? _fastTranslation;
+  String? _contextualTranslation;
+  String? _explanation;
+  bool _isAdding = false;
+  bool _isAdded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFastTranslation();
+  }
+
+  Future<void> _fetchFastTranslation() async {
+    final logger = ref.read(loggerProvider);
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
+      if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
+    } catch (e, st) {
+      logger.error('BookReader: Fast translation failed', e, st);
+      if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
+    }
+  }
+
+  Future<void> _fetchContextTranslation() async {
+    final logger = ref.read(loggerProvider);
+    logger.info('BookReader: Requesting context-aware translation');
+    setState(() => _isLoadingContext = true);
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.contextualTranslate(
+        selectedText: widget.selectedText,
+        context: widget.contextText,
+        sourceLanguage: widget.sourceLang,
+        targetLanguage: widget.targetLang,
+        nativeLanguage: widget.targetLang,
+      );
+      if (mounted) {
+        setState(() {
+          _contextualTranslation = result['translation'];
+          _explanation = result['explanation'];
+          _isLoadingContext = false;
+        });
+      }
+    } catch (e, st) {
+      logger.error('BookReader: Context translation failed', e, st);
+      if (mounted) setState(() { _isLoadingContext = false; });
+    }
+  }
+
+  Future<void> _handleAddToDeck() async {
+    final logger = ref.read(loggerProvider);
+    setState(() => _isAdding = true);
+    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+          front: widget.selectedText,
+          back: _contextualTranslation ?? _fastTranslation!,
+          language: widget.sourceLang,
+          explanation: _explanation,
+        );
+
+    if (mounted) {
+      setState(() { 
+        _isAdding = false; 
+        if (success) {
+          _isAdded = true;
+        } 
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children:[
+          Text(widget.selectedText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+          const SizedBox(height: 16),
+          
+          if (_isLoadingFast)
+            const CircularProgressIndicator()
+          else
+            Text(_fastTranslation ?? "", style: const TextStyle(fontSize: 18, color: LiquidTheme.primaryAccent, fontWeight: FontWeight.w600)),
+            
+          const SizedBox(height: 24),
+          
+          if (_contextualTranslation == null && !_isLoadingContext)
+            OutlinedButton.icon(
+              onPressed: _fetchContextTranslation,
+              icon: const Icon(Icons.auto_awesome, color: Colors.white),
+              label: const Text("Deep Translate with Context", style: TextStyle(color: Colors.white)),
+              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+            )
+          else if (_isLoadingContext)
+            const Center(child: CircularProgressIndicator(color: LiquidTheme.secondaryAccent))
+          else ...[
+             Container(
+               padding: const EdgeInsets.all(16),
+               decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[
+                 Text(_contextualTranslation!, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
+                 const SizedBox(height: 8),
+                 Text(_explanation ?? "", style: const TextStyle(fontSize: 14, color: Colors.white70)),
+               ]),
+             )
+          ],
+          
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent,
+                foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              onPressed: (_isLoadingFast || _isAdded || _isAdding) ? null : _handleAddToDeck,
+              icon: _isAdding ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_isAdded ? Icons.check : Icons.add),
+              label: Text(_isAdded ? "Added to Deck" : "Add to Study Deck", style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+}
 </file>
 
 <file path="pubspec.lock">

@@ -89,13 +89,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       title: 'My Library',
       subtitle: 'Read and translate your EPUBs',
       showBackButton: false,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isUploading ? null : _handleUpload,
-        backgroundColor: LiquidTheme.primaryAccent,
-        icon: _isUploading 
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-            : const Icon(Icons.book, color: Colors.white),
-        label: Text(_isUploading ? "Uploading..." : "Upload EPUB", style: const TextStyle(color: Colors.white)),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 80),
+        child: FloatingActionButton.extended(
+          onPressed: _isUploading ? null : _handleUpload,
+          backgroundColor: LiquidTheme.primaryAccent,
+          icon: _isUploading 
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+              : const Icon(Icons.book, color: Colors.white),
+          label: Text(_isUploading ? "Uploading..." : "Upload EPUB", style: const TextStyle(color: Colors.white)),
+        ),
       ),
       body: booksAsync.when(
         loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
@@ -165,3 +168,4 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 }
+      
