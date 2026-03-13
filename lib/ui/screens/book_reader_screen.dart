@@ -328,8 +328,16 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           });
           
           rendition.on("relocated", (location) => {
-            const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
-            window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
+            // NEW CODE START: Use a requestAnimationFrame to ensure the rendition state is fully updated 
+            // before querying the location. This avoids capturing a CFI that belongs to the transition state.
+            window.requestAnimationFrame(() => {
+              const currentLocation = rendition.currentLocation();
+              if (currentLocation && currentLocation.start) {
+                const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
+                window.flutter_inappwebview.callHandler('onProgress', currentLocation.start.cfi, pct);
+              }
+            });
+            // NEW CODE END
           });
 
           function checkAndReportSelection(win) {
@@ -470,6 +478,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   Future<void> _handleImmediateSave() async {
     final logger = ref.read(loggerProvider);
     if (_lastCfi != null && mounted) {
+      // NEW CODE START: Cancel the pending debounced timer to avoid double-saving or race conditions
+      _progressDebounce?.cancel();
+      // NEW CODE END
       logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
       await ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
     }
@@ -595,7 +606,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   
                   if (mounted) {
                     setState(() {
-                      if (pct > 0) _progress = pct;
+                      // CHANGE: Remove the pct > 0 check for _progress assignment to ensure 
+                      // page 1 (0%) is captured correctly as a valid last-read position.
+                      _progress = pct; 
                       _lastCfi = cfi;
                     });
                   }
