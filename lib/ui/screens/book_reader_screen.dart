@@ -97,9 +97,18 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             },
             // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
             ".lexity-word": { "cursor": "pointer", "transition": "background-color 0.2s" },
-            ".lexity-word.unknown": { "border-bottom": "1px dotted rgba(150, 150, 150, 0.5)" },
-            ".lexity-word.learning": { "background-color": "rgba(99, 102, 241, 0.3)", "border-bottom": "2px solid #6366F1" },
-            ".lexity-word.known": { "color": "inherit", "border-bottom": "none", "background-color": "transparent" },
+            ".lexity-word.unknown": { 
+              "background-color": "rgba(99, 102, 241, 0.1) !important",
+              "border-bottom": "1px dashed rgba(99, 102, 241, 0.4) !important" 
+            },
+            ".lexity-word.learning": { 
+              "background-color": "rgba(236, 72, 153, 0.2) !important", 
+              "border-bottom": "2px solid #EC4899 !important" 
+            },
+            ".lexity-word.known": { 
+              "background-color": "transparent !important",
+              "border-bottom": "none !important"
+            },
             // END NEW CSS
             ".para-translate-btn": {
               "position": "absolute",
@@ -294,12 +303,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       }
     });
 
-    // NEW: RIVERPOD LISTENER TO PUSH STATE CHANGES TO JS
     ref.listen(vocabularyProvider, (previous, next) {
       next.whenData((vocabMap) {
-        final jsonStr = jsonEncode(vocabMap);
-        final jsString = jsonEncode(jsonStr);
-        webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+        if (webViewController != null) {
+          final jsonStr = jsonEncode(vocabMap);
+          final jsString = jsonEncode(jsonStr);
+          webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+        }
       });
     });
 

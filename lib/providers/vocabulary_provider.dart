@@ -17,15 +17,17 @@ class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> 
   }
 
   Future<void> updateWordStatus(String word, String status, String language) async {
-    final currentMap = state.value ?? {};
+    final currentMap = state.asData?.value ?? {};
     final wordLower = word.toLowerCase();
-    final newMap = Map<String, String>.from(currentMap)..[wordLower] = status;
+    final statusLower = status.toLowerCase();
+    
+    final newMap = Map<String, String>.from(currentMap)..[wordLower] = statusLower;
     state = AsyncValue.data(newMap);
 
     try {
-      await _service.updateStatus(wordLower, status, language);
-    } catch (e) {
-      state = AsyncValue.data(currentMap); // Rollback optimistic update
+      await _service.updateStatus(wordLower, statusLower, language);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
     }
   }
 

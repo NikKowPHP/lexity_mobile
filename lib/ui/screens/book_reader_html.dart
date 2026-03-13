@@ -31,7 +31,8 @@ const String bookReaderHtmlTemplate = """
               const dataWord = span.getAttribute('data-word');
               if (!dataWord) return;
               const word = dataWord.toLowerCase();
-              const status = vocabMap[word] || 'unknown';
+              // Normalize the status to lowercase to match CSS selectors
+              const status = (vocabMap[word] || 'unknown').toLowerCase();
               span.className = 'lexity-word ' + status;
           });
       });
@@ -95,8 +96,14 @@ const String bookReaderHtmlTemplate = """
               if (regex.test(textNode.nodeValue)) {
                   const span = doc.createElement('span');
                   span.className = 'lexity-word-wrapper';
-                  const replacement = '<span class="lexity-word unknown" data-word="\$1">\$1</span>';
-                  span.innerHTML = textNode.nodeValue.replace(regex, replacement);
+                  
+                  // Wrap each word match in a span with appropriate status
+                  span.innerHTML = textNode.nodeValue.replace(regex, (match) => {
+                      const normalizedWord = match.toLowerCase();
+                      // Status is normalized to lowercase (e.g. "LEARNING" -> "learning")
+                      const status = (window.vocabMap && window.vocabMap[normalizedWord] ? window.vocabMap[normalizedWord] : 'unknown').toLowerCase();
+                      return `<span class="lexity-word \${status}" data-word="\${normalizedWord}">\${match}</span>`;
+                  });
                   textNode.parentNode.replaceChild(span, textNode);
               }
           });

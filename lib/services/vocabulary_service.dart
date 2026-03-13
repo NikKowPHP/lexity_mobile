@@ -24,8 +24,10 @@ class VocabularyService {
     );
 
     if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      return {for (var item in data) item['word']: item['status']};
+      final Map<String, dynamic> data = jsonDecode(response.body);
+      // Map the dynamic JSON object to a lowercase Map<String, String>
+      return data.map((key, value) => 
+        MapEntry(key.toLowerCase(), value.toString().toLowerCase()));
     }
     return {};
   }
