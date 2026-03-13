@@ -259,13 +259,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
 
   void _handleImmediateSave() {
+    if (!mounted || _lastCfi == null) return;
+
     final logger = ref.read(loggerProvider);
-    if (_lastCfi != null) {
-      _progressDebounce?.cancel();
-      logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
-      ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
-      _lastCfi = null; // Prevent double saving
-    }
+    _progressDebounce?.cancel();
+    logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
+    ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
+    _lastCfi = null; // Prevent double saving
   }
 
   @override
@@ -305,7 +305,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
-          if (didPop) {
+          if (didPop && mounted) {
              _handleImmediateSave();
           }
       },
@@ -392,13 +392,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               onWebViewCreated: (controller) {
                 webViewController = controller;
                 controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
+                  if (!mounted) return;
+
                   final cfi = args[0] as String;
                   final pct = (args[1] as num).toDouble();
                   
                   if (mounted) {
                     setState(() {
-                      // CHANGE: Remove the pct > 0 check for _progress assignment to ensure 
-                      // page 1 (0%) is captured correctly as a valid last-read position.
                       _progress = pct; 
                       _lastCfi = cfi;
                     });

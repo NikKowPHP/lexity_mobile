@@ -186,6 +186,7 @@ lib/
     liquid_theme.dart
   ui/
     screens/
+      book_reader_html.dart
       book_reader_screen.dart
       drill_screen.dart
       home_shell.dart
@@ -320,136 +321,6 @@ test.sh
 
 <files>
 This section contains the contents of the repository's files.
-
-<file path="lib/models/vocabulary_item.dart">
-class VocabularyItem {
-  final String word;
-  final String status;
-
-  VocabularyItem({required this.word, required this.status});
-
-  factory VocabularyItem.fromJson(Map<String, dynamic> json) {
-    return VocabularyItem(
-      word: json['word'] as String,
-      status: json['status'] as String,
-    );
-  }
-}
-</file>
-
-<file path="lib/providers/vocabulary_provider.dart">
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/vocabulary_service.dart';
-
-class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> {
-  final VocabularyService _service;
-  
-  VocabularyNotifier(this._service) : super(const AsyncValue.loading());
-
-  Future<void> loadVocabulary(String language) async {
-    state = const AsyncValue.loading();
-    try {
-      final vocab = await _service.getVocabulary(language);
-      state = AsyncValue.data(vocab);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
-  }
-
-  Future<void> updateWordStatus(String word, String status, String language) async {
-    final currentMap = state.value ?? {};
-    final wordLower = word.toLowerCase();
-    final newMap = Map<String, String>.from(currentMap)..[wordLower] = status;
-    state = AsyncValue.data(newMap);
-
-    try {
-      await _service.updateStatus(wordLower, status, language);
-    } catch (e) {
-      state = AsyncValue.data(currentMap); // Rollback optimistic update
-    }
-  }
-
-  Future<void> markBatchKnown(List<String> words, String language) async {
-    final currentMap = state.value ?? {};
-    final newMap = Map<String, String>.from(currentMap);
-    final lowerWords = words.map((w) => w.toLowerCase()).toList();
-    for (var w in lowerWords) {
-      newMap[w] = 'known';
-    }
-    state = AsyncValue.data(newMap);
-
-    try {
-      await _service.markBatchKnown(lowerWords, language);
-    } catch (e) {
-      state = AsyncValue.data(currentMap); // Rollback
-    }
-  }
-}
-
-final vocabularyProvider = StateNotifierProvider<VocabularyNotifier, AsyncValue<Map<String, String>>>((ref) {
-  return VocabularyNotifier(ref.watch(vocabularyServiceProvider));
-});
-</file>
-
-<file path="lib/services/vocabulary_service.dart">
-import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-import 'token_service.dart';
-import '../utils/constants.dart';
-
-class VocabularyService {
-  final TokenService _authTokenService;
-
-  VocabularyService(this._authTokenService);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<Map<String, String>> getVocabulary(String language) async {
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      return {for (var item in data) item['word']: item['status']};
-    }
-    return {};
-  }
-
-  Future<void> updateStatus(String word, String status, String language) async {
-    await http.put(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'word': word,
-        'status': status,
-        'targetLanguage': language,
-      }),
-    );
-  }
-
-  Future<void> markBatchKnown(List<String> words, String language) async {
-    await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary/batch-known'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'words': words,
-        'targetLanguage': language,
-      }),
-    );
-  }
-}
-
-final vocabularyServiceProvider = Provider((ref) => VocabularyService(ref.watch(tokenServiceProvider(TokenType.auth))));
-</file>
 
 <file path=".kilocode/rules/rules.md">
 after each feature implementation code fix run the type check and fix the issues until no type issues found 
@@ -2067,144 +1938,6 @@ class PracticeConcept {
 }
 </file>
 
-<file path="lib/models/book.dart">
-class UserBook {
-  final String id;
-  final String title;
-  final String? author;
-  final String targetLanguage;
-  final String storagePath;
-  final String? coverImageUrl;
-  final String? currentCfi;
-  final double progressPct;
-  final DateTime createdAt;
-  final String? signedUrl;
-
-  UserBook({
-    required this.id,
-    required this.title,
-    this.author,
-    required this.targetLanguage,
-    required this.storagePath,
-    this.coverImageUrl,
-    this.currentCfi,
-    required this.progressPct,
-    required this.createdAt,
-    this.signedUrl,
-  });
-
-  factory UserBook.fromJson(Map<String, dynamic> json) {
-    return UserBook(
-      id: json['id'],
-      title: json['title'] ?? 'Unknown Title',
-      author: json['author'],
-      targetLanguage: json['targetLanguage'] ?? 'spanish',
-      storagePath: json['storagePath'] ?? '',
-      coverImageUrl: json['coverImageUrl'],
-      currentCfi: json['currentCfi'],
-      progressPct: (json['progressPct'] ?? 0).toDouble(),
-      createdAt: DateTime.parse(json['createdAt']),
-      signedUrl: json['signedUrl'],
-    );
-  }
-}
-</file>
-
-<file path="lib/models/journal_entry.dart">
-class JournalEntry {
-  final String id;
-  final String content;
-  final String title;
-  final DateTime createdAt;
-  final String? audioUrl;
-  final Analysis? analysis;
-  final bool isPending;
-
-  JournalEntry({
-    required this.id,
-    required this.content,
-    required this.title,
-    required this.createdAt,
-    this.audioUrl,
-    this.analysis,
-    this.isPending = false,
-  });
-
-  factory JournalEntry.fromJson(Map<String, dynamic> json) {
-    return JournalEntry(
-      id: json['id'],
-      content: json['content'] ?? '',
-      title: json['topic']?['title'] ?? 'Free Write',
-      createdAt: DateTime.parse(json['createdAt']),
-      audioUrl: json['audioUrl'],
-      analysis: json['analysis'] != null ? Analysis.fromJson(json['analysis']) : null,
-    );
-  }
-}
-
-class Analysis {
-  final String id;
-  final int grammarScore;
-  final int phrasingScore;
-  final int vocabScore;
-  final String feedback;
-  final List<Mistake> mistakes;
-
-  Analysis({
-    required this.id,
-    required this.grammarScore,
-    required this.phrasingScore,
-    required this.vocabScore,
-    required this.feedback,
-    required this.mistakes,
-  });
-
-  factory Analysis.fromJson(Map<String, dynamic> json) {
-    // Handle rawAiResponse structure if present, or flat structure
-    String feedbackText = json['feedbackJson'] ?? '';
-    // In some API responses, feedback might be nested or encrypted string on server, 
-    // but client receives decrypted. Assuming standard JSON here.
-    
-    return Analysis(
-      id: json['id'],
-      grammarScore: json['grammarScore'] ?? 0,
-      phrasingScore: json['phrasingScore'] ?? 0,
-      vocabScore: json['vocabScore'] ?? 0,
-      feedback: feedbackText,
-      mistakes: (json['mistakes'] as List? ?? [])
-          .map((m) => Mistake.fromJson(m))
-          .toList(),
-    );
-  }
-}
-
-class Mistake {
-  final String id;
-  final String original;
-  final String corrected;
-  final String explanation;
-  final String type;
-
-  Mistake({
-    required this.id,
-    required this.original,
-    required this.corrected,
-    required this.explanation,
-    required this.type,
-  });
-
-  factory Mistake.fromJson(Map<String, dynamic> json) {
-    return Mistake(
-      id: json['id'],
-      original: json['originalText'] ?? '',
-      corrected: json['correctedText'] ?? '',
-      explanation: json['explanation'] ?? '',
-      type: json['type'] ?? 'grammar',
-    );
-  }
-}
-</file>
-
 <file path="lib/models/learning_module.dart">
 class LearningModule {
   final String id;
@@ -2397,6 +2130,22 @@ class TranslationSegment {
       source: json['source'] ?? '',
       translation: json['translation'] ?? '',
       explanation: json['explanation'] ?? '',
+    );
+  }
+}
+</file>
+
+<file path="lib/models/vocabulary_item.dart">
+class VocabularyItem {
+  final String word;
+  final String status;
+
+  VocabularyItem({required this.word, required this.status});
+
+  factory VocabularyItem.fromJson(Map<String, dynamic> json) {
+    return VocabularyItem(
+      word: json['word'] as String,
+      status: json['status'] as String,
     );
   }
 }
@@ -2670,6 +2419,60 @@ class TranslatorNotifier extends StateNotifier<TranslatorState> {
 
 final translatorProvider = StateNotifierProvider<TranslatorNotifier, TranslatorState>((ref) {
   return TranslatorNotifier(ref.watch(aiServiceProvider));
+});
+</file>
+
+<file path="lib/providers/vocabulary_provider.dart">
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/vocabulary_service.dart';
+
+class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> {
+  final VocabularyService _service;
+  
+  VocabularyNotifier(this._service) : super(const AsyncValue.loading());
+
+  Future<void> loadVocabulary(String language) async {
+    state = const AsyncValue.loading();
+    try {
+      final vocab = await _service.getVocabulary(language);
+      state = AsyncValue.data(vocab);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  Future<void> updateWordStatus(String word, String status, String language) async {
+    final currentMap = state.value ?? {};
+    final wordLower = word.toLowerCase();
+    final newMap = Map<String, String>.from(currentMap)..[wordLower] = status;
+    state = AsyncValue.data(newMap);
+
+    try {
+      await _service.updateStatus(wordLower, status, language);
+    } catch (e) {
+      state = AsyncValue.data(currentMap); // Rollback optimistic update
+    }
+  }
+
+  Future<void> markBatchKnown(List<String> words, String language) async {
+    final currentMap = state.value ?? {};
+    final newMap = Map<String, String>.from(currentMap);
+    final lowerWords = words.map((w) => w.toLowerCase()).toList();
+    for (var w in lowerWords) {
+      newMap[w] = 'known';
+    }
+    state = AsyncValue.data(newMap);
+
+    try {
+      await _service.markBatchKnown(lowerWords, language);
+    } catch (e) {
+      state = AsyncValue.data(currentMap); // Rollback
+    }
+  }
+}
+
+final vocabularyProvider = StateNotifierProvider<VocabularyNotifier, AsyncValue<Map<String, String>>>((ref) {
+  return VocabularyNotifier(ref.watch(vocabularyServiceProvider));
 });
 </file>
 
@@ -3043,6 +2846,277 @@ final authTokenServiceProvider = Provider<TokenService>((ref) =>
 final refreshTokenServiceProvider = Provider<TokenService>((ref) => 
   TokenService(ref, TokenType.refresh),
 );
+</file>
+
+<file path="lib/services/vocabulary_service.dart">
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'token_service.dart';
+import '../utils/constants.dart';
+
+class VocabularyService {
+  final TokenService _authTokenService;
+
+  VocabularyService(this._authTokenService);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<Map<String, String>> getVocabulary(String language) async {
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final List data = jsonDecode(response.body);
+      return {for (var item in data) item['word']: item['status']};
+    }
+    return {};
+  }
+
+  Future<void> updateStatus(String word, String status, String language) async {
+    await http.put(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'word': word,
+        'status': status,
+        'targetLanguage': language,
+      }),
+    );
+  }
+
+  Future<void> markBatchKnown(List<String> words, String language) async {
+    await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary/batch-known'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'words': words,
+        'targetLanguage': language,
+      }),
+    );
+  }
+}
+
+final vocabularyServiceProvider = Provider((ref) => VocabularyService(ref.watch(tokenServiceProvider(TokenType.auth))));
+</file>
+
+<file path="lib/ui/screens/book_reader_html.dart">
+const String bookReaderHtmlTemplate = """
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+  <style>
+    html, body { 
+      margin: 0; padding: 0; width: 100%; height: 100%; 
+      background-color: #121212;
+    }
+    #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+    mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+  <script>
+    let book;
+    let rendition;
+    window.lastReportedText = "";
+
+    window.applyVocabStyles = function(vocabMapJson) {
+      if (!rendition) return;
+      const vocabMap = JSON.parse(vocabMapJson);
+      rendition.getContents().forEach(content => {
+          const spans = content.document.querySelectorAll('.lexity-word');
+          spans.forEach(span => {
+              const dataWord = span.getAttribute('data-word');
+              if (!dataWord) return;
+              const word = dataWord.toLowerCase();
+              const status = vocabMap[word] || 'unknown';
+              span.className = 'lexity-word ' + status;
+          });
+      });
+    };
+
+    window.getVisibleUnknownWords = function() {
+      if (!rendition) return [];
+      const visible =[];
+      rendition.getContents().forEach(content => {
+          const win = content.window;
+          const spans = content.document.querySelectorAll('.lexity-word.unknown');
+          spans.forEach(span => {
+              const rect = span.getBoundingClientRect();
+              if (rect.top >= 0 && rect.left >= 0 && Math.floor(rect.bottom) <= win.innerHeight && Math.floor(rect.right) <= win.innerWidth) {
+                  visible.push(span.getAttribute('data-word').toLowerCase());
+              }
+          });
+      });
+      return Array.from(new Set(visible));
+    };
+
+    async function loadBook(url, initialCfi) {
+      try {
+        console.log("BookReader JS: Starting ePub initialization");
+        book = ePub(url);
+        
+        await book.opened;
+
+        rendition = book.renderTo("viewer", { 
+          width: "100%", 
+          height: "100%", 
+          flow: "paginated", 
+          manager: "continuous" 
+        });
+        
+        rendition.on("relocated", (location) => {
+          window.requestAnimationFrame(() => {
+            const currentLocation = rendition.currentLocation();
+            if (currentLocation && currentLocation.start) {
+              const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
+              window.flutter_inappwebview.callHandler('onProgress', currentLocation.start.cfi, pct);
+            }
+          });
+        });
+
+        rendition.hooks.content.register((contents) => {
+          const win = contents.window;
+          const doc = contents.document;
+
+          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+          let node;
+          const nodes =[];
+          while (node = walker.nextNode()) nodes.push(node);
+
+          nodes.forEach(textNode => {
+              if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'span' && textNode.parentNode.classList.contains('lexity-word')) return;
+              if (textNode.parentNode && (textNode.parentNode.nodeName.toLowerCase() === 'script' || textNode.parentNode.nodeName.toLowerCase() === 'style')) return;
+              if (textNode.nodeValue.trim().length === 0) return;
+
+              const regex = /([\\p{L}\\p{M}]+)/gu;
+              if (regex.test(textNode.nodeValue)) {
+                  const span = doc.createElement('span');
+                  span.className = 'lexity-word-wrapper';
+                  const replacement = '<span class="lexity-word unknown" data-word="\$1">\$1</span>';
+                  span.innerHTML = textNode.nodeValue.replace(regex, replacement);
+                  textNode.parentNode.replaceChild(span, textNode);
+              }
+          });
+
+          doc.addEventListener('click', (e) => {
+              const span = e.target.closest('.lexity-word');
+              if (span) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = span.getBoundingClientRect();
+                  const word = span.getAttribute('data-word');
+                  let contextText = span.parentElement.innerText;
+                  if (!contextText || contextText.length < 10) contextText = word; 
+                  window.flutter_inappwebview.callHandler('onWordTap', word, rect.left, rect.top, contextText);
+              } else {
+                  window.flutter_inappwebview.callHandler('onBackgroundTap');
+              }
+          });
+          window.flutter_inappwebview.callHandler('onChapterReady');
+          
+          const paragraphs = doc.querySelectorAll('p');
+          paragraphs.forEach((p) => {
+            if (p.textContent.trim().length < 20) return;
+            const btn = doc.createElement('div');
+            btn.className = 'para-translate-btn';
+            btn.innerHTML = '文'; 
+            btn.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
+            };
+            p.appendChild(btn);
+          });
+          
+          function checkAndReportSelection(win) {
+              if (!win) return;
+              const sel = win.getSelection();
+              if (!sel) return;
+              
+              const text = sel.toString().trim();
+              if (text.length > 0 && text !== window.lastReportedText) {
+                  window.lastReportedText = text;
+                  let contextText = text;
+                  if (sel.rangeCount > 0) {
+                      let container = sel.getRangeAt(0).commonAncestorContainer;
+                      if (container && container.nodeType === 3) container = container.parentNode;
+                      if (container) contextText = container.textContent.trim();
+                  }
+                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
+              } else if (text.length === 0) {
+                  window.lastReportedText = "";
+              }
+          }
+
+          doc.addEventListener('selectionchange', () => {
+              clearTimeout(window.selectionTimeout);
+              window.selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
+          });
+
+          doc.addEventListener('touchend', () => {
+              setTimeout(() => checkAndReportSelection(win), 150);
+          });
+        });
+
+        let touchStartX = 0;
+        rendition.on("touchstart", (e) => { 
+          touchStartX = e.changedTouches[0].screenX; 
+        });
+        
+        rendition.on("touchend", (e) => {
+          const dx = touchStartX - e.changedTouches[0].screenX;
+          if (Math.abs(dx) > 50) {
+            if (dx > 0) rendition.next();
+            else rendition.prev();
+          } 
+        });
+
+        await rendition.display(initialCfi || undefined);
+        window.flutter_inappwebview.callHandler('onReady');
+        
+        await book.ready;
+        await book.locations.generate(1600);
+
+        const loc = rendition.currentLocation();
+        if (loc && loc.start) {
+            const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
+            window.flutter_inappwebview.callHandler('onProgress', loc.start.cfi, pct);
+        }
+
+        const flattenToc = (items, level = 0) => {
+          return items.reduce((acc, item) => {
+            acc.push({ label: item.label, href: item.href, level: level });
+            if (item.subitems && item.subitems.length > 0) {
+              acc.push(...flattenToc(item.subitems, level + 1));
+            }
+            return acc;
+          }, []);
+        };
+        const toc = flattenToc(book.navigation.toc);
+        window.flutter_inappwebview.callHandler('onToc', toc);
+
+      } catch (error) {
+        console.error("EPUB Loading Error: " + error.message);
+      }
+    }
+  </script>
+</body>
+</html>
+""";
 </file>
 
 <file path="lib/ui/screens/drill_screen.dart">
@@ -3606,216 +3680,6 @@ class SimpleHeatmap extends StatelessWidget {
          ],
        ),
      );
-  }
-}
-</file>
-
-<file path="lib/ui/widgets/translation_tooltip.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/srs_provider.dart';
-import '../../providers/vocabulary_provider.dart';
-import '../../services/ai_service.dart';
-import '../../theme/liquid_theme.dart';
-
-class TranslationTooltip extends ConsumerStatefulWidget {
-  final String selectedText;
-  final String contextText;
-  final String sourceLang; 
-  final String targetLang; 
-  final double x;
-  final double y;
-  final VoidCallback onClose;
-
-  const TranslationTooltip({
-    super.key,
-    required this.selectedText,
-    required this.contextText,
-    required this.sourceLang,
-    required this.targetLang,
-    required this.x,
-    required this.y,
-    required this.onClose,
-  });
-
-  @override
-  ConsumerState<TranslationTooltip> createState() => _TranslationTooltipState();
-}
-
-class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
-  bool _isLoading = true;
-  String? _translation;
-  String? _explanation;
-  bool _isAdding = false;
-  bool _isAdded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchTranslation();
-  }
-
-  Future<void> _fetchTranslation() async {
-    try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.contextualTranslate(
-        selectedText: widget.selectedText,
-        context: widget.contextText,
-        sourceLanguage: widget.sourceLang,
-        targetLanguage: widget.targetLang,
-        nativeLanguage: widget.targetLang,
-      );
-      if (mounted) {
-        setState(() {
-          _translation = result['translation'];
-          _explanation = result['explanation'];
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _translation = "Failed to translate";
-        });
-      }
-    }
-  }
-
-  Future<void> _handleAddToDeck() async {
-    setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
-          front: widget.selectedText,
-          back: _translation!,
-          language: widget.sourceLang,
-          explanation: _explanation,
-        );
-
-    if (mounted) {
-      setState(() {
-        _isAdding = false;
-        if (success) {
-          _isAdded = true;
-          // Instantly update vocabulary state locally and remotely
-          ref.read(vocabularyProvider.notifier).updateWordStatus(
-              widget.selectedText, 'learning', widget.sourceLang);
-        }
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final tooltipWidth = 280.0;
-    
-    double left = widget.x - (tooltipWidth / 2);
-    if (left < 16) left = 16;
-    if (left + tooltipWidth > screenWidth - 16) left = screenWidth - tooltipWidth - 16;
-    
-    double top = widget.y + 10;
-    if (top > MediaQuery.of(context).size.height - 200) {
-      top = widget.y - 180;
-    }
-
-    return Positioned(
-      left: left,
-      top: top,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          width: tooltipWidth,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A).withOpacity(0.98),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white24),
-            boxShadow: const[
-              BoxShadow(
-                color: Colors.black54,
-                blurRadius: 20,
-                offset: Offset(0, 10),
-              )
-            ],
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children:[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children:[
-                  Expanded(
-                    child: Text(
-                      widget.selectedText,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: widget.onClose,
-                    child: const Icon(Icons.close, size: 18, color: Colors.white54),
-                  ),
-                ],
-              ),
-              const Divider(color: Colors.white24),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else ...[
-                Text(
-                  _translation ?? "",
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
-                if (_explanation != null) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children:[
-                        const Icon(Icons.lightbulb, size: 14, color: Colors.amber),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _explanation!,
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _isAdded ? Colors.green.withOpacity(0.2) : LiquidTheme.primaryAccent.withOpacity(0.2),
-                      foregroundColor: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
-                    icon: _isAdding 
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Icon(_isAdded ? Icons.check : Icons.add, size: 16),
-                    label: Text(_isAdded ? "Added" : "Add to Deck"),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 </file>
@@ -7300,6 +7164,152 @@ class MainActivity: FlutterActivity() {
 }
 </file>
 
+<file path="lib/models/book.dart">
+import '../utils/constants.dart';
+
+class UserBook {
+  final String id;
+  final String title;
+  final String? author;
+  final String targetLanguage;
+  final String storagePath;
+  final String? coverImageUrl;
+  final String? currentCfi;
+  final double progressPct;
+  final DateTime createdAt;
+  final String? signedUrl;
+
+  UserBook({
+    required this.id,
+    required this.title,
+    this.author,
+    required this.targetLanguage,
+    required this.storagePath,
+    this.coverImageUrl,
+    this.currentCfi,
+    required this.progressPct,
+    required this.createdAt,
+    this.signedUrl,
+  });
+
+  factory UserBook.fromJson(Map<String, dynamic> json) {
+    return UserBook(
+      id: json['id'],
+      title: json['title'] ?? 'Unknown Title',
+      author: json['author'],
+      targetLanguage: json['targetLanguage'] ?? 'spanish',
+      storagePath: json['storagePath'] ?? '',
+      coverImageUrl: json['coverImageUrl'],
+      currentCfi: json['currentCfi'],
+      progressPct: (json['progressPct'] ?? 0).toDouble(),
+      createdAt: DateTime.parse(json['createdAt']),
+      signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true 
+          ? '${AppConstants.baseUrl}${json['signedUrl']}' 
+          : json['signedUrl'],
+    );
+  }
+}
+</file>
+
+<file path="lib/models/journal_entry.dart">
+import '../utils/constants.dart';
+
+class JournalEntry {
+  final String id;
+  final String content;
+  final String title;
+  final DateTime createdAt;
+  final String? audioUrl;
+  final Analysis? analysis;
+  final bool isPending;
+
+  JournalEntry({
+    required this.id,
+    required this.content,
+    required this.title,
+    required this.createdAt,
+    this.audioUrl,
+    this.analysis,
+    this.isPending = false,
+  });
+
+  factory JournalEntry.fromJson(Map<String, dynamic> json) {
+    return JournalEntry(
+      id: json['id'],
+      content: json['content'] ?? '',
+      title: json['topic']?['title'] ?? 'Free Write',
+      createdAt: DateTime.parse(json['createdAt']),
+      audioUrl: (json['audioUrl'] as String?)?.startsWith('/') == true
+          ? '${AppConstants.baseUrl}${json['audioUrl']}'
+          : json['audioUrl'],
+      analysis: json['analysis'] != null ? Analysis.fromJson(json['analysis']) : null,
+    );
+  }
+}
+
+class Analysis {
+  final String id;
+  final int grammarScore;
+  final int phrasingScore;
+  final int vocabScore;
+  final String feedback;
+  final List<Mistake> mistakes;
+
+  Analysis({
+    required this.id,
+    required this.grammarScore,
+    required this.phrasingScore,
+    required this.vocabScore,
+    required this.feedback,
+    required this.mistakes,
+  });
+
+  factory Analysis.fromJson(Map<String, dynamic> json) {
+    // Handle rawAiResponse structure if present, or flat structure
+    String feedbackText = json['feedbackJson'] ?? '';
+    // In some API responses, feedback might be nested or encrypted string on server, 
+    // but client receives decrypted. Assuming standard JSON here.
+    
+    return Analysis(
+      id: json['id'],
+      grammarScore: json['grammarScore'] ?? 0,
+      phrasingScore: json['phrasingScore'] ?? 0,
+      vocabScore: json['vocabScore'] ?? 0,
+      feedback: feedbackText,
+      mistakes: (json['mistakes'] as List? ?? [])
+          .map((m) => Mistake.fromJson(m))
+          .toList(),
+    );
+  }
+}
+
+class Mistake {
+  final String id;
+  final String original;
+  final String corrected;
+  final String explanation;
+  final String type;
+
+  Mistake({
+    required this.id,
+    required this.original,
+    required this.corrected,
+    required this.explanation,
+    required this.type,
+  });
+
+  factory Mistake.fromJson(Map<String, dynamic> json) {
+    return Mistake(
+      id: json['id'],
+      original: json['originalText'] ?? '',
+      corrected: json['correctedText'] ?? '',
+      explanation: json['explanation'] ?? '',
+      type: json['type'] ?? 'grammar',
+    );
+  }
+}
+</file>
+
 <file path="lib/theme/liquid_theme.dart">
 // lib/theme/liquid_theme.dart
 import 'package:flutter/material.dart';
@@ -8290,6 +8300,216 @@ class GlassScaffold extends StatelessWidget {
 }
 </file>
 
+<file path="lib/ui/widgets/translation_tooltip.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/srs_provider.dart';
+import '../../providers/vocabulary_provider.dart';
+import '../../services/ai_service.dart';
+import '../../theme/liquid_theme.dart';
+
+class TranslationTooltip extends ConsumerStatefulWidget {
+  final String selectedText;
+  final String contextText;
+  final String sourceLang; 
+  final String targetLang; 
+  final double x;
+  final double y;
+  final VoidCallback onClose;
+
+  const TranslationTooltip({
+    super.key,
+    required this.selectedText,
+    required this.contextText,
+    required this.sourceLang,
+    required this.targetLang,
+    required this.x,
+    required this.y,
+    required this.onClose,
+  });
+
+  @override
+  ConsumerState<TranslationTooltip> createState() => _TranslationTooltipState();
+}
+
+class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
+  bool _isLoading = true;
+  String? _translation;
+  String? _explanation;
+  bool _isAdding = false;
+  bool _isAdded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTranslation();
+  }
+
+  Future<void> _fetchTranslation() async {
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.contextualTranslate(
+        selectedText: widget.selectedText,
+        context: widget.contextText,
+        sourceLanguage: widget.sourceLang,
+        targetLanguage: widget.targetLang,
+        nativeLanguage: widget.targetLang,
+      );
+      if (mounted) {
+        setState(() {
+          _translation = result['translation'];
+          _explanation = result['explanation'];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _translation = "Failed to translate";
+        });
+      }
+    }
+  }
+
+  Future<void> _handleAddToDeck() async {
+    setState(() => _isAdding = true);
+    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+          front: widget.selectedText,
+          back: _translation!,
+          language: widget.sourceLang,
+          explanation: _explanation,
+        );
+
+    if (mounted) {
+      setState(() {
+        _isAdding = false;
+        if (success) {
+          _isAdded = true;
+          // Instantly update vocabulary state locally and remotely
+          ref.read(vocabularyProvider.notifier).updateWordStatus(
+              widget.selectedText, 'learning', widget.sourceLang);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final tooltipWidth = 280.0;
+    
+    double left = widget.x - (tooltipWidth / 2);
+    if (left < 16) left = 16;
+    if (left + tooltipWidth > screenWidth - 16) left = screenWidth - tooltipWidth - 16;
+    
+    double top = widget.y + 10;
+    if (top > MediaQuery.of(context).size.height - 200) {
+      top = widget.y - 180;
+    }
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: tooltipWidth,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A).withOpacity(0.98),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white24),
+            boxShadow: const[
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 20,
+                offset: Offset(0, 10),
+              )
+            ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children:[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children:[
+                  Expanded(
+                    child: Text(
+                      widget.selectedText,
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: widget.onClose,
+                    child: const Icon(Icons.close, size: 18, color: Colors.white54),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.white24),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                Text(
+                  _translation ?? "",
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                if (_explanation != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children:[
+                        const Icon(Icons.lightbulb, size: 14, color: Colors.amber),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _explanation!,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isAdded ? Colors.green.withOpacity(0.2) : LiquidTheme.primaryAccent.withOpacity(0.2),
+                      foregroundColor: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
+                    icon: _isAdding 
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Icon(_isAdded ? Icons.check : Icons.add, size: 16),
+                    label: Text(_isAdded ? "Added" : "Add to Deck"),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+</file>
+
 <file path="linux/flutter/generated_plugin_registrant.cc">
 //
 //  Generated file. Do not edit.
@@ -8518,8 +8738,12 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
     _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
     try {
       await _service.updateProgress(id, cfi, progressPct);
-      _ref.invalidate(bookDetailProvider(id));
-      _ref.invalidate(booksProvider);
+      
+      Future.microtask(() {
+        _ref.invalidate(bookDetailProvider(id));
+        _ref.invalidate(booksProvider);
+      });
+
       _logger.info('BookNotifier: Progress update successful for $id');
     } catch (e, st) {
       _logger.error('BookNotifier: Progress update failed for $id', e, st);
@@ -11581,397 +11805,6 @@ class UserProfile {
 }
 </file>
 
-<file path="lib/services/book_service.dart">
-import 'dart:convert';
-import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/book.dart';
-import '../utils/constants.dart';
-import 'token_service.dart';
-import 'logger_service.dart';
-
-class BookService {
-  final TokenService _authTokenService;
-  late final LoggerService _logger;
-
-  BookService(this._authTokenService, this._logger);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<List<UserBook>> getBooks() async {
-    _logger.info('BookService: Fetching books list from backend');
-    try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books'),
-        headers: await _getHeaders(),
-      );
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info('BookService: Successfully fetched ${data.length} books');
-        return data.map((e) => UserBook.fromJson(e)).toList();
-      }
-      _logger.error('BookService: Failed to fetch books. Status: ${response.statusCode}');
-      throw Exception('Failed to load books');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in getBooks', e, st);
-      rethrow;
-    }
-  }
-
-  Future<UserBook> getBook(String id) async {
-    _logger.info('BookService: Fetching book details for ID: $id');
-    try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-        headers: await _getHeaders(),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _logger.info('BookService: Successfully fetched details for "${data['title']}"');
-        return UserBook.fromJson(data);
-      }
-      _logger.error('BookService: Failed to fetch book $id. Status: ${response.statusCode}');
-      throw Exception('Failed to load book');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in getBook $id', e, st);
-      rethrow;
-    }
-  }
-
-  Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    _logger.info('BookService: Requesting progress update for $id to $progressPct% ($cfi)');
-    try {
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'currentCfi': cfi, 
-          'progressPct': progressPct,
-        }),
-      );
-      
-      if (response.statusCode == 200) {
-        _logger.info('BookService: Progress update confirmed by server for $id');
-        return;
-      }
-      _logger.warning('BookService: Server rejected progress update for $id. Status: ${response.statusCode}');
-      throw Exception('Failed to update progress on server');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in updateProgress for $id', e, st);
-      rethrow;
-    }
-  }
-
-  Future<void> deleteBook(String id) async {
-    _logger.info('BookService: Requesting deletion of book $id');
-    try {
-      final response = await http.delete(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-        headers: await _getHeaders(),
-      );
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        _logger.info('BookService: Deletion successful for $id');
-        return;
-      }
-      _logger.error('BookService: Failed to delete book $id. Status: ${response.statusCode}');
-      throw Exception('Failed to delete book');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in deleteBook $id', e, st);
-      rethrow;
-    }
-  }
-
-  Future<void> uploadBook(File file, String targetLanguage, String title) async {
-    _logger.info('BookService: Starting EPUB upload sequence for "$title"');
-    try {
-      final filename = file.path.split('/').last;
-      
-      _logger.info('BookService: Requesting signed upload URL for $filename');
-      final uploadUrlResponse = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
-        headers: await _getHeaders(),
-      );
-      
-      if (uploadUrlResponse.statusCode != 200) {
-        _logger.error('BookService: Failed to get upload URL. Status: ${uploadUrlResponse.statusCode}');
-        throw Exception('Failed to get upload URL');
-      }
-      
-      final uploadData = jsonDecode(uploadUrlResponse.body);
-      final signedUrl = uploadData['signedUrl'];
-      final storagePath = uploadData['path'];
-
-      _logger.info('BookService: Uploading binary to storage path: $storagePath');
-      final bytes = await file.readAsBytes();
-      final uploadRes = await http.put(
-        Uri.parse(signedUrl),
-        headers: {'Content-Type': 'application/epub+zip'},
-        body: bytes,
-      );
-
-      if (uploadRes.statusCode != 200) {
-        _logger.error('BookService: Storage upload failed. Status: ${uploadRes.statusCode}');
-        throw Exception('Failed to upload file to storage');
-      }
-
-      _logger.info('BookService: Registering book record in database');
-      final dbRes = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/books'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'title': title,
-          'author': 'Unknown',
-          'targetLanguage': targetLanguage,
-          'storagePath': storagePath,
-        }),
-      );
-
-      if (dbRes.statusCode == 200 || dbRes.statusCode == 201) {
-        _logger.info('BookService: Upload and registration complete for "$title"');
-        return;
-      }
-      _logger.error('BookService: Database registration failed. Status: ${dbRes.statusCode}');
-      throw Exception('Failed to save book to database');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in uploadBook', e, st);
-      rethrow;
-    }
-  }
-}
-
-final bookServiceProvider = Provider((ref) => 
-  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
-);
-</file>
-
-<file path="lib/services/journal_service.dart">
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/token_service.dart';
-import 'logger_service.dart';
-import '../models/journal_entry.dart';
-import '../models/writing_aids.dart';
-import '../utils/constants.dart';
-
-class JournalService {
-  final Ref _ref;
-  final TokenService _authTokenService;
-  late final LoggerService _logger;
-
-  JournalService(this._ref, this._authTokenService) {
-    _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<List<JournalEntry>> getHistory(String targetLanguage) async {
-    _logger.info('JournalService: Fetching history for $targetLanguage');
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/journal?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      return data.map((e) => JournalEntry.fromJson(e)).toList();
-    }
-    throw Exception('Failed to load journal history');
-  }
-
-  Future<JournalEntry> getEntry(String id) async {
-    _logger.info('JournalService: Fetching entry $id');
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      return JournalEntry.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to load entry');
-  }
-
-  // MODIFIED: Accept optional moduleId
-  Future<JournalEntry> createEntry(
-    String content,
-    String title,
-    String targetLanguage, {
-    String? moduleId,
-  }) async {
-    _logger.info('JournalService: Creating entry');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'content': content,
-        'topicTitle': title,
-        'targetLanguage': targetLanguage,
-        'mode': 'free_write',
-        'moduleId': moduleId, // Include moduleId if present
-      }),
-    );
-
-    if (response.statusCode == 201) {
-      return JournalEntry.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to create entry');
-  }
-
-  Future<void> updateEntry(String id, String content, String title) async {
-     _logger.info('JournalService: Updating entry $id');
-     final response = await http.put(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-       headers: await _getHeaders(),
-       body: jsonEncode({
-         'content': content,
-        'topicId':
-            title, // Note: Web API might expect ID, but here we pass title/ID logic based on your implementation
-       })
-     );
-      if (response.statusCode != 200) throw Exception('Failed to update entry');
-  }
-
-  // NEW METHODS FOR AUDIO UPLOAD
-  Future<void> _uploadFileToSupabase(String signedUrl, File file) async {
-    final bytes = await file.readAsBytes();
-    // Using simple PUT as required by Supabase Storage signed URLs
-    final response = await http.put(
-      Uri.parse(signedUrl),
-      headers: {'Content-Type': 'audio/webm'}, // Adjust mime type as needed
-      body: bytes,
-    );
-    if (response.statusCode != 200) throw Exception('Failed to upload file');
-  }
-
-  Future<JournalEntry> createAudioEntry(
-    String filePath,
-    String targetLanguage, {
-    String? moduleId,
-  }) async {
-    _logger.info('JournalService: Starting audio journal creation');
-
-    final file = File(filePath);
-    final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.webm';
-
-    // 1. Get Signed URL
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/journal/generate-upload-url?filename=$filename',
-      ),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode != 200) {
-      throw Exception('Failed to generate upload URL');
-    }
-    final data = jsonDecode(response.body);
-    final signedUrl = data['signedUrl'];
-    final storagePath = data['path'];
-
-    // 2. Upload Binary
-    await _uploadFileToSupabase(signedUrl, file);
-
-    // 3. Create Journal Record
-    final createResponse = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/audio'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'path': storagePath,
-        'targetLanguage': targetLanguage,
-        'moduleId': moduleId,
-        'aidsUsage': [],
-      }),
-    );
-
-    if (createResponse.statusCode == 201) {
-      return JournalEntry.fromJson(jsonDecode(createResponse.body));
-    }
-    throw Exception('Failed to create audio journal record');
-  }
-
-  Future<void> deleteEntry(String id) async {
-    _logger.info('JournalService: Deleting entry $id');
-    final response = await http.delete(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Failed to delete entry');
-    }
-  }
-
-  Future<void> analyzeEntry(String id) async {
-    _logger.info('JournalService: Starting analysis for $id');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/analyze'),
-      headers: await _getHeaders(),
-      body: jsonEncode({'journalId': id}),
-    );
-    if (response.statusCode != 200) throw Exception('Failed to start analysis');
-  }
-
-  Future<List<String>> getSuggestedTopics(String targetLanguage) async {
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/user/suggested-topics?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
-    );
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return List<String>.from(data['topics'] ?? []);
-    }
-    return [];
-  }
-  
-  Future<void> generateTopics(String targetLanguage) async {
-     await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/user/generate-topics?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
-    );
-  }
-
-  Future<WritingAids> getWritingAids(
-    String topic,
-    String targetLanguage,
-  ) async {
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/helpers'),
-      headers: await _getHeaders(),
-      body: jsonEncode({'topic': topic, 'targetLanguage': targetLanguage}),
-    );
-
-    if (response.statusCode == 200) {
-      return WritingAids.fromJson(jsonDecode(response.body));
-    }
-    throw Exception('Failed to load writing aids');
-  }
-}
-
-final journalServiceProvider = Provider((ref) => JournalService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
-</file>
-
 <file path="lib/services/srs_service.dart">
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -12861,6 +12694,405 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
 });
 </file>
 
+<file path="lib/services/book_service.dart">
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/book.dart';
+import '../utils/constants.dart';
+import 'token_service.dart';
+import 'logger_service.dart';
+
+class BookService {
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  BookService(this._authTokenService, this._logger);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<UserBook>> getBooks() async {
+    _logger.info('BookService: Fetching books list from backend');
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/books'),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info('BookService: Successfully fetched ${data.length} books');
+        return data.map((e) => UserBook.fromJson(e)).toList();
+      }
+      _logger.error('BookService: Failed to fetch books. Status: ${response.statusCode}');
+      throw Exception('Failed to load books');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in getBooks', e, st);
+      rethrow;
+    }
+  }
+
+  Future<UserBook> getBook(String id) async {
+    _logger.info('BookService: Fetching book details for ID: $id');
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _logger.info('BookService: Successfully fetched details for "${data['title']}"');
+        return UserBook.fromJson(data);
+      }
+      _logger.error('BookService: Failed to fetch book $id. Status: ${response.statusCode}');
+      throw Exception('Failed to load book');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in getBook $id', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    _logger.info('BookService: Requesting progress update for $id to $progressPct% ($cfi)');
+    try {
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'currentCfi': cfi, 
+          'progressPct': progressPct,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        _logger.info('BookService: Progress update confirmed by server for $id');
+        return;
+      }
+      _logger.warning('BookService: Server rejected progress update for $id. Status: ${response.statusCode}');
+      throw Exception('Failed to update progress on server');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in updateProgress for $id', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> deleteBook(String id) async {
+    _logger.info('BookService: Requesting deletion of book $id');
+    try {
+      final response = await http.delete(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+        headers: await _getHeaders(),
+      );
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        _logger.info('BookService: Deletion successful for $id');
+        return;
+      }
+      _logger.error('BookService: Failed to delete book $id. Status: ${response.statusCode}');
+      throw Exception('Failed to delete book');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in deleteBook $id', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> uploadBook(File file, String targetLanguage, String title) async {
+    _logger.info('BookService: Starting EPUB upload sequence for "$title"');
+    try {
+      final filename = file.path.split('/').last;
+      
+      _logger.info('BookService: Requesting signed upload URL for $filename');
+      final uploadUrlResponse = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
+        headers: await _getHeaders(),
+      );
+      
+      if (uploadUrlResponse.statusCode != 200) {
+        _logger.error('BookService: Failed to get upload URL. Status: ${uploadUrlResponse.statusCode}');
+        throw Exception('Failed to get upload URL');
+      }
+      
+      final uploadData = jsonDecode(uploadUrlResponse.body);
+      var signedUrl = uploadData['signedUrl'] as String;
+      final storagePath = uploadData['path'];
+
+      if (signedUrl.startsWith('/')) {
+        signedUrl = '${AppConstants.baseUrl}$signedUrl';
+      }
+
+      _logger.info('BookService: Uploading binary to storage path: $storagePath');
+      final bytes = await file.readAsBytes();
+      final uploadRes = await http.put(
+        Uri.parse(signedUrl),
+        headers: {'Content-Type': 'application/epub+zip'},
+        body: bytes,
+      );
+
+      if (uploadRes.statusCode != 200) {
+        _logger.error('BookService: Storage upload failed. Status: ${uploadRes.statusCode}');
+        throw Exception('Failed to upload file to storage');
+      }
+
+      _logger.info('BookService: Registering book record in database');
+      final dbRes = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/books'),
+        headers: await _getHeaders(),
+        body: jsonEncode({
+          'title': title,
+          'author': 'Unknown',
+          'targetLanguage': targetLanguage,
+          'storagePath': storagePath,
+        }),
+      );
+
+      if (dbRes.statusCode == 200 || dbRes.statusCode == 201) {
+        _logger.info('BookService: Upload and registration complete for "$title"');
+        return;
+      }
+      _logger.error('BookService: Database registration failed. Status: ${dbRes.statusCode}');
+      throw Exception('Failed to save book to database');
+    } catch (e, st) {
+      _logger.error('BookService: Exception in uploadBook', e, st);
+      rethrow;
+    }
+  }
+}
+
+final bookServiceProvider = Provider((ref) => 
+  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
+);
+</file>
+
+<file path="lib/services/journal_service.dart">
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
+import 'logger_service.dart';
+import '../models/journal_entry.dart';
+import '../models/writing_aids.dart';
+import '../utils/constants.dart';
+
+class JournalService {
+  final Ref _ref;
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  JournalService(this._ref, this._authTokenService) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<List<JournalEntry>> getHistory(String targetLanguage) async {
+    _logger.info('JournalService: Fetching history for $targetLanguage');
+    final response = await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/journal?targetLanguage=$targetLanguage',
+      ),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final List data = jsonDecode(response.body);
+      return data.map((e) => JournalEntry.fromJson(e)).toList();
+    }
+    throw Exception('Failed to load journal history');
+  }
+
+  Future<JournalEntry> getEntry(String id) async {
+    _logger.info('JournalService: Fetching entry $id');
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      return JournalEntry.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load entry');
+  }
+
+  // MODIFIED: Accept optional moduleId
+  Future<JournalEntry> createEntry(
+    String content,
+    String title,
+    String targetLanguage, {
+    String? moduleId,
+  }) async {
+    _logger.info('JournalService: Creating entry');
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'content': content,
+        'topicTitle': title,
+        'targetLanguage': targetLanguage,
+        'mode': 'free_write',
+        'moduleId': moduleId, // Include moduleId if present
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return JournalEntry.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to create entry');
+  }
+
+  Future<void> updateEntry(String id, String content, String title) async {
+     _logger.info('JournalService: Updating entry $id');
+     final response = await http.put(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
+       headers: await _getHeaders(),
+       body: jsonEncode({
+         'content': content,
+        'topicId':
+            title, // Note: Web API might expect ID, but here we pass title/ID logic based on your implementation
+       })
+     );
+      if (response.statusCode != 200) throw Exception('Failed to update entry');
+  }
+
+  // NEW METHODS FOR AUDIO UPLOAD
+  Future<void> _uploadFileToSupabase(String signedUrl, File file) async {
+    final bytes = await file.readAsBytes();
+    // Using simple PUT as required by Supabase Storage signed URLs
+    final response = await http.put(
+      Uri.parse(signedUrl),
+      headers: {'Content-Type': 'audio/webm'}, // Adjust mime type as needed
+      body: bytes,
+    );
+    if (response.statusCode != 200) throw Exception('Failed to upload file');
+  }
+
+  Future<JournalEntry> createAudioEntry(
+    String filePath,
+    String targetLanguage, {
+    String? moduleId,
+  }) async {
+    _logger.info('JournalService: Starting audio journal creation');
+
+    final file = File(filePath);
+    final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.webm';
+
+    // 1. Get Signed URL
+    final response = await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/journal/generate-upload-url?filename=$filename',
+      ),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to generate upload URL');
+    }
+    final data = jsonDecode(response.body);
+    var signedUrl = data['signedUrl'] as String;
+    final storagePath = data['path'];
+
+    if (signedUrl.startsWith('/')) {
+      signedUrl = '${AppConstants.baseUrl}$signedUrl';
+    }
+
+    // 2. Upload Binary
+    await _uploadFileToSupabase(signedUrl, file);
+
+    // 3. Create Journal Record
+    final createResponse = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/audio'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'path': storagePath,
+        'targetLanguage': targetLanguage,
+        'moduleId': moduleId,
+        'aidsUsage': [],
+      }),
+    );
+
+    if (createResponse.statusCode == 201) {
+      return JournalEntry.fromJson(jsonDecode(createResponse.body));
+    }
+    throw Exception('Failed to create audio journal record');
+  }
+
+  Future<void> deleteEntry(String id) async {
+    _logger.info('JournalService: Deleting entry $id');
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete entry');
+    }
+  }
+
+  Future<void> analyzeEntry(String id) async {
+    _logger.info('JournalService: Starting analysis for $id');
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/analyze'),
+      headers: await _getHeaders(),
+      body: jsonEncode({'journalId': id}),
+    );
+    if (response.statusCode != 200) throw Exception('Failed to start analysis');
+  }
+
+  Future<List<String>> getSuggestedTopics(String targetLanguage) async {
+    final response = await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/user/suggested-topics?targetLanguage=$targetLanguage',
+      ),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return List<String>.from(data['topics'] ?? []);
+    }
+    return [];
+  }
+  
+  Future<void> generateTopics(String targetLanguage) async {
+     await http.get(
+      Uri.parse(
+        '${AppConstants.baseUrl}/api/user/generate-topics?targetLanguage=$targetLanguage',
+      ),
+      headers: await _getHeaders(),
+    );
+  }
+
+  Future<WritingAids> getWritingAids(
+    String topic,
+    String targetLanguage,
+  ) async {
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/journal/helpers'),
+      headers: await _getHeaders(),
+      body: jsonEncode({'topic': topic, 'targetLanguage': targetLanguage}),
+    );
+
+    if (response.statusCode == 200) {
+      return WritingAids.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to load writing aids');
+  }
+}
+
+final journalServiceProvider = Provider((ref) => JournalService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
+</file>
+
 <file path="lib/ui/screens/module_detail_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13394,988 +13626,6 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-</file>
-
-<file path="lib/ui/screens/book_reader_screen.dart">
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter/foundation.dart';
-import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:lexity_mobile/providers/srs_provider.dart';
-import '../../models/book.dart';
-import '../../providers/book_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/vocabulary_provider.dart';
-import '../../services/logger_service.dart';
-import '../../theme/liquid_theme.dart';
-import '../../services/ai_service.dart';
-import '../../ui/widgets/translation_tooltip.dart';
-
-class BookReaderScreen extends ConsumerStatefulWidget {
-  final String bookId;
-  const BookReaderScreen({super.key, required this.bookId});
-
-  @override
-  ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
-}
-
-class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
-  InAppWebViewController? webViewController;
-  double _progress = 0.0;
-  double _fontSize = 115.0;
-  String _theme = 'dark'; // 'light', 'dark', 'sepia'
-  String? _lastCfi;
-  List<dynamic> _toc = [];
-
-  bool _isDownloading = false;
-  double _downloadProgress = 0.0;
-  bool _localFileReady = false;
-
-  Timer? _progressDebounce;
-  HttpServer? _localServer;
-  int? _localPort;
-
-  bool _isInitialized = false;
-  
-  // Flag to prevent early '0%' percentage reports from overwriting DB progress
-  bool _canSaveToBackend = false;
-
-  // NEW VARIABLES FOR WORD TOOLTIP
-  bool _showTooltip = false;
-  String _tooltipWord = '';
-  String _tooltipContext = '';
-  double _tooltipX = 0;
-  double _tooltipY = 0;
-
-  void _updateReaderStyles() {
-    final logger = ref.read(loggerProvider);
-    logger.debug('BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)');
-    
-    final colors = {
-      'light': {'bg': '#ffffff', 'fg': '#000000'},
-      'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
-      'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
-    }[_theme]!;
-
-    final js = """
-      if (typeof rendition !== 'undefined' && rendition) {
-        rendition.themes.fontSize("$_fontSize%");
-        rendition.themes.register("$_theme", {
-          "body": { 
-            "background": "${colors['bg']} !important", 
-            "color": "${colors['fg']} !important"
-          },
-          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
-          "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
-        });
-        rendition.themes.select("$_theme");
-        
-        rendition.getContents().forEach(c => {
-          c.addStylesheetRules({
-            "body": {
-              "background-color": "${colors['bg']} !important",
-              "color": "${colors['fg']} !important",
-              "font-size": "$_fontSize% !important"
-            },
-            "p": {
-              "position": "relative !important",
-              "padding-right": "45px !important",
-              "margin-bottom": "1.5em !important",
-              "color": "${colors['fg']} !important"
-            },
-            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
-              "color": "${colors['fg']} !important",
-              "background": "transparent !important"
-            },
-            // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
-            ".lexity-word": { "cursor": "pointer", "transition": "background-color 0.2s" },
-            ".lexity-word.unknown": { "border-bottom": "1px dotted rgba(150, 150, 150, 0.5)" },
-            ".lexity-word.learning": { "background-color": "rgba(99, 102, 241, 0.3)", "border-bottom": "2px solid #6366F1" },
-            ".lexity-word.known": { "color": "inherit", "border-bottom": "none", "background-color": "transparent" },
-            // END NEW CSS
-            ".para-translate-btn": {
-              "position": "absolute",
-              "right": "0px",
-              "top": "0px",
-              "width": "32px",
-              "height": "32px",
-              "border-radius": "8px",
-              "background": "rgba(99, 102, 241, 0.15)",
-              "border": "1px solid rgba(255, 255, 255, 0.1)",
-              "color": "#6366F1",
-              "display": "flex",
-              "align-items": "center",
-              "justify-content": "center",
-              "cursor": "pointer",
-              "font-size": "16px",
-              "user-select": "none",
-              "-webkit-user-select": "none",
-              "opacity": "0.6",
-              "transition": "opacity 0.2s",
-              "z-index": "10"
-            },
-            ".para-translate-btn:active": {
-              "opacity": "1.0",
-              "transform": "scale(0.95)"
-            },
-            "::selection": {
-              "background-color": "rgba(99, 102, 241, 0.3) !important",
-              "text-decoration": "underline !important",
-              "text-decoration-color": "#6366F1 !important",
-              "color": "inherit !important"
-            }
-          });
-        });
-      }
-    """;
-    webViewController?.evaluateJavascript(source: js);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _startLocalServer();
-  }
-
-  Future<void> _startLocalServer() async {
-    final logger = ref.read(loggerProvider);
-    logger.info('BookReader: Initializing local file server');
-    try {
-      _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      if (mounted) {
-        setState(() => _localPort = _localServer!.port);
-        logger.info('BookReader: Local server bound to port $_localPort');
-      }
-      
-      _localServer!.listen((HttpRequest request) async {
-        request.response.headers.add('Access-Control-Allow-Origin', '*');
-        request.response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        request.response.headers.add('Access-Control-Allow-Headers', '*');
-        
-        if (request.method == 'OPTIONS') {
-           request.response.statusCode = 200;
-           await request.response.close();
-           return;
-        }
-        if (request.uri.path.startsWith('/books/')) {
-           final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
-           final dir = await getApplicationDocumentsDirectory();
-           final file = File('${dir.path}/books/$bookId.epub');
-           
-           if (await file.exists()) {
-             logger.debug('BookReader: Serving local EPUB file for $bookId');
-             final length = await file.length();
-             request.response.contentLength = length;
-             request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
-             await request.response.addStream(file.openRead());
-             await request.response.close();
-             return;
-           }
-        }
-        request.response.statusCode = 404;
-        await request.response.close();
-      });
-    } catch (e, st) {
-      logger.error('BookReader: Local server startup error', e, st);
-    }
-  }
-
-  Future<void> _ensureBookDownloaded(UserBook book) async {
-    final logger = ref.read(loggerProvider);
-    if (_isDownloading || _localFileReady) return;
-    
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final booksDir = Directory('${dir.path}/books');
-      if (!await booksDir.exists()) await booksDir.create(recursive: true);
-
-      final file = File('${booksDir.path}/${book.id}.epub');
-      if (await file.exists()) {
-        logger.info('BookReader: Book "${book.title}" found locally');
-        if (mounted) setState(() => _localFileReady = true);
-        return;
-      }
-
-      logger.info('BookReader: Book not found locally, starting download for "${book.title}"');
-      if (book.signedUrl == null) {
-        logger.error('BookReader: Missing signedUrl for book ${book.id}');
-        throw Exception("No download URL provided");
-      }
-
-      setState(() {
-        _isDownloading = true;
-        _downloadProgress = 0.0;
-      });
-
-      final request = http.Request('GET', Uri.parse(book.signedUrl!));
-      final response = await request.send();
-      final total = response.contentLength ?? 0;
-      int received = 0;
-      final bytes = <int>[];
-
-      response.stream.listen(
-        (chunk) {
-          bytes.addAll(chunk);
-          received += chunk.length;
-          if (total > 0 && mounted) setState(() => _downloadProgress = received / total);
-        },
-        onDone: () async {
-          await file.writeAsBytes(bytes);
-          logger.info('BookReader: Download complete for "${book.title}"');
-          if (mounted) {
-            setState(() {
-              _isDownloading = false;
-              _localFileReady = true;
-            });
-          }
-        },
-        onError: (e, st) {
-          logger.error('BookReader: Download stream error', e, st);
-          if (mounted) setState(() => _isDownloading = false);
-        },
-      );
-    } catch (e, st) {
-      logger.error('BookReader: Download setup failed', e, st);
-      if (mounted) setState(() => _isDownloading = false);
-    }
-  }
-
-  final String _htmlTemplate = """
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
-    <style>
-      html, body { 
-        margin: 0; padding: 0; width: 100%; height: 100%; 
-        background-color: #121212;
-      }
-      #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-      mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
-    </style>
-  </head>
-  <body>
-    <div id="viewer"></div>
-    <script>
-      let book;
-      let rendition;
-      window.lastReportedText = "";
-
-      // NEW JS BRIDGE FUNCTIONS
-      window.applyVocabStyles = function(vocabMapJson) {
-        if (!rendition) return;
-        const vocabMap = JSON.parse(vocabMapJson);
-        rendition.getContents().forEach(content => {
-            const spans = content.document.querySelectorAll('.lexity-word');
-            spans.forEach(span => {
-                const dataWord = span.getAttribute('data-word');
-                if (!dataWord) return;
-                const word = dataWord.toLowerCase();
-                const status = vocabMap[word] || 'unknown';
-                span.className = 'lexity-word ' + status;
-            });
-        });
-      };
-
-      window.getVisibleUnknownWords = function() {
-        if (!rendition) return [];
-        const visible =[];
-        rendition.getContents().forEach(content => {
-            const win = content.window;
-            const spans = content.document.querySelectorAll('.lexity-word.unknown');
-            spans.forEach(span => {
-                const rect = span.getBoundingClientRect();
-                if (rect.top >= 0 && rect.left >= 0 && Math.floor(rect.bottom) <= win.innerHeight && Math.floor(rect.right) <= win.innerWidth) {
-                    visible.push(span.getAttribute('data-word').toLowerCase());
-                }
-            });
-        });
-        return Array.from(new Set(visible));
-      };
-      // END NEW JS BRIDGE FUNCTIONS
-
-      async function loadBook(url, initialCfi) {
-        try {
-          console.log("BookReader JS: Starting ePub initialization");
-          book = ePub(url);
-          
-          await book.opened;
-
-          rendition = book.renderTo("viewer", { 
-            width: "100%", 
-            height: "100%", 
-            flow: "paginated", 
-            manager: "continuous" 
-          });
-          
-          rendition.on("relocated", (location) => {
-            const pct = location.start.percentage ? Math.round(location.start.percentage * 100) : 0;
-            window.flutter_inappwebview.callHandler('onProgress', location.start.cfi, pct);
-          });
-
-          function checkAndReportSelection(win) {
-              if (!win) return;
-              const sel = win.getSelection();
-              if (!sel) return;
-              
-              const text = sel.toString().trim();
-              if (text.length > 0 && text !== window.lastReportedText) {
-                  window.lastReportedText = text;
-                  let contextText = text;
-                  if (sel.rangeCount > 0) {
-                      let container = sel.getRangeAt(0).commonAncestorContainer;
-                      if (container && container.nodeType === 3) container = container.parentNode;
-                      if (container) contextText = container.textContent.trim();
-                  }
-                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
-              } else if (text.length === 0) {
-                  window.lastReportedText = "";
-              }
-          }
-
-          rendition.hooks.content.register((contents) => {
-            const win = contents.window;
-            const doc = contents.document;
-
-            // NEW: WRAP WORDS LOGIC
-            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-            let node;
-            const nodes =[];
-            while (node = walker.nextNode()) nodes.push(node);
-
-            nodes.forEach(textNode => {
-                if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'span' && textNode.parentNode.classList.contains('lexity-word')) return;
-                if (textNode.parentNode && (textNode.parentNode.nodeName.toLowerCase() === 'script' || textNode.parentNode.nodeName.toLowerCase() === 'style')) return;
-                if (textNode.nodeValue.trim().length === 0) return;
-
-                const regex = /([\\p{L}\\p{M}]+)/gu;
-                if (regex.test(textNode.nodeValue)) {
-                    const span = doc.createElement('span');
-                    span.className = 'lexity-word-wrapper';
-                    const replacement = '<span class="lexity-word unknown" data-word="\$1">\$1</span>';
-                    span.innerHTML = textNode.nodeValue.replace(regex, replacement);
-                    textNode.parentNode.replaceChild(span, textNode);
-                }
-            });
-
-            // NEW: TAP LISTENER
-            doc.addEventListener('click', (e) => {
-                const span = e.target.closest('.lexity-word');
-                if (span) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const rect = span.getBoundingClientRect();
-                    const word = span.getAttribute('data-word');
-                    let contextText = span.parentElement.innerText;
-                    if (!contextText || contextText.length < 10) contextText = word; 
-                    window.flutter_inappwebview.callHandler('onWordTap', word, rect.left, rect.top, contextText);
-                } else {
-                    window.flutter_inappwebview.callHandler('onBackgroundTap');
-                }
-            });
-            // Let Flutter know chapter is ready to style
-            window.flutter_inappwebview.callHandler('onChapterReady');
-            
-            const paragraphs = doc.querySelectorAll('p');
-            paragraphs.forEach((p) => {
-              if (p.textContent.trim().length < 20) return;
-              if (p.querySelector('.para-translate-btn')) return;
-
-              const btn = doc.createElement('div');
-              btn.className = 'para-translate-btn';
-              btn.innerHTML = '文'; 
-              btn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
-              };
-              p.appendChild(btn);
-            });
-
-            doc.addEventListener('selectionchange', () => {
-              clearTimeout(window.selectionTimeout);
-              window.selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
-            });
-
-            doc.addEventListener('touchend', () => {
-              setTimeout(() => checkAndReportSelection(win), 150);
-            });
-          });
-
-          let touchStartX = 0;
-          rendition.on("touchstart", (e) => { 
-            touchStartX = e.changedTouches[0].screenX; 
-          });
-          
-          rendition.on("touchend", (e) => {
-            const dx = touchStartX - e.changedTouches[0].screenX;
-            if (Math.abs(dx) > 50) {
-              if (dx > 0) rendition.next();
-              else rendition.prev();
-            } 
-          });
-
-          await rendition.display(initialCfi || undefined);
-          window.flutter_inappwebview.callHandler('onReady');
-          
-          await book.ready;
-          await book.locations.generate(1600);
-
-          const loc = rendition.currentLocation();
-          if (loc && loc.start) {
-              const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
-              window.flutter_inappwebview.callHandler('onProgress', loc.start.cfi, pct);
-          }
-
-          const flattenToc = (items, level = 0) => {
-            return items.reduce((acc, item) => {
-              acc.push({ label: item.label, href: item.href, level: level });
-              if (item.subitems && item.subitems.length > 0) {
-                acc.push(...flattenToc(item.subitems, level + 1));
-              }
-              return acc;
-            }, []);
-          };
-          const toc = flattenToc(book.navigation.toc);
-          window.flutter_inappwebview.callHandler('onToc', toc);
-
-        } catch (error) {
-          console.error("EPUB Loading Error: " + error.message);
-        }
-      }
-    </script>
-  </body>
-  </html>
-  """;
-
-  Future<void> _handleImmediateSave() async {
-    final logger = ref.read(loggerProvider);
-    if (_lastCfi != null && mounted) {
-      logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
-      await ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
-    final profileAsync = ref.watch(userProfileProvider);
-    final logger = ref.read(loggerProvider);
-
-    bookAsync.whenData((book) {
-      if (!_isInitialized) {
-          logger.info('BookReader: Initializing state. Saved CFI: ${book.currentCfi}');
-          _isInitialized = true;
-          setState(() {
-            _progress = book.progressPct;
-            _lastCfi = book.currentCfi;
-          });
-          _ensureBookDownloaded(book);
-      }
-    });
-
-    // NEW: RIVERPOD LISTENER TO PUSH STATE CHANGES TO JS
-    ref.listen(vocabularyProvider, (previous, next) {
-      next.whenData((vocabMap) {
-        final jsonStr = jsonEncode(vocabMap);
-        final jsString = jsonEncode(jsonStr);
-        webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
-      });
-    });
-
-    return PopScope(
-      onPopInvokedWithResult: (didPop, result) async {
-          if (didPop) {
-             _handleImmediateSave();
-          }
-      },
-      child: Scaffold(
-        backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () {
-            context.pop();
-          }),
-          title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
-          actions: [
-            // NEW: MARK PAGE KNOWN BUTTON
-            IconButton(
-              icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
-              onPressed: () async {
-                final book = bookAsync.value;
-                if (book == null) return;
-                final wordsObj = await webViewController?.evaluateJavascript(source: "window.getVisibleUnknownWords();");
-                if (wordsObj != null && wordsObj is List) {
-                   final words = wordsObj.map((e) => e.toString()).toList();
-                   if (words.isNotEmpty) {
-                       ref.read(vocabularyProvider.notifier).markBatchKnown(words, book.targetLanguage);
-                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Marked ${words.length} words as known")));
-                   } else {
-                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No unknown words on this page.")));
-                   }
-                }
-              },
-            ),
-            if (_toc.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.list),
-                onPressed: () => _showChapterBrowser(context),
-              ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () => _showSettings(context),
-            ),
-          ],
-        ),
-        body: Stack(
-          children: [
-            bookAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, st) {
-                logger.error('BookReader: Failed to load data', e, st);
-                return Center(child: Text("Error: $e"));
-              },
-              data: (book) {
-                if (_isDownloading) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children:[
-                        const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
-                        const SizedBox(height: 16),
-                        Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
-                      ]
-                    )
-                  );
-                }
-        
-                if (!_localFileReady || _localPort == null) {
-                  return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
-                }
-        
-                return InAppWebView(
-              initialData: InAppWebViewInitialData(
-                data: _htmlTemplate, 
-                baseUrl: WebUri("http://127.0.0.1:$_localPort/")
-              ),
-              initialSettings: InAppWebViewSettings(
-                javaScriptEnabled: true,
-                isInspectable: kDebugMode,
-                allowUniversalAccessFromFileURLs: true,
-                allowFileAccessFromFileURLs: true,
-                mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-              ),
-              onWebViewCreated: (controller) {
-                webViewController = controller;
-                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
-                  final cfi = args[0] as String;
-                  final pct = (args[1] as num).toDouble();
-                  
-                  if (mounted) {
-                    setState(() {
-                      if (pct > 0) _progress = pct;
-                      _lastCfi = cfi;
-                    });
-                  }
-
-                  if (!_canSaveToBackend && pct <= 0) {
-                      return;
-                  }
-
-                  _progressDebounce?.cancel();
-                  _progressDebounce = Timer(const Duration(milliseconds: 1500), () {
-                    if (mounted) {
-                      ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
-                    }
-                  });
-
-                  _updateReaderStyles();
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
-                  final tocData = args[0] as List<dynamic>;
-                  if (mounted) setState(() => _toc = tocData);
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onParagraphTranslate', callback: (args) {
-                  final text = args[0].toString();
-                  _showTranslationSheet(
-                    context, 
-                    selectedText: text, 
-                    contextText: text, 
-                    sourceLang: book.targetLanguage, 
-                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
-                  );
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
-                  Future.delayed(const Duration(milliseconds: 2000), () {
-                    if (mounted) setState(() => _canSaveToBackend = true);
-                  });
-
-                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage);
-                  ref.read(vocabularyProvider.notifier).loadVocabulary(book.targetLanguage);
-                  _updateReaderStyles();
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onWordTap', callback: (args) {
-                  final word = args[0] as String;
-                  final x = (args[1] as num).toDouble();
-                  final y = (args[2] as num).toDouble();
-                  final contextText = args[3] as String;
-                  if (mounted) {
-                    setState(() {
-                      _tooltipWord = word;
-                      _tooltipX = x;
-                      _tooltipY = y;
-                      _tooltipContext = contextText;
-                      _showTooltip = true;
-                    });
-                  }
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onBackgroundTap', callback: (_) {
-                  if (_showTooltip && mounted) setState(() => _showTooltip = false);
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onChapterReady', callback: (_) {
-                  final vocabMap = ref.read(vocabularyProvider).value ?? {};
-                  final jsonStr = jsonEncode(vocabMap);
-                  final jsString = jsonEncode(jsonStr);
-                  webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                  _showTranslationSheet(
-                    context, 
-                    selectedText: args[0].toString(), 
-                    contextText: args[1].toString(), 
-                    sourceLang: book.targetLanguage, 
-                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
-                  );
-                });
-              },
-              onLoadStop: (controller, _) async {
-                if (_localPort != null) {
-                   final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
-                   final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
-                   await controller.evaluateJavascript(source: jsCall);
-                }
-              },
-            );
-         },
-        ),
-        
-            // NEW: TOOLTIP OVERLAY
-            if (_showTooltip)
-              TranslationTooltip(
-                selectedText: _tooltipWord,
-                contextText: _tooltipContext,
-                sourceLang: bookAsync.value?.targetLanguage ?? 'spanish',
-                targetLang: profileAsync.value?.nativeLanguage ?? 'english',
-                x: _tooltipX,
-                y: _tooltipY,
-                onClose: () => setState(() => _showTooltip = false),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showChapterBrowser(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.4,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text("Table of Contents", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            const Divider(color: Colors.white10),
-            Expanded(
-              child: ListView.separated(
-                controller: scrollController,
-                itemCount: _toc.length,
-                separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
-                itemBuilder: (context, index) {
-                  final chapter = _toc[index];
-                  final int level = chapter['level'] ?? 0;
-                  
-                  return ListTile(
-                    contentPadding: EdgeInsets.only(left: 16.0 + (level * 16.0), right: 16.0),
-                    title: Text(
-                      chapter['label'].toString().trim(), 
-                      style: TextStyle(
-                        color: level == 0 ? Colors.white : Colors.white70,
-                        fontWeight: level == 0 ? FontWeight.bold : FontWeight.normal,
-                        fontSize: level == 0 ? 15 : 14,
-                      )
-                    ),
-                    trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
-                    onTap: () {
-                      final href = chapter['href'].toString();
-                      webViewController?.evaluateJavascript(source: "rendition.display('${href}');");
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSettings(BuildContext context) {
-    final logger = ref.read(loggerProvider);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
-                  onTap: () { 
-                    setState(() => _theme = t); 
-                    setModalState((){}); 
-                    _updateReaderStyles(); 
-                  },
-                  child: Container(
-                    width: 60, height: 60,
-                    decoration: BoxDecoration(
-                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
-                    ),
-                  ),
-                )).toList(),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  const Icon(Icons.text_fields, size: 16),
-                  Expanded(
-                    child: Slider(
-                      value: _fontSize, min: 80, max: 200,
-                      onChanged: (v) { 
-                        setState(() => _fontSize = v); 
-                        setModalState((){}); 
-                      },
-                      onChangeEnd: (v) {
-                        _updateReaderStyles();
-                      },
-                    ),
-                  ),
-                  const Icon(Icons.text_fields, size: 24),
-                ],
-              )
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => _TranslationBottomSheet(
-        selectedText: selectedText,
-        contextText: contextText,
-        sourceLang: sourceLang,
-        targetLang: nativeLang,
-      ),
-    );
-
-    webViewController?.evaluateJavascript(source: """
-      if (typeof rendition !== 'undefined' && rendition) {
-        rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
-        window.lastReportedText = "";
-      }
-    """);
-  }
-}
-
-class _TranslationBottomSheet extends ConsumerStatefulWidget {
-  final String selectedText;
-  final String contextText;
-  final String sourceLang;
-  final String targetLang;
-
-  const _TranslationBottomSheet({
-    required this.selectedText,
-    required this.contextText,
-    required this.sourceLang,
-    required this.targetLang,
-  });
-
-  @override
-  ConsumerState<_TranslationBottomSheet> createState() => _TranslationBottomSheetState();
-}
-
-class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet> {
-  bool _isLoadingFast = true;
-  bool _isLoadingContext = false;
-  String? _fastTranslation;
-  String? _contextualTranslation;
-  String? _explanation;
-  bool _isAdding = false;
-  bool _isAdded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchFastTranslation();
-  }
-
-  Future<void> _fetchFastTranslation() async {
-    final logger = ref.read(loggerProvider);
-    try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
-      if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
-    } catch (e, st) {
-      logger.error('BookReader: Fast translation failed', e, st);
-      if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
-    }
-  }
-
-  Future<void> _fetchContextTranslation() async {
-    final logger = ref.read(loggerProvider);
-    logger.info('BookReader: Requesting context-aware translation');
-    setState(() => _isLoadingContext = true);
-    try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.contextualTranslate(
-        selectedText: widget.selectedText,
-        context: widget.contextText,
-        sourceLanguage: widget.sourceLang,
-        targetLanguage: widget.targetLang,
-        nativeLanguage: widget.targetLang,
-      );
-      if (mounted) {
-        setState(() {
-          _contextualTranslation = result['translation'];
-          _explanation = result['explanation'];
-          _isLoadingContext = false;
-        });
-      }
-    } catch (e, st) {
-      logger.error('BookReader: Context translation failed', e, st);
-      if (mounted) setState(() { _isLoadingContext = false; });
-    }
-  }
-
-  Future<void> _handleAddToDeck() async {
-    final logger = ref.read(loggerProvider);
-    setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
-          front: widget.selectedText,
-          back: _contextualTranslation ?? _fastTranslation!,
-          language: widget.sourceLang,
-          explanation: _explanation,
-        );
-
-    if (mounted) {
-      setState(() { 
-        _isAdding = false; 
-        if (success) {
-          _isAdded = true;
-        } 
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children:[
-          Text(widget.selectedText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-          const SizedBox(height: 16),
-          
-          if (_isLoadingFast)
-            const CircularProgressIndicator()
-          else
-            Text(_fastTranslation ?? "", style: const TextStyle(fontSize: 18, color: LiquidTheme.primaryAccent, fontWeight: FontWeight.w600)),
-            
-          const SizedBox(height: 24),
-          
-          if (_contextualTranslation == null && !_isLoadingContext)
-            OutlinedButton.icon(
-              onPressed: _fetchContextTranslation,
-              icon: const Icon(Icons.auto_awesome, color: Colors.white),
-              label: const Text("Deep Translate with Context", style: TextStyle(color: Colors.white)),
-              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
-            )
-          else if (_isLoadingContext)
-            const Center(child: CircularProgressIndicator(color: LiquidTheme.secondaryAccent))
-          else ...[
-             Container(
-               padding: const EdgeInsets.all(16),
-               decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
-               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[
-                 Text(_contextualTranslation!, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
-                 const SizedBox(height: 8),
-                 Text(_explanation ?? "", style: const TextStyle(fontSize: 14, color: Colors.white70)),
-               ]),
-             )
-          ],
-          
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent,
-                foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              onPressed: (_isLoadingFast || _isAdded || _isAdding) ? null : _handleAddToDeck,
-              icon: _isAdding ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_isAdded ? Icons.check : Icons.add),
-              label: Text(_isAdded ? "Added to Deck" : "Add to Study Deck", style: const TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ),
-          const SizedBox(height: 32),
-        ],
-      ),
-    );
-  }
-}
 </file>
 
 <file path="pubspec.lock">
@@ -15624,6 +14874,805 @@ class _RiverpodRouterRefreshStream extends ChangeNotifier {
 
   void _subscribe(Ref ref) {
     ref.listen(authProvider, (previous, next) => notifyListeners());
+  }
+}
+</file>
+
+<file path="lib/ui/screens/book_reader_screen.dart">
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:lexity_mobile/providers/srs_provider.dart';
+import '../../models/book.dart';
+import '../../providers/book_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/vocabulary_provider.dart';
+import '../../services/logger_service.dart';
+import '../../theme/liquid_theme.dart';
+import '../../services/ai_service.dart';
+import '../../ui/widgets/translation_tooltip.dart';
+import 'book_reader_html.dart';
+
+class BookReaderScreen extends ConsumerStatefulWidget {
+  final String bookId;
+  const BookReaderScreen({super.key, required this.bookId});
+
+  @override
+  ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
+}
+
+class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
+  InAppWebViewController? webViewController;
+  double _progress = 0.0;
+  double _fontSize = 115.0;
+  String _theme = 'dark'; // 'light', 'dark', 'sepia'
+  String? _lastCfi;
+  List<dynamic> _toc = [];
+
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+  bool _localFileReady = false;
+
+  Timer? _progressDebounce;
+  HttpServer? _localServer;
+  int? _localPort;
+
+  bool _isInitialized = false;
+  
+  // Flag to prevent early '0%' percentage reports from overwriting DB progress
+  bool _canSaveToBackend = false;
+
+  // NEW VARIABLES FOR WORD TOOLTIP
+  bool _showTooltip = false;
+  String _tooltipWord = '';
+  String _tooltipContext = '';
+  double _tooltipX = 0;
+  double _tooltipY = 0;
+
+  void _updateReaderStyles() {
+    final logger = ref.read(loggerProvider);
+    logger.debug('BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)');
+    
+    final colors = {
+      'light': {'bg': '#ffffff', 'fg': '#000000'},
+      'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
+      'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
+    }[_theme]!;
+
+    final js = """
+      if (typeof rendition !== 'undefined' && rendition) {
+        rendition.themes.fontSize("$_fontSize%");
+        rendition.themes.register("$_theme", {
+          "body": { 
+            "background": "${colors['bg']} !important", 
+            "color": "${colors['fg']} !important"
+          },
+          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
+          "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
+        });
+        rendition.themes.select("$_theme");
+        
+        rendition.getContents().forEach(c => {
+          c.addStylesheetRules({
+            "body": {
+              "background-color": "${colors['bg']} !important",
+              "color": "${colors['fg']} !important",
+              "font-size": "$_fontSize% !important"
+            },
+            "p": {
+              "position": "relative !important",
+              "padding-right": "45px !important",
+              "margin-bottom": "1.5em !important",
+              "color": "${colors['fg']} !important"
+            },
+            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
+              "color": "${colors['fg']} !important",
+              "background": "transparent !important"
+            },
+            // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
+            ".lexity-word": { "cursor": "pointer", "transition": "background-color 0.2s" },
+            ".lexity-word.unknown": { "border-bottom": "1px dotted rgba(150, 150, 150, 0.5)" },
+            ".lexity-word.learning": { "background-color": "rgba(99, 102, 241, 0.3)", "border-bottom": "2px solid #6366F1" },
+            ".lexity-word.known": { "color": "inherit", "border-bottom": "none", "background-color": "transparent" },
+            // END NEW CSS
+            ".para-translate-btn": {
+              "position": "absolute",
+              "right": "0px",
+              "top": "0px",
+              "width": "32px",
+              "height": "32px",
+              "border-radius": "8px",
+              "background": "rgba(99, 102, 241, 0.15)",
+              "border": "1px solid rgba(255, 255, 255, 0.1)",
+              "color": "#6366F1",
+              "display": "flex",
+              "align-items": "center",
+              "justify-content": "center",
+              "cursor": "pointer",
+              "font-size": "16px",
+              "user-select": "none",
+              "-webkit-user-select": "none",
+              "opacity": "0.6",
+              "transition": "opacity 0.2s",
+              "z-index": "10"
+            },
+            ".para-translate-btn:active": {
+              "opacity": "1.0",
+              "transform": "scale(0.95)"
+            },
+            "::selection": {
+              "background-color": "rgba(99, 102, 241, 0.3) !important",
+              "text-decoration": "underline !important",
+              "text-decoration-color": "#6366F1 !important",
+              "color": "inherit !important"
+            }
+          });
+        });
+      }
+    """;
+    webViewController?.evaluateJavascript(source: js);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _startLocalServer();
+  }
+
+  Future<void> _startLocalServer() async {
+    final logger = ref.read(loggerProvider);
+    logger.info('BookReader: Initializing local file server');
+    try {
+      _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      if (mounted) {
+        setState(() => _localPort = _localServer!.port);
+        logger.info('BookReader: Local server bound to port $_localPort');
+      }
+      
+      _localServer!.listen((HttpRequest request) async {
+        request.response.headers.add('Access-Control-Allow-Origin', '*');
+        request.response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        request.response.headers.add('Access-Control-Allow-Headers', '*');
+        
+        if (request.method == 'OPTIONS') {
+           request.response.statusCode = 200;
+           await request.response.close();
+           return;
+        }
+
+        // NEW CODE START: Serve the reader HTML at the root to avoid initialData bugs on Linux
+        if (request.uri.path == '/') {
+          request.response.headers.contentType = ContentType.html;
+          request.response.write(bookReaderHtmlTemplate);
+          await request.response.close();
+          return;
+        }
+        // NEW CODE END
+        if (request.uri.path.startsWith('/books/')) {
+           final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
+           final dir = await getApplicationDocumentsDirectory();
+           final file = File('${dir.path}/books/$bookId.epub');
+           
+           if (await file.exists()) {
+             logger.debug('BookReader: Serving local EPUB file for $bookId');
+             final length = await file.length();
+             request.response.contentLength = length;
+             request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
+             await request.response.addStream(file.openRead());
+             await request.response.close();
+             return;
+           }
+        }
+        request.response.statusCode = 404;
+        await request.response.close();
+      });
+    } catch (e, st) {
+      logger.error('BookReader: Local server startup error', e, st);
+    }
+  }
+
+  Future<void> _ensureBookDownloaded(UserBook book) async {
+    final logger = ref.read(loggerProvider);
+    if (_isDownloading || _localFileReady) return;
+    
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${dir.path}/books');
+      if (!await booksDir.exists()) await booksDir.create(recursive: true);
+
+      final file = File('${booksDir.path}/${book.id}.epub');
+      if (await file.exists()) {
+        logger.info('BookReader: Book "${book.title}" found locally');
+        if (mounted) setState(() => _localFileReady = true);
+        return;
+      }
+
+      logger.info('BookReader: Book not found locally, starting download for "${book.title}"');
+      if (book.signedUrl == null) {
+        logger.error('BookReader: Missing signedUrl for book ${book.id}');
+        throw Exception("No download URL provided");
+      }
+
+      setState(() {
+        _isDownloading = true;
+        _downloadProgress = 0.0;
+      });
+
+      final request = http.Request('GET', Uri.parse(book.signedUrl!));
+      final response = await request.send();
+      final total = response.contentLength ?? 0;
+      int received = 0;
+      final bytes = <int>[];
+
+      response.stream.listen(
+        (chunk) {
+          bytes.addAll(chunk);
+          received += chunk.length;
+          if (total > 0 && mounted) setState(() => _downloadProgress = received / total);
+        },
+        onDone: () async {
+          await file.writeAsBytes(bytes);
+          logger.info('BookReader: Download complete for "${book.title}"');
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              _localFileReady = true;
+            });
+          }
+        },
+        onError: (e, st) {
+          logger.error('BookReader: Download stream error', e, st);
+          if (mounted) setState(() => _isDownloading = false);
+        },
+      );
+    } catch (e, st) {
+      logger.error('BookReader: Download setup failed', e, st);
+      if (mounted) setState(() => _isDownloading = false);
+    }
+  }
+
+
+  void _handleImmediateSave() {
+    if (!mounted || _lastCfi == null) return;
+
+    final logger = ref.read(loggerProvider);
+    _progressDebounce?.cancel();
+    logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
+    ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
+    _lastCfi = null; // Prevent double saving
+  }
+
+  @override
+  void dispose() {
+    _handleImmediateSave(); // Catch-all guarantee
+    _progressDebounce?.cancel();
+    _localServer?.close(force: true);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
+    final profileAsync = ref.watch(userProfileProvider);
+    final logger = ref.read(loggerProvider);
+
+    bookAsync.whenData((book) {
+      if (!_isInitialized) {
+          logger.info('BookReader: Initializing state. Saved CFI: ${book.currentCfi}');
+          _isInitialized = true;
+          setState(() {
+            _progress = book.progressPct;
+            _lastCfi = book.currentCfi;
+          });
+          _ensureBookDownloaded(book);
+      }
+    });
+
+    // NEW: RIVERPOD LISTENER TO PUSH STATE CHANGES TO JS
+    ref.listen(vocabularyProvider, (previous, next) {
+      next.whenData((vocabMap) {
+        final jsonStr = jsonEncode(vocabMap);
+        final jsString = jsonEncode(jsonStr);
+        webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+      });
+    });
+
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+          if (didPop && mounted) {
+             _handleImmediateSave();
+          }
+      },
+      child: Scaffold(
+        backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () {
+            _handleImmediateSave();
+            context.pop();
+          }),
+          title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
+          actions: [
+            // NEW: MARK PAGE KNOWN BUTTON
+            IconButton(
+              icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+              onPressed: () async {
+                final book = bookAsync.value;
+                if (book == null) return;
+                final wordsObj = await webViewController?.evaluateJavascript(source: "window.getVisibleUnknownWords();");
+                if (wordsObj != null && wordsObj is List) {
+                   final words = wordsObj.map((e) => e.toString()).toList();
+                   if (words.isNotEmpty) {
+                       ref.read(vocabularyProvider.notifier).markBatchKnown(words, book.targetLanguage);
+                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Marked ${words.length} words as known")));
+                   } else {
+                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No unknown words on this page.")));
+                   }
+                }
+              },
+            ),
+            if (_toc.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.list),
+                onPressed: () => _showChapterBrowser(context),
+              ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => _showSettings(context),
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            bookAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, st) {
+                logger.error('BookReader: Failed to load data', e, st);
+                return Center(child: Text("Error: $e"));
+              },
+              data: (book) {
+                if (_isDownloading) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children:[
+                        const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
+                        const SizedBox(height: 16),
+                        Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
+                      ]
+                    )
+                  );
+                }
+        
+                if (!_localFileReady || _localPort == null) {
+                  return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
+                }
+        
+                return InAppWebView(
+                  // CHANGE: Use initialUrlRequest instead of initialData for better Linux compatibility
+                  initialUrlRequest: URLRequest(
+                    url: WebUri("http://localhost:$_localPort/")
+                  ),
+                  initialSettings: InAppWebViewSettings(
+                    javaScriptEnabled: true,
+                    isInspectable: kDebugMode,
+                    allowUniversalAccessFromFileURLs: true,
+                    allowFileAccessFromFileURLs: true,
+                    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                    // NEW CODE: Fix potential compositor issues on Linux/GTK
+                    transparentBackground: true,
+                  ),
+              onWebViewCreated: (controller) {
+                webViewController = controller;
+                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
+                  if (!mounted) return;
+
+                  final cfi = args[0] as String;
+                  final pct = (args[1] as num).toDouble();
+                  
+                  if (mounted) {
+                    setState(() {
+                      _progress = pct; 
+                      _lastCfi = cfi;
+                    });
+                  }
+
+                  if (!_canSaveToBackend && pct <= 0) {
+                      return;
+                  }
+
+                  _progressDebounce?.cancel();
+                  _progressDebounce = Timer(const Duration(milliseconds: 1500), () {
+                    if (mounted) {
+                      ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
+                    }
+                  });
+
+                  _updateReaderStyles();
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
+                  final tocData = args[0] as List<dynamic>;
+                  if (mounted) setState(() => _toc = tocData);
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onParagraphTranslate', callback: (args) {
+                  final text = args[0].toString();
+                  _showTranslationSheet(
+                    context, 
+                    selectedText: text, 
+                    contextText: text, 
+                    sourceLang: book.targetLanguage, 
+                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
+                  );
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
+                  Future.delayed(const Duration(milliseconds: 2000), () {
+                    if (mounted) setState(() => _canSaveToBackend = true);
+                  });
+
+                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage);
+                  ref.read(vocabularyProvider.notifier).loadVocabulary(book.targetLanguage);
+                  _updateReaderStyles();
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onWordTap', callback: (args) {
+                  final word = args[0] as String;
+                  final x = (args[1] as num).toDouble();
+                  final y = (args[2] as num).toDouble();
+                  final contextText = args[3] as String;
+                  if (mounted) {
+                    setState(() {
+                      _tooltipWord = word;
+                      _tooltipX = x;
+                      _tooltipY = y;
+                      _tooltipContext = contextText;
+                      _showTooltip = true;
+                    });
+                  }
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onBackgroundTap', callback: (_) {
+                  if (_showTooltip && mounted) setState(() => _showTooltip = false);
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onChapterReady', callback: (_) {
+                  final vocabMap = ref.read(vocabularyProvider).value ?? {};
+                  final jsonStr = jsonEncode(vocabMap);
+                  final jsString = jsonEncode(jsonStr);
+                  webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
+                  _showTranslationSheet(
+                    context, 
+                    selectedText: args[0].toString(), 
+                    contextText: args[1].toString(), 
+                    sourceLang: book.targetLanguage, 
+                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
+                  );
+                });
+              },
+                onLoadStop: (controller, _) async {
+                  if (_localPort != null) {
+                     // NEW CODE START: Since we now load the HTML from the root, ensure the URL is relative to origin
+                     final localUrl = "http://localhost:$_localPort/books/${book.id}.epub";
+                     // NEW CODE END
+                     final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                     await controller.evaluateJavascript(source: jsCall);
+                  }
+                },
+            );
+         },
+        ),
+        
+            // NEW: TOOLTIP OVERLAY
+            if (_showTooltip)
+              TranslationTooltip(
+                selectedText: _tooltipWord,
+                contextText: _tooltipContext,
+                sourceLang: bookAsync.value?.targetLanguage ?? 'spanish',
+                targetLang: profileAsync.value?.nativeLanguage ?? 'english',
+                x: _tooltipX,
+                y: _tooltipY,
+                onClose: () => setState(() => _showTooltip = false),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showChapterBrowser(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (context, scrollController) => Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text("Table of Contents", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            const Divider(color: Colors.white10),
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                itemCount: _toc.length,
+                separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (context, index) {
+                  final chapter = _toc[index];
+                  final int level = chapter['level'] ?? 0;
+                  
+                  return ListTile(
+                    contentPadding: EdgeInsets.only(left: 16.0 + (level * 16.0), right: 16.0),
+                    title: Text(
+                      chapter['label'].toString().trim(), 
+                      style: TextStyle(
+                        color: level == 0 ? Colors.white : Colors.white70,
+                        fontWeight: level == 0 ? FontWeight.bold : FontWeight.normal,
+                        fontSize: level == 0 ? 15 : 14,
+                      )
+                    ),
+                    trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
+                    onTap: () {
+                      final href = chapter['href'].toString();
+                      webViewController?.evaluateJavascript(source: "rendition.display('${href}');");
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSettings(BuildContext context) {
+    final logger = ref.read(loggerProvider);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
+                  onTap: () { 
+                    setState(() => _theme = t); 
+                    setModalState((){}); 
+                    _updateReaderStyles(); 
+                  },
+                  child: Container(
+                    width: 60, height: 60,
+                    decoration: BoxDecoration(
+                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
+                    ),
+                  ),
+                )).toList(),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  const Icon(Icons.text_fields, size: 16),
+                  Expanded(
+                    child: Slider(
+                      value: _fontSize, min: 80, max: 200,
+                      onChanged: (v) { 
+                        setState(() => _fontSize = v); 
+                        setModalState((){}); 
+                      },
+                      onChangeEnd: (v) {
+                        _updateReaderStyles();
+                      },
+                    ),
+                  ),
+                  const Icon(Icons.text_fields, size: 24),
+                ],
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A1A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => _TranslationBottomSheet(
+        selectedText: selectedText,
+        contextText: contextText,
+        sourceLang: sourceLang,
+        targetLang: nativeLang,
+      ),
+    );
+
+    webViewController?.evaluateJavascript(source: """
+      if (typeof rendition !== 'undefined' && rendition) {
+        rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
+        window.lastReportedText = "";
+      }
+    """);
+  }
+}
+
+class _TranslationBottomSheet extends ConsumerStatefulWidget {
+  final String selectedText;
+  final String contextText;
+  final String sourceLang;
+  final String targetLang;
+
+  const _TranslationBottomSheet({
+    required this.selectedText,
+    required this.contextText,
+    required this.sourceLang,
+    required this.targetLang,
+  });
+
+  @override
+  ConsumerState<_TranslationBottomSheet> createState() => _TranslationBottomSheetState();
+}
+
+class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet> {
+  bool _isLoadingFast = true;
+  bool _isLoadingContext = false;
+  String? _fastTranslation;
+  String? _contextualTranslation;
+  String? _explanation;
+  bool _isAdding = false;
+  bool _isAdded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFastTranslation();
+  }
+
+  Future<void> _fetchFastTranslation() async {
+    final logger = ref.read(loggerProvider);
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
+      if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
+    } catch (e, st) {
+      logger.error('BookReader: Fast translation failed', e, st);
+      if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
+    }
+  }
+
+  Future<void> _fetchContextTranslation() async {
+    final logger = ref.read(loggerProvider);
+    logger.info('BookReader: Requesting context-aware translation');
+    setState(() => _isLoadingContext = true);
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.contextualTranslate(
+        selectedText: widget.selectedText,
+        context: widget.contextText,
+        sourceLanguage: widget.sourceLang,
+        targetLanguage: widget.targetLang,
+        nativeLanguage: widget.targetLang,
+      );
+      if (mounted) {
+        setState(() {
+          _contextualTranslation = result['translation'];
+          _explanation = result['explanation'];
+          _isLoadingContext = false;
+        });
+      }
+    } catch (e, st) {
+      logger.error('BookReader: Context translation failed', e, st);
+      if (mounted) setState(() { _isLoadingContext = false; });
+    }
+  }
+
+  Future<void> _handleAddToDeck() async {
+    final logger = ref.read(loggerProvider);
+    setState(() => _isAdding = true);
+    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+          front: widget.selectedText,
+          back: _contextualTranslation ?? _fastTranslation!,
+          language: widget.sourceLang,
+          explanation: _explanation,
+        );
+
+    if (mounted) {
+      setState(() { 
+        _isAdding = false; 
+        if (success) {
+          _isAdded = true;
+        } 
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children:[
+          Text(widget.selectedText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+          const SizedBox(height: 16),
+          
+          if (_isLoadingFast)
+            const CircularProgressIndicator()
+          else
+            Text(_fastTranslation ?? "", style: const TextStyle(fontSize: 18, color: LiquidTheme.primaryAccent, fontWeight: FontWeight.w600)),
+            
+          const SizedBox(height: 24),
+          
+          if (_contextualTranslation == null && !_isLoadingContext)
+            OutlinedButton.icon(
+              onPressed: _fetchContextTranslation,
+              icon: const Icon(Icons.auto_awesome, color: Colors.white),
+              label: const Text("Deep Translate with Context", style: TextStyle(color: Colors.white)),
+              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+            )
+          else if (_isLoadingContext)
+            const Center(child: CircularProgressIndicator(color: LiquidTheme.secondaryAccent))
+          else ...[
+             Container(
+               padding: const EdgeInsets.all(16),
+               decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[
+                 Text(_contextualTranslation!, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
+                 const SizedBox(height: 8),
+                 Text(_explanation ?? "", style: const TextStyle(fontSize: 14, color: Colors.white70)),
+               ]),
+             )
+          ],
+          
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent,
+                foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              onPressed: (_isLoadingFast || _isAdded || _isAdding) ? null : _handleAddToDeck,
+              icon: _isAdding ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_isAdded ? Icons.check : Icons.add),
+              label: Text(_isAdded ? "Added to Deck" : "Add to Study Deck", style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
   }
 }
 </file>

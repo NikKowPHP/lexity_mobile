@@ -52,8 +52,12 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
     _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
     try {
       await _service.updateProgress(id, cfi, progressPct);
-      _ref.invalidate(bookDetailProvider(id));
-      _ref.invalidate(booksProvider);
+      
+      Future.microtask(() {
+        _ref.invalidate(bookDetailProvider(id));
+        _ref.invalidate(booksProvider);
+      });
+
       _logger.info('BookNotifier: Progress update successful for $id');
     } catch (e, st) {
       _logger.error('BookNotifier: Progress update failed for $id', e, st);
