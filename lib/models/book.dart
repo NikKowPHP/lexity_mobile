@@ -1,3 +1,5 @@
+import '../utils/constants.dart';
+
 class UserBook {
   final String id;
   final String title;
@@ -34,7 +36,9 @@ class UserBook {
       currentCfi: json['currentCfi'],
       progressPct: (json['progressPct'] ?? 0).toDouble(),
       createdAt: DateTime.parse(json['createdAt']),
-      signedUrl: json['signedUrl'],
+      signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true 
+          ? '${AppConstants.baseUrl}${json['signedUrl']}' 
+          : json['signedUrl'],
     );
   }
 }

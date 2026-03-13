@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/srs_provider.dart';
+import '../../providers/vocabulary_provider.dart';
 import '../../services/ai_service.dart';
 import '../../theme/liquid_theme.dart';
 
@@ -80,7 +81,12 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
     if (mounted) {
       setState(() {
         _isAdding = false;
-        if (success) _isAdded = true;
+        if (success) {
+          _isAdded = true;
+          // Instantly update vocabulary state locally and remotely
+          ref.read(vocabularyProvider.notifier).updateWordStatus(
+              widget.selectedText, 'learning', widget.sourceLang);
+        }
       });
     }
   }

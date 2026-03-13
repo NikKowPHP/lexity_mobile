@@ -128,8 +128,12 @@ class JournalService {
       throw Exception('Failed to generate upload URL');
     }
     final data = jsonDecode(response.body);
-    final signedUrl = data['signedUrl'];
+    var signedUrl = data['signedUrl'] as String;
     final storagePath = data['path'];
+
+    if (signedUrl.startsWith('/')) {
+      signedUrl = '${AppConstants.baseUrl}$signedUrl';
+    }
 
     // 2. Upload Binary
     await _uploadFileToSupabase(signedUrl, file);

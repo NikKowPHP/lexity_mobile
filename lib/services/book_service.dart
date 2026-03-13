@@ -123,8 +123,12 @@ class BookService {
       }
       
       final uploadData = jsonDecode(uploadUrlResponse.body);
-      final signedUrl = uploadData['signedUrl'];
+      var signedUrl = uploadData['signedUrl'] as String;
       final storagePath = uploadData['path'];
+
+      if (signedUrl.startsWith('/')) {
+        signedUrl = '${AppConstants.baseUrl}$signedUrl';
+      }
 
       _logger.info('BookService: Uploading binary to storage path: $storagePath');
       final bytes = await file.readAsBytes();

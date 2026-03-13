@@ -1,3 +1,5 @@
+import '../utils/constants.dart';
+
 class JournalEntry {
   final String id;
   final String content;
@@ -23,7 +25,9 @@ class JournalEntry {
       content: json['content'] ?? '',
       title: json['topic']?['title'] ?? 'Free Write',
       createdAt: DateTime.parse(json['createdAt']),
-      audioUrl: json['audioUrl'],
+      audioUrl: (json['audioUrl'] as String?)?.startsWith('/') == true
+          ? '${AppConstants.baseUrl}${json['audioUrl']}'
+          : json['audioUrl'],
       analysis: json['analysis'] != null ? Analysis.fromJson(json['analysis']) : null,
     );
   }

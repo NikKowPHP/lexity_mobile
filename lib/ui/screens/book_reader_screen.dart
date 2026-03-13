@@ -12,9 +12,11 @@ import 'package:lexity_mobile/providers/srs_provider.dart';
 import '../../models/book.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/vocabulary_provider.dart';
 import '../../services/logger_service.dart';
 import '../../theme/liquid_theme.dart';
 import '../../services/ai_service.dart';
+import '../../ui/widgets/translation_tooltip.dart';
 
 class BookReaderScreen extends ConsumerStatefulWidget {
   final String bookId;
@@ -44,6 +46,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
+
+  // NEW VARIABLES FOR WORD TOOLTIP
+  bool _showTooltip = false;
+  String _tooltipWord = '';
+  String _tooltipContext = '';
+  double _tooltipX = 0;
+  double _tooltipY = 0;
 
   void _updateReaderStyles() {
     final logger = ref.read(loggerProvider);
@@ -85,6 +94,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               "color": "${colors['fg']} !important",
               "background": "transparent !important"
             },
+            // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
+            ".lexity-word": { "cursor": "pointer", "transition": "background-color 0.2s" },
+            ".lexity-word.unknown": { "border-bottom": "1px dotted rgba(150, 150, 150, 0.5)" },
+            ".lexity-word.learning": { "background-color": "rgba(99, 102, 241, 0.3)", "border-bottom": "2px solid #6366F1" },
+            ".lexity-word.known": { "color": "inherit", "border-bottom": "none", "background-color": "transparent" },
+            // END NEW CSS
             ".para-translate-btn": {
               "position": "absolute",
               "right": "0px",
@@ -123,16 +138,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     webViewController?.evaluateJavascript(source: js);
   }
 
-  void _applyHighlighting() {
-    final logger = ref.read(loggerProvider);
-    final srs = ref.read(srsProvider).deck;
-    final words = srs.map((e) => e.front).toList();
-    
-    logger.debug('BookReader: Applying highlighting for ${words.length} known words');
-    final js = "if (window.highlightKnownWords) window.highlightKnownWords(${jsonEncode(words)});";
-    webViewController?.evaluateJavascript(source: js);
-  }
-
   @override
   void initState() {
     super.initState();
@@ -159,6 +164,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
            await request.response.close();
            return;
         }
+
+        // NEW CODE START: Serve the reader HTML at the root to avoid initialData bugs on Linux
+        if (request.uri.path == '/') {
+          request.response.headers.contentType = ContentType.html;
+          request.response.write(_htmlTemplate);
+          await request.response.close();
+          return;
+        }
+        // NEW CODE END
         if (request.uri.path.startsWith('/books/')) {
            final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
            final dir = await getApplicationDocumentsDirectory();
@@ -266,31 +280,38 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       let rendition;
       window.lastReportedText = "";
 
-      window.highlightKnownWords = function(words) {
+      // NEW JS BRIDGE FUNCTIONS
+      window.applyVocabStyles = function(vocabMapJson) {
         if (!rendition) return;
+        const vocabMap = JSON.parse(vocabMapJson);
         rendition.getContents().forEach(content => {
-          const doc = content.document;
-          if (words.length === 0) return;
-          
-          // Use safe string concatenation to build the regex string
-          const regexStr = words.map(w => w.replace(/[.*+?^\\\$\${"{"}}()|[\\\]\\\\]/g, '\\\\\$&')).join('|');
-          const regex = new RegExp('\\\\b(' + regexStr + ')\\\\b', 'gi');
-          
-          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-          let node;
-          const nodes = [];
-          while (node = walker.nextNode()) nodes.push(node);
-          
-          nodes.forEach(textNode => {
-            if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'mark') return;
-            if (regex.test(textNode.nodeValue)) {
-              const span = doc.createElement('span');
-              span.innerHTML = textNode.nodeValue.replace(regex, '<mark class="known-word">\$1</mark>');
-              textNode.parentNode.replaceChild(span, textNode);
-            }
-          });
+            const spans = content.document.querySelectorAll('.lexity-word');
+            spans.forEach(span => {
+                const dataWord = span.getAttribute('data-word');
+                if (!dataWord) return;
+                const word = dataWord.toLowerCase();
+                const status = vocabMap[word] || 'unknown';
+                span.className = 'lexity-word ' + status;
+            });
         });
       };
+
+      window.getVisibleUnknownWords = function() {
+        if (!rendition) return [];
+        const visible =[];
+        rendition.getContents().forEach(content => {
+            const win = content.window;
+            const spans = content.document.querySelectorAll('.lexity-word.unknown');
+            spans.forEach(span => {
+                const rect = span.getBoundingClientRect();
+                if (rect.top >= 0 && rect.left >= 0 && Math.floor(rect.bottom) <= win.innerHeight && Math.floor(rect.right) <= win.innerWidth) {
+                    visible.push(span.getAttribute('data-word').toLowerCase());
+                }
+            });
+        });
+        return Array.from(new Set(visible));
+      };
+      // END NEW JS BRIDGE FUNCTIONS
 
       async function loadBook(url, initialCfi) {
         try {
@@ -334,6 +355,45 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           rendition.hooks.content.register((contents) => {
             const win = contents.window;
             const doc = contents.document;
+
+            // NEW: WRAP WORDS LOGIC
+            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+            let node;
+            const nodes =[];
+            while (node = walker.nextNode()) nodes.push(node);
+
+            nodes.forEach(textNode => {
+                if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'span' && textNode.parentNode.classList.contains('lexity-word')) return;
+                if (textNode.parentNode && (textNode.parentNode.nodeName.toLowerCase() === 'script' || textNode.parentNode.nodeName.toLowerCase() === 'style')) return;
+                if (textNode.nodeValue.trim().length === 0) return;
+
+                const regex = /([\\p{L}\\p{M}]+)/gu;
+                if (regex.test(textNode.nodeValue)) {
+                    const span = doc.createElement('span');
+                    span.className = 'lexity-word-wrapper';
+                    const replacement = '<span class="lexity-word unknown" data-word="\$1">\$1</span>';
+                    span.innerHTML = textNode.nodeValue.replace(regex, replacement);
+                    textNode.parentNode.replaceChild(span, textNode);
+                }
+            });
+
+            // NEW: TAP LISTENER
+            doc.addEventListener('click', (e) => {
+                const span = e.target.closest('.lexity-word');
+                if (span) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const rect = span.getBoundingClientRect();
+                    const word = span.getAttribute('data-word');
+                    let contextText = span.parentElement.innerText;
+                    if (!contextText || contextText.length < 10) contextText = word; 
+                    window.flutter_inappwebview.callHandler('onWordTap', word, rect.left, rect.top, contextText);
+                } else {
+                    window.flutter_inappwebview.callHandler('onBackgroundTap');
+                }
+            });
+            // Let Flutter know chapter is ready to style
+            window.flutter_inappwebview.callHandler('onChapterReady');
             
             const paragraphs = doc.querySelectorAll('p');
             paragraphs.forEach((p) => {
@@ -433,6 +493,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       }
     });
 
+    // NEW: RIVERPOD LISTENER TO PUSH STATE CHANGES TO JS
+    ref.listen(vocabularyProvider, (previous, next) {
+      next.whenData((vocabMap) {
+        final jsonStr = jsonEncode(vocabMap);
+        final jsString = jsonEncode(jsonStr);
+        webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+      });
+    });
+
     return PopScope(
       onPopInvokedWithResult: (didPop, result) async {
           if (didPop) {
@@ -449,6 +518,24 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           }),
           title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
           actions: [
+            // NEW: MARK PAGE KNOWN BUTTON
+            IconButton(
+              icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+              onPressed: () async {
+                final book = bookAsync.value;
+                if (book == null) return;
+                final wordsObj = await webViewController?.evaluateJavascript(source: "window.getVisibleUnknownWords();");
+                if (wordsObj != null && wordsObj is List) {
+                   final words = wordsObj.map((e) => e.toString()).toList();
+                   if (words.isNotEmpty) {
+                       ref.read(vocabularyProvider.notifier).markBatchKnown(words, book.targetLanguage);
+                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Marked ${words.length} words as known")));
+                   } else {
+                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No unknown words on this page.")));
+                   }
+                }
+              },
+            ),
             if (_toc.isNotEmpty)
               IconButton(
                 icon: const Icon(Icons.list),
@@ -460,42 +547,46 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             ),
           ],
         ),
-        body: bookAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) {
-            logger.error('BookReader: Failed to load data', e, st);
-            return Center(child: Text("Error: $e"));
-          },
-          data: (book) {
-            if (_isDownloading) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children:[
-                    const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
-                    const SizedBox(height: 16),
-                    Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
-                  ]
-                )
-              );
-            }
-      
-            if (!_localFileReady || _localPort == null) {
-              return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
-            }
-      
-            return InAppWebView(
-              initialData: InAppWebViewInitialData(
-                data: _htmlTemplate, 
-                baseUrl: WebUri("http://127.0.0.1:$_localPort/")
-              ),
-              initialSettings: InAppWebViewSettings(
-                javaScriptEnabled: true,
-                isInspectable: kDebugMode,
-                allowUniversalAccessFromFileURLs: true,
-                allowFileAccessFromFileURLs: true,
-                mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-              ),
+        body: Stack(
+          children: [
+            bookAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, st) {
+                logger.error('BookReader: Failed to load data', e, st);
+                return Center(child: Text("Error: $e"));
+              },
+              data: (book) {
+                if (_isDownloading) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children:[
+                        const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
+                        const SizedBox(height: 16),
+                        Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
+                      ]
+                    )
+                  );
+                }
+        
+                if (!_localFileReady || _localPort == null) {
+                  return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
+                }
+        
+                return InAppWebView(
+                  // CHANGE: Use initialUrlRequest instead of initialData for better Linux compatibility
+                  initialUrlRequest: URLRequest(
+                    url: WebUri("http://localhost:$_localPort/")
+                  ),
+                  initialSettings: InAppWebViewSettings(
+                    javaScriptEnabled: true,
+                    isInspectable: kDebugMode,
+                    allowUniversalAccessFromFileURLs: true,
+                    allowFileAccessFromFileURLs: true,
+                    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                    // NEW CODE: Fix potential compositor issues on Linux/GTK
+                    transparentBackground: true,
+                  ),
               onWebViewCreated: (controller) {
                 webViewController = controller;
                 controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
@@ -521,7 +612,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   });
 
                   _updateReaderStyles();
-                  _applyHighlighting();
                 });
 
                 controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
@@ -546,8 +636,35 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   });
 
                   ref.read(srsProvider.notifier).loadDeck(book.targetLanguage);
+                  ref.read(vocabularyProvider.notifier).loadVocabulary(book.targetLanguage);
                   _updateReaderStyles();
-                  _applyHighlighting();
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onWordTap', callback: (args) {
+                  final word = args[0] as String;
+                  final x = (args[1] as num).toDouble();
+                  final y = (args[2] as num).toDouble();
+                  final contextText = args[3] as String;
+                  if (mounted) {
+                    setState(() {
+                      _tooltipWord = word;
+                      _tooltipX = x;
+                      _tooltipY = y;
+                      _tooltipContext = contextText;
+                      _showTooltip = true;
+                    });
+                  }
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onBackgroundTap', callback: (_) {
+                  if (_showTooltip && mounted) setState(() => _showTooltip = false);
+                });
+
+                controller.addJavaScriptHandler(handlerName: 'onChapterReady', callback: (_) {
+                  final vocabMap = ref.read(vocabularyProvider).value ?? {};
+                  final jsonStr = jsonEncode(vocabMap);
+                  final jsString = jsonEncode(jsonStr);
+                  webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
                 });
 
                 controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
@@ -560,15 +677,31 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   );
                 });
               },
-              onLoadStop: (controller, _) async {
-                if (_localPort != null) {
-                   final localUrl = "http://127.0.0.1:$_localPort/books/${book.id}.epub";
-                   final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
-                   await controller.evaluateJavascript(source: jsCall);
-                }
-              },
+                onLoadStop: (controller, _) async {
+                  if (_localPort != null) {
+                     // NEW CODE START: Since we now load the HTML from the root, ensure the URL is relative to origin
+                     final localUrl = "http://localhost:$_localPort/books/${book.id}.epub";
+                     // NEW CODE END
+                     final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                     await controller.evaluateJavascript(source: jsCall);
+                  }
+                },
             );
          },
+        ),
+        
+            // NEW: TOOLTIP OVERLAY
+            if (_showTooltip)
+              TranslationTooltip(
+                selectedText: _tooltipWord,
+                contextText: _tooltipContext,
+                sourceLang: bookAsync.value?.targetLanguage ?? 'spanish',
+                targetLang: profileAsync.value?.nativeLanguage ?? 'english',
+                x: _tooltipX,
+                y: _tooltipY,
+                onClose: () => setState(() => _showTooltip = false),
+              ),
+          ],
         ),
       ),
     );
