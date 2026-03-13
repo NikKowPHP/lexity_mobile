@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
+import '../providers/user_provider.dart';
 import '../ui/screens/login_screen.dart';
 import '../ui/screens/home_shell.dart';
 import '../ui/screens/path_screen.dart';
@@ -61,6 +62,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/billing-complete',
+        builder: (context, state) {
+          // This route is triggered by lexity://billing-complete
+          // We don't need a UI here, just a trigger to refresh and redirect
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            ref.read(userProfileProvider.notifier).refresh();
+            context.go('/path'); 
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Subscription updated successfully!"))
+            );
+          });
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator(color: Colors.white)),
+          );
+        },
       ),
       GoRoute(
         path: '/vocabulary',
