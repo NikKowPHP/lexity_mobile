@@ -108,7 +108,7 @@ class _TutorChatDialogState extends State<TutorChatDialog> {
                   onPressed: _send, 
                   icon: const Icon(Icons.send, color: Colors.indigoAccent),
                   style: IconButton.styleFrom(
-                    backgroundColor: Colors.indigoAccent.withOpacity(0.1),
+                    backgroundColor: Colors.indigoAccent.withValues(alpha: 0.1),
                     padding: const EdgeInsets.all(12),
                   ),
                 ),
@@ -133,14 +133,14 @@ class _ChatBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isUser ? Colors.indigoAccent.withOpacity(0.2) : Colors.white10,
+          color: isUser ? Colors.indigoAccent.withValues(alpha: 0.2) : Colors.white10,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: Radius.circular(isUser ? 16 : 0),
             bottomRight: Radius.circular(isUser ? 0 : 16),
           ),
-          border: Border.all(color: isUser ? Colors.indigoAccent.withOpacity(0.3) : Colors.white10),
+          border: Border.all(color: isUser ? Colors.indigoAccent.withValues(alpha: 0.3) : Colors.white10),
         ),
         child: Text(
           msg['content']!, 

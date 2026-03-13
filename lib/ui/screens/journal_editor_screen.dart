@@ -222,7 +222,7 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                       .updateActivity(widget.moduleId!, key, true);
                 }
 
-                if (context.mounted) context.pop();
+                if (context.mounted && context.canPop()) context.pop();
               },
             ),
           ],

@@ -37,7 +37,11 @@ class GlassScaffold extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: GestureDetector(
-                        onTap: () => context.pop(),
+                        onTap: () {
+                          if (context.canPop()) {
+                            context.pop();
+                          }
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(

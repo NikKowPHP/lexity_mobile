@@ -113,7 +113,7 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
         child: Container(
           width: tooltipWidth,
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A).withOpacity(0.98),
+            color: const Color(0xFF1A1A1A).withValues(alpha: 0.98),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white24),
             boxShadow: const[
@@ -185,7 +185,7 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isAdded ? Colors.green.withOpacity(0.2) : LiquidTheme.primaryAccent.withOpacity(0.2),
+                      backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent.withValues(alpha: 0.2),
                       foregroundColor: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent,
                       elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

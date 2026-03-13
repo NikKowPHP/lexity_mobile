@@ -190,8 +190,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         (chunk) {
           bytes.addAll(chunk);
           received += chunk.length;
-          if (total > 0 && mounted)
+          if (total > 0 && mounted) {
             setState(() => _downloadProgress = received / total);
+          }
         },
         onDone: () async {
           await file.writeAsBytes(bytes);
@@ -297,8 +298,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () {
-              _handleImmediateSave();
-              context.pop();
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/library'); // Fallback for deep-linked reader
+              }
             },
           ),
           actions: [
@@ -320,17 +324,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     ref
                         .read(vocabularyProvider.notifier)
                         .markBatchKnown(words, book.targetLanguage);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text("Marked ${words.length} words as known"),
-                      ),
-                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Marked ${words.length} words as known"),
+                        ),
+                      );
+                    }
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("No unknown words on this page."),
-                      ),
-                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("No unknown words on this page."),
+                        ),
+                      );
+                    }
                   }
                 }
               },
@@ -669,9 +677,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     onTap: () {
                       final href = chapter['href'].toString();
                       webViewController?.evaluateJavascript(
-                        source: "rendition.display('${href}');",
+                        source: "rendition.display('$href');",
                       );
-                      Navigator.pop(context);
+                      if (context.mounted) Navigator.pop(context);
                     },
                   );
                 },
@@ -684,7 +692,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   }
 
   void _showSettings(BuildContext context) {
-    final logger = ref.read(loggerProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -897,10 +904,11 @@ class _TranslationBottomSheetState
       }
     } catch (e, st) {
       logger.error('BookReader: Context translation failed', e, st);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoadingContext = false;
         });
+      }
     }
   }
 

@@ -82,7 +82,7 @@ class JournalDetailScreen extends ConsumerWidget {
                 child: TextButton.icon(
                   onPressed: () {
                      ref.read(journalNotifierProvider.notifier).deleteEntry(entry.id);
-                     context.pop();
+                     if (context.canPop()) context.pop();
                   },
                   icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                   label: const Text("Delete Entry", style: TextStyle(color: Colors.redAccent)),

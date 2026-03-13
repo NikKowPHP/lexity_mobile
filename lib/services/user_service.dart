@@ -25,7 +25,7 @@ class UserService {
         ? "${token.substring(0, token.length > 10 ? 10 : token.length)}..."
         : "null";
 
-      print("Sending Token: $tokenPreview");
+      _logger.debug("Sending Token: $tokenPreview");
 
       final response = await http.get(
         Uri.parse('${AppConstants.baseUrl}/api/user/profile'),

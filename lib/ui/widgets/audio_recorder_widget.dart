@@ -102,7 +102,7 @@ class _AudioRecorderWidgetState extends ConsumerState<AudioRecorderWidget> {
                   height: 80,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: status == RecordingStatus.recording ? Colors.redAccent.withOpacity(0.1) : Colors.white10,
+                    color: status == RecordingStatus.recording ? Colors.redAccent.withValues(alpha: 0.1) : Colors.white10,
                     border: Border.all(color: status == RecordingStatus.recording ? Colors.redAccent : Colors.white24, width: 2),
                   ),
                   child: Icon(

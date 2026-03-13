@@ -17,14 +17,16 @@ class LiquidNavigation extends StatelessWidget {
     (icon: LucideIcons.barChart2, label: 'Progress'), // Index 3
     (icon: LucideIcons.user, label: 'Profile'),       // Index 4
     (icon: LucideIcons.languages, label: 'Translator'), // Index 5
-    (icon: LucideIcons.bookMarked, label: 'Vocab'),    // Index 6
+   
   ];
 
-  void _onTap(int index) {
-    navigationShell.goBranch(
-      index,
-      initialLocation: index == navigationShell.currentIndex,
-    );
+  void _onTap(BuildContext context, int index) {
+    if (index < navigationShell.route.branches.length) {
+      navigationShell.goBranch(
+        index,
+        initialLocation: index == navigationShell.currentIndex,
+      );
+    } 
   }
 
   @override
@@ -56,7 +58,7 @@ class LiquidNavigation extends StatelessWidget {
                   icon: entry.value.icon,
                   label: entry.value.label,
                   isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
+                  onTap: () => _onTap(context, entry.key),
                 );
               }).toList(),
             ),
@@ -85,7 +87,7 @@ class LiquidNavigation extends StatelessWidget {
                   icon: entry.value.icon,
                   label: entry.value.label,
                   isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
+                  onTap: () => _onTap(context, entry.key),
                   isVertical: true,
                 );
               }).toList(),
