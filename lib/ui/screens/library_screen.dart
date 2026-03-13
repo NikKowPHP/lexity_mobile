@@ -124,7 +124,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 (context, index) {
                   final book = books[index];
                   return GestureDetector(
-                    onTap: () => context.push('/library/book/${book.id}'),
+                    onTap: () => context.push('/library/book/${book.id}?progress=${book.progressPct}'),
                     onLongPress: () => _promptDelete(book.id, book.title),
                     child: GlassCard(
                       padding: 12,

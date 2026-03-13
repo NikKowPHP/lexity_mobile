@@ -16,12 +16,17 @@ import '../../providers/vocabulary_provider.dart';
 import '../../services/logger_service.dart';
 import '../../theme/liquid_theme.dart';
 import '../../services/ai_service.dart';
-import '../../ui/widgets/translation_tooltip.dart';
+
 import 'book_reader_html.dart';
 
 class BookReaderScreen extends ConsumerStatefulWidget {
   final String bookId;
-  const BookReaderScreen({super.key, required this.bookId});
+  final double initialProgress;
+  const BookReaderScreen({
+    super.key,
+    required this.bookId,
+    this.initialProgress = 0.0,
+  });
 
   @override
   ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
@@ -29,15 +34,14 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   InAppWebViewController? webViewController;
-  double _progress = 0.0;
-  double _fontSize = 115.0;
-  String _theme = 'dark'; // 'light', 'dark', 'sepia'
+  late double _progress;
   String? _lastCfi;
-  List<dynamic> _toc = [];
-
   bool _isDownloading = false;
-  double _downloadProgress = 0.0;
   bool _localFileReady = false;
+  String _theme = 'light';
+  double _fontSize = 100.0;
+  List<dynamic> _toc = [];
+  double _downloadProgress = 0.0;
 
   Timer? _progressDebounce;
   HttpServer? _localServer;
@@ -47,13 +51,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
-
-  // NEW VARIABLES FOR WORD TOOLTIP
-  bool _showTooltip = false;
-  String _tooltipWord = '';
-  String _tooltipContext = '';
-  double _tooltipX = 0;
-  double _tooltipY = 0;
 
   void _updateReaderStyles() {
     final logger = ref.read(loggerProvider);
@@ -102,7 +99,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             },
             ".lexity-word.unknown": { 
               "background-color": "rgba(99, 102, 241, 0.15) !important",
-              "border-bottom": "1px dashed #6366F1 !important" 
+              "border-bottom": "1px dashed ${_theme == 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)'} !important" 
             },
             ".lexity-word.learning": { 
               "background-color": "rgba(236, 72, 153, 0.2) !important", 
@@ -121,9 +118,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               "width": "32px",
               "height": "32px",
               "border-radius": "8px",
-              "background": "rgba(99, 102, 241, 0.15)",
-              "border": "1px solid rgba(255, 255, 255, 0.1)",
-              "color": "#6366F1",
+              "background": "${_theme == 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)'} !important",
+              "border": "1px solid ${_theme == 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)'} !important",
+              "color": "${colors['fg']} !important",
               "display": "flex",
               "align-items": "center",
               "justify-content": "center",
@@ -131,7 +128,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               "font-size": "16px",
               "user-select": "none",
               "-webkit-user-select": "none",
-              "opacity": "0.6",
+              "opacity": "0.8",
               "transition": "opacity 0.2s",
               "z-index": "10"
             },
@@ -326,13 +323,25 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       child: Scaffold(
         backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
         appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () {
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(
+          color: _theme == 'light' ? Colors.black87 : Colors.white,
+        ),
+        title: Text(
+          "${_progress.round()}% Read",
+          style: TextStyle(
+            fontSize: 14,
+            color: _theme == 'light' ? Colors.black87 : Colors.white,
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
             _handleImmediateSave();
             context.pop();
-          }),
-          title: Text("${_progress.round()}% Read", style: const TextStyle(fontSize: 14)),
+          },
+        ),
           actions: [
             // NEW: MARK PAGE KNOWN BUTTON
             IconButton(
@@ -411,7 +420,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   final cfi = args[0] as String;
                   final pct = (args[1] as num).toDouble();
                   
-                  if (mounted) {
+                  if (mounted && (pct > 0 || _canSaveToBackend)) {
                     setState(() {
                       _progress = pct; 
                       _lastCfi = cfi;
@@ -449,22 +458,20 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                 });
 
                 controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
+                  // 1. Trigger the load from backend
+                  ref.read(vocabularyProvider.notifier).loadVocabulary(book.targetLanguage);
+                  
                   Future.delayed(const Duration(milliseconds: 2000), () {
                     if (mounted) setState(() => _canSaveToBackend = true);
                   });
-
-                  ref.read(srsProvider.notifier).loadDeck(book.targetLanguage);
-                  ref.read(vocabularyProvider.notifier).loadVocabulary(book.targetLanguage);
                   _updateReaderStyles();
                 });
 
                 controller.addJavaScriptHandler(handlerName: 'onWordTap', callback: (args) {
                   final word = args[0] as String;
-                  final x = (args[1] as num).toDouble();
-                  final y = (args[2] as num).toDouble();
                   final contextText = args[3] as String;
                   
-                  // NEW CODE: If the word is currently unknown, mark it as known immediately
+                  // 1. Handle vocabulary update for unknown words
                   final currentStatus = ref.read(vocabularyProvider).value?[word.toLowerCase()];
                   if (currentStatus == null || currentStatus.toLowerCase() == 'unknown') {
                     final book = ref.read(bookDetailProvider(widget.bookId)).value;
@@ -473,26 +480,33 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     }
                   }
 
-                  if (mounted) {
-                    setState(() {
-                      _tooltipWord = word;
-                      _tooltipX = x;
-                      _tooltipY = y;
-                      _tooltipContext = contextText;
-                      _showTooltip = true;
-                    });
+                  // 2. Open the existing bottom sheet instead of a tooltip
+                  final book = ref.read(bookDetailProvider(widget.bookId)).value;
+                  final profile = ref.read(userProfileProvider).value;
+                  
+                  if (book != null && profile != null) {
+                    _showTranslationSheet(
+                      context, 
+                      selectedText: word, 
+                      contextText: contextText, 
+                      sourceLang: book.targetLanguage, 
+                      nativeLang: profile.nativeLanguage ?? 'english',
+                    );
                   }
                 });
 
                 controller.addJavaScriptHandler(handlerName: 'onBackgroundTap', callback: (_) {
-                  if (_showTooltip && mounted) setState(() => _showTooltip = false);
+                  // No action needed for background tap
                 });
 
                 controller.addJavaScriptHandler(handlerName: 'onChapterReady', callback: (_) {
-                  final vocabMap = ref.read(vocabularyProvider).value ?? {};
-                  final jsonStr = jsonEncode(vocabMap);
-                  final jsString = jsonEncode(jsonStr);
-                  webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+                  // Ensure current vocab is sent to every new chapter as it loads
+                  final vocabData = ref.read(vocabularyProvider).value;
+                  if (vocabData != null) {
+                    final jsonStr = jsonEncode(vocabData);
+                    final jsString = jsonEncode(jsonStr);
+                    webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+                  }
                 });
 
                 controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
@@ -517,18 +531,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             );
          },
         ),
-        
-            // NEW: TOOLTIP OVERLAY
-            if (_showTooltip)
-              TranslationTooltip(
-                selectedText: _tooltipWord,
-                contextText: _tooltipContext,
-                sourceLang: bookAsync.value?.targetLanguage ?? 'spanish',
-                targetLang: profileAsync.value?.nativeLanguage ?? 'english',
-                x: _tooltipX,
-                y: _tooltipY,
-                onClose: () => setState(() => _showTooltip = false),
-              ),
           ],
         ),
       ),
@@ -754,6 +756,12 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
         _isAdding = false; 
         if (success) {
           _isAdded = true;
+          // NEW: Trigger local vocab update so the word color changes in the background
+          ref.read(vocabularyProvider.notifier).updateWordStatus(
+            widget.selectedText, 
+            'learning', 
+            widget.sourceLang
+          );
         } 
       });
     }

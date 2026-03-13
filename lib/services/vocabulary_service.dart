@@ -33,15 +33,19 @@ class VocabularyService {
   }
 
   Future<void> updateStatus(String word, String status, String language) async {
-    await http.put(
+    final response = await http.post(
       Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
       headers: await _getHeaders(),
       body: jsonEncode({
-        'word': word,
-        'status': status,
         'targetLanguage': language,
+        'words': [word.toLowerCase()], // Backend expects an array of words
+        'status': status.toUpperCase(), // Backend expects uppercase enum
       }),
     );
+    
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update vocabulary status');
+    }
   }
 
   Future<void> markBatchKnown(List<String> words, String language) async {

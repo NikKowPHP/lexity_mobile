@@ -7,7 +7,7 @@ import '../ui/screens/login_screen.dart';
 import '../ui/screens/home_shell.dart';
 import '../ui/screens/path_screen.dart';
 import '../ui/screens/study_screen.dart';
-import '../ui/screens/journal_screen.dart';
+
 import '../ui/screens/progress_screen.dart';
 import '../ui/screens/profile_screen.dart';
 import '../ui/screens/translator_screen.dart';
@@ -169,8 +169,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'book/:id',
                     parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) =>
-                        BookReaderScreen(bookId: state.pathParameters['id']!),
+                    builder: (context, state) {
+                      final id = state.pathParameters['id']!;
+                      final progressStr = state.uri.queryParameters['progress'] ?? '0.0';
+                      final progress = double.tryParse(progressStr) ?? 0.0;
+                      return BookReaderScreen(
+                        bookId: id,
+                        initialProgress: progress,
+                      );
+                    },
                   ),
                 ],
               ),

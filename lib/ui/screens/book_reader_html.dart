@@ -20,11 +20,13 @@ const String bookReaderHtmlTemplate = """
   <script>
     let book;
     let rendition;
+    window.vocabMap = {}; // NEW: Global cache in JS
     window.lastReportedText = "";
 
     window.applyVocabStyles = function(vocabMapJson) {
       if (!rendition) return;
-      const vocabMap = JSON.parse(vocabMapJson);
+      window.vocabMap = JSON.parse(vocabMapJson); // NEW: Update global cache
+      const vocabMap = window.vocabMap;
       rendition.getContents().forEach(content => {
           const spans = content.document.querySelectorAll('.lexity-word');
           spans.forEach(span => {
@@ -105,8 +107,8 @@ const String bookReaderHtmlTemplate = """
                   // Wrap each word match in a span with appropriate status
                   span.innerHTML = textNode.nodeValue.replace(regex, (match) => {
                       const normalizedWord = match.toLowerCase();
-                      // Status is normalized to lowercase (e.g. "LEARNING" -> "learning")
-                      const status = (window.vocabMap && window.vocabMap[normalizedWord] ? window.vocabMap[normalizedWord] : 'unknown').toLowerCase();
+                      // Use the global cache that was pushed from Dart on startup
+                      const status = (window.vocabMap[normalizedWord] || 'unknown').toLowerCase();
                       return `<span class="lexity-word \${status}" data-word="\${normalizedWord}">\${match}</span>`;
                   });
                   textNode.parentNode.replaceChild(span, textNode);
