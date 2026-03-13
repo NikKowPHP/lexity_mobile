@@ -58,6 +58,17 @@ class VocabularyService {
       }),
     );
   }
+
+  Future<void> deleteWord(String word, String language) async {
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary?word=$word&targetLanguage=$language'),
+      headers: await _getHeaders(),
+    );
+    
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete word');
+    }
+  }
 }
 
 final vocabularyServiceProvider = Provider((ref) => VocabularyService(ref.watch(tokenServiceProvider(TokenType.auth))));

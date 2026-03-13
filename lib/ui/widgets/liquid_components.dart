@@ -120,12 +120,14 @@ class GlassInput extends StatelessWidget {
   final String hint;
   final bool isPassword;
   final TextEditingController controller;
+  final ValueChanged<String>? onChanged;
 
   const GlassInput({
     super.key,
     required this.hint,
     required this.controller,
     this.isPassword = false,
+    this.onChanged,
   });
 
   @override
@@ -140,6 +142,7 @@ class GlassInput extends StatelessWidget {
       child: TextField(
         controller: controller,
         obscureText: isPassword,
+        onChanged: onChanged,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           hintText: hint,

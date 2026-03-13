@@ -20,6 +20,7 @@ import '../ui/screens/reading_screen.dart';
 import '../ui/screens/listening_screen.dart';
 import '../ui/screens/library_screen.dart';
 import '../ui/screens/book_reader_screen.dart';
+import '../ui/screens/vocabulary_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -201,6 +202,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+
           // Branch 5: Translator
           StatefulShellBranch(
             routes: [
@@ -208,6 +210,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/translator',
                 pageBuilder: (context, state) =>
                     _buildFadePage(const TranslatorScreen(), state),
+              ),
+            ],
+          ),
+          // Branch 6: Vocabulary
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/vocabulary',
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const VocabularyScreen(), state),
               ),
             ],
           ),

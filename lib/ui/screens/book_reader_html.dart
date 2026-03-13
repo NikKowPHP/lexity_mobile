@@ -156,13 +156,16 @@ const String bookReaderHtmlTemplate = """
           const paragraphs = doc.querySelectorAll('p');
           paragraphs.forEach((p) => {
             // Only add buttons to substantial text blocks
-            if (p.textContent.trim().length < 25) return;
+            if (p.textContent.trim().length < 15) return; // Lowered threshold slightly
             if (p.querySelector('.para-translate-btn')) return;
             
             const btn = doc.createElement('div');
             btn.className = 'para-translate-btn';
-            // Use a spans for the icon text to ensure it's centered
-            btn.innerHTML = '<span>文</span>'; 
+            
+            // Use a span wrapper to ensure character centering
+            const btnText = doc.createElement('span');
+            btnText.innerText = '文';
+            btn.appendChild(btnText);
             
             btn.onclick = (e) => {
               e.preventDefault();
@@ -221,7 +224,7 @@ const String bookReaderHtmlTemplate = """
                             },
                             "p": {
                                 "position": "relative !important",
-                                "padding-right": "50px !important",
+                                "padding-right": "40px !important", // Reduced padding for better text balance
                                 "margin-bottom": "1.5em !important",
                                 "color": c.fg + " !important",
                                 "line-height": "1.6 !important"
@@ -249,29 +252,33 @@ const String bookReaderHtmlTemplate = """
                             },
                             ".para-translate-btn": {
                                 "position": "absolute !important",
-                                "right": "14px !important",
-                                "top": "2px !important",
-                                "padding": "4px !important",
+                                "right": "0px !important", // Move to the extreme edge of the padded paragraph
+                                "top": "0px !important",
+                                "width": "32px !important", // Fixed width
+                                "height": "32px !important", // Fixed height
                                 "border-radius": "8px !important",
-                                "background": (t === 'light' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.2)') + " !important",
-                                "border": "1px solid " + (t === 'light' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.3)') + " !important",
+                                "background": (t === 'light' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.15)') + " !important",
+                                "border": "1px solid " + (t === 'light' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.25)') + " !important",
                                 "color": "#6366F1 !important", 
-                                "display": "flex !important",
+                                "display": "flex !important", // Use flex for perfect centering
                                 "align-items": "center !important",
                                 "justify-content": "center !important",
                                 "cursor": "pointer !important",
-                                "font-size": "16px !important",
+                                "font-size": "14px !important", // Slightly smaller font
                                 "font-weight": "bold !important",
                                 "user-select": "none !important",
                                 "-webkit-user-select": "none !important",
-                                "transition": "all 0.2s ease-in-out !important",
-                                "box-shadow": "0 2px 4px rgba(0,0,0,0.1) !important",
+                                "transition": "all 0.15s ease-in-out !important",
                                 "z-index": "10 !important"
+                            },
+                            ".para-translate-btn span": {
+                                "display": "block !important",
+                                "line-height": "1 !important"
                             },
                             ".para-translate-btn:active": {
                                 "background": "#6366F1 !important",
                                 "color": "#ffffff !important",
-                                "transform": "scale(0.95) !important"
+                                "transform": "scale(0.9) !important"
                             },
                             "::selection": {
                                 "background-color": "rgba(99, 102, 241, 0.3) !important",

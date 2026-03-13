@@ -7,7 +7,10 @@ class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> 
   VocabularyNotifier(this._service) : super(const AsyncValue.loading());
 
   Future<void> loadVocabulary(String language) async {
-    state = const AsyncValue.loading();
+    // Only show loading if we don't already have data to prevent flicker
+    if (!state.hasValue) {
+      state = const AsyncValue.loading();
+    }
     try {
       final vocab = await _service.getVocabulary(language);
       state = AsyncValue.data(vocab);
@@ -45,6 +48,20 @@ class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> 
       await _service.markBatchKnown(lowerWords, language);
     } catch (e) {
       state = AsyncValue.data(currentMap); // Rollback
+    }
+  }
+
+  Future<void> deleteWord(String word, String language) async {
+    final currentMap = state.value ?? {};
+    final wordLower = word.toLowerCase();
+    
+    final newMap = Map<String, String>.from(currentMap)..remove(wordLower);
+    state = AsyncValue.data(newMap);
+
+    try {
+      await _service.deleteWord(wordLower, language);
+    } catch (e) {
+      state = AsyncValue.data(currentMap);
     }
   }
 }
