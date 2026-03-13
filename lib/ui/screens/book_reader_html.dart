@@ -74,6 +74,12 @@ const String bookReaderHtmlTemplate = """
           flow: "paginated", 
           manager: "continuous" 
         });
+
+        // Force epub.js to allow scripts within its internal iframes.
+        if (!rendition.settings.contents) {
+            rendition.settings.contents = {};
+        }
+        rendition.settings.contents.allowScriptedContent = true;
         
         rendition.on("relocated", (location) => {
           window.requestAnimationFrame(() => {
@@ -133,24 +139,20 @@ const String bookReaderHtmlTemplate = """
           
           const paragraphs = doc.querySelectorAll('p');
           paragraphs.forEach((p) => {
-            // Filter out short fragments like page numbers or headers
+            // Only add buttons to substantial text blocks
             if (p.textContent.trim().length < 25) return;
-            
-            // Prevent duplicate buttons on chapter re-loads
             if (p.querySelector('.para-translate-btn')) return;
-            
-            // Set relative positioning directly on the element as a fallback
-            p.style.position = 'relative';
             
             const btn = doc.createElement('div');
             btn.className = 'para-translate-btn';
-            btn.innerHTML = '文'; 
+            // Use a spans for the icon text to ensure it's centered
+            btn.innerHTML = '<span>文</span>'; 
             
-            btn.addEventListener('click', (e) => {
+            btn.onclick = (e) => {
               e.preventDefault();
               e.stopPropagation();
               window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
-            });
+            };
             p.appendChild(btn);
           });
           
@@ -197,7 +199,20 @@ const String bookReaderHtmlTemplate = """
           } 
         });
 
+        let hasAppliedOffset = false;
+        rendition.on("rendered", (section) => {
+          if (initialCfi && !hasAppliedOffset) {
+            hasAppliedOffset = true;
+            // Wait for layout to settle before jumping a page forward
+            setTimeout(() => {
+              console.log("BookReader JS: Initial render complete, applying +1 page offset");
+              rendition.next();
+            }, 250);
+          }
+        });
+
         await rendition.display(initialCfi || undefined);
+
         window.flutter_inappwebview.callHandler('onReady');
         
         await book.ready;

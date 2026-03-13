@@ -48,102 +48,113 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   int? _localPort;
 
   bool _isInitialized = false;
-  
+
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
 
   void _updateReaderStyles() {
     final logger = ref.read(loggerProvider);
-    logger.debug('BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)');
-    
+    logger.debug(
+      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)',
+    );
+
     final colors = {
       'light': {'bg': '#ffffff', 'fg': '#000000'},
       'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
       'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
     }[_theme]!;
 
-    final js = """
+    final js =
+        """
       if (typeof rendition !== 'undefined' && rendition) {
-        rendition.themes.fontSize("$_fontSize%");
-        rendition.themes.register("$_theme", {
-          "body": { 
-            "background": "${colors['bg']} !important", 
-            "color": "${colors['fg']} !important"
-          },
-          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
-          "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
-        });
-        rendition.themes.select("$_theme");
-        
-        rendition.getContents().forEach(c => {
-          c.addStylesheetRules({
-            "body": {
-              "background-color": "${colors['bg']} !important",
-              "color": "${colors['fg']} !important",
-              "font-size": "$_fontSize% !important"
-            },
-            "p": {
-              "position": "relative !important",
-              "padding-right": "45px !important",
-              "margin-bottom": "1.5em !important",
+        try {
+          rendition.themes.fontSize("$_fontSize%");
+          rendition.themes.register("$_theme", {
+            "body": { 
+              "background": "${colors['bg']} !important", 
               "color": "${colors['fg']} !important"
             },
-            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
-              "color": "${colors['fg']} !important",
-              "background": "transparent !important"
-            },
-            // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
-            ".lexity-word": { 
-              "cursor": "pointer", 
-              "transition": "background-color 0.3s, border-bottom 0.3s" 
-            },
-            ".lexity-word.unknown": { 
-              "background-color": "rgba(99, 102, 241, 0.15) !important",
-              "border-bottom": "1px dashed ${_theme == 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)'} !important" 
-            },
-            ".lexity-word.learning": { 
-              "background-color": "rgba(236, 72, 153, 0.2) !important", 
-              "border-bottom": "2px solid #EC4899 !important" 
-            },
-            ".lexity-word.known": { 
-              "background-color": "transparent !important",
-              "border-bottom": "none !important",
-              "color": "inherit !important"
-            },
-            // END NEW CSS
-            ".para-translate-btn": {
-              "position": "absolute !important",
-              "right": "5px !important",
-              "top": "0px !important",
-              "width": "34px !important",
-              "height": "34px !important",
-              "border-radius": "10px !important",
-              "background": "${_theme == 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)'} !important",
-              "border": "1px solid ${_theme == 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)'} !important",
-              "color": "${_theme == 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.5)'} !important",
-              "display": "flex !important",
-              "align-items": "center !important",
-              "justify-content": "center !important",
-              "cursor": "pointer !important",
-              "font-size": "16px !important",
-              "user-select": "none !important",
-              "-webkit-user-select": "none !important",
-              "transition": "all 0.2s !important",
-              "z-index": "10 !important"
-            },
-            ".para-translate-btn:active": {
-              "background": "rgba(99, 102, 241, 0.3) !important",
-              "color": "#6366F1 !important",
-              "transform": "scale(0.9) !important"
-            },
-            "::selection": {
-              "background-color": "rgba(99, 102, 241, 0.3) !important",
-              "text-decoration": "underline !important",
-              "text-decoration-color": "#6366F1 !important",
-              "color": "inherit !important"
+            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
+            "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
+          });
+          rendition.themes.select("$_theme");
+          
+          rendition.getContents().forEach(c => {
+            if (c && c.document) {
+              c.addStylesheetRules({
+                "body": {
+                  "background-color": "${colors['bg']} !important",
+                  "color": "${colors['fg']} !important",
+                  "font-size": "$_fontSize% !important"
+                },
+                "p": {
+                  "position": "relative !important",
+                  "padding-right": "48px !important",
+                  "margin-bottom": "1.5em !important",
+                  "color": "${colors['fg']} !important",
+                  "line-height": "1.6 !important"
+                },
+                "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
+                  "color": "${colors['fg']} !important",
+                  "background": "transparent !important"
+                },
+                // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
+                ".lexity-word": { 
+                  "cursor": "pointer", 
+                  "transition": "background-color 0.3s, border-bottom 0.3s" 
+                },
+                ".lexity-word.unknown": { 
+                  "background-color": "rgba(99, 102, 241, 0.15) !important",
+                  "border-bottom": "1px dashed ${_theme == 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)'} !important" 
+                },
+                ".lexity-word.learning": { 
+                  "background-color": "rgba(236, 72, 153, 0.2) !important", 
+                  "border-bottom": "2px solid #EC4899 !important" 
+                },
+                ".lexity-word.known": { 
+                  "background-color": "transparent !important",
+                  "border-bottom": "none !important",
+                  "color": "inherit !important"
+                },
+                // END NEW CSS
+                ".para-translate-btn": {
+                  "position": "absolute !important",
+                  "right": "0px !important",
+                  "top": "2px !important",
+                  "padding": "4px !important",
+                  "border-radius": "8px !important",
+                  "background": "${_theme == 'light' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.2)'} !important",
+                  "border": "1px solid ${_theme == 'light' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.3)'} !important",
+                  "color": "#6366F1 !important", 
+                  "display": "flex !important",
+                  "align-items": "center !important",
+                  "justify-content": "center !important",
+                  "cursor": "pointer !important",
+                  "font-size": "16px !important",
+                  "font-weight": "bold !important",
+                  "user-select": "none !important",
+                  "-webkit-user-select": "none !important",
+                  "transition": "all 0.2s ease-in-out !important",
+                  "box-shadow": "0 2px 4px rgba(0,0,0,0.1) !important",
+                  "z-index": "10 !important"
+                },
+                ".para-translate-btn:active": {
+                  "background": "#6366F1 !important",
+                  "color": "#ffffff !important",
+                  "transform": "scale(0.95) !important"
+                },
+                "::selection": {
+                  "background-color": "rgba(99, 102, 241, 0.3) !important",
+                  "text-decoration": "underline !important",
+                  "text-decoration-color": "#6366F1 !important",
+                  "color": "inherit !important"
+                }
+              });
             }
           });
-        });
+        } catch (e) {
+          console.error("Style update error:", e);
+        }
       }
     """;
     webViewController?.evaluateJavascript(source: js);
@@ -164,16 +175,19 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         setState(() => _localPort = _localServer!.port);
         logger.info('BookReader: Local server bound to port $_localPort');
       }
-      
+
       _localServer!.listen((HttpRequest request) async {
         request.response.headers.add('Access-Control-Allow-Origin', '*');
-        request.response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        request.response.headers.add(
+          'Access-Control-Allow-Methods',
+          'GET, OPTIONS',
+        );
         request.response.headers.add('Access-Control-Allow-Headers', '*');
-        
+
         if (request.method == 'OPTIONS') {
-           request.response.statusCode = 200;
-           await request.response.close();
-           return;
+          request.response.statusCode = 200;
+          await request.response.close();
+          return;
         }
 
         // NEW CODE START: Serve the reader HTML at the root to avoid initialData bugs on Linux
@@ -185,19 +199,23 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         }
         // NEW CODE END
         if (request.uri.path.startsWith('/books/')) {
-           final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
-           final dir = await getApplicationDocumentsDirectory();
-           final file = File('${dir.path}/books/$bookId.epub');
-           
-           if (await file.exists()) {
-             logger.debug('BookReader: Serving local EPUB file for $bookId');
-             final length = await file.length();
-             request.response.contentLength = length;
-             request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
-             await request.response.addStream(file.openRead());
-             await request.response.close();
-             return;
-           }
+          final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
+          final dir = await getApplicationDocumentsDirectory();
+          final file = File('${dir.path}/books/$bookId.epub');
+
+          if (await file.exists()) {
+            logger.debug('BookReader: Serving local EPUB file for $bookId');
+            final length = await file.length();
+            request.response.contentLength = length;
+            request.response.headers.contentType = ContentType(
+              'application',
+              'epub+zip',
+              charset: 'utf-8',
+            );
+            await request.response.addStream(file.openRead());
+            await request.response.close();
+            return;
+          }
         }
         request.response.statusCode = 404;
         await request.response.close();
@@ -210,7 +228,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   Future<void> _ensureBookDownloaded(UserBook book) async {
     final logger = ref.read(loggerProvider);
     if (_isDownloading || _localFileReady) return;
-    
+
     try {
       final dir = await getApplicationDocumentsDirectory();
       final booksDir = Directory('${dir.path}/books');
@@ -223,7 +241,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         return;
       }
 
-      logger.info('BookReader: Book not found locally, starting download for "${book.title}"');
+      logger.info(
+        'BookReader: Book not found locally, starting download for "${book.title}"',
+      );
       if (book.signedUrl == null) {
         logger.error('BookReader: Missing signedUrl for book ${book.id}');
         throw Exception("No download URL provided");
@@ -244,7 +264,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         (chunk) {
           bytes.addAll(chunk);
           received += chunk.length;
-          if (total > 0 && mounted) setState(() => _downloadProgress = received / total);
+          if (total > 0 && mounted)
+            setState(() => _downloadProgress = received / total);
         },
         onDone: () async {
           await file.writeAsBytes(bytes);
@@ -267,14 +288,17 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     }
   }
 
-
   void _handleImmediateSave() {
     if (!mounted || _lastCfi == null) return;
 
     final logger = ref.read(loggerProvider);
     _progressDebounce?.cancel();
-    logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
-    ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
+    logger.info(
+      'BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi',
+    );
+    ref
+        .read(bookNotifierProvider.notifier)
+        .updateProgress(widget.bookId, _lastCfi!, _progress);
     _lastCfi = null; // Prevent double saving
   }
 
@@ -294,13 +318,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
     bookAsync.whenData((book) {
       if (!_isInitialized) {
-          logger.info('BookReader: Initializing state. Saved CFI: ${book.currentCfi}');
-          _isInitialized = true;
-          setState(() {
-            _progress = book.progressPct;
-            _lastCfi = book.currentCfi;
-          });
-          _ensureBookDownloaded(book);
+        logger.info(
+          'BookReader: Initializing state. Saved CFI: ${book.currentCfi}',
+        );
+        _isInitialized = true;
+        setState(() {
+          _progress = book.progressPct;
+          _lastCfi = book.currentCfi;
+        });
+        _ensureBookDownloaded(book);
       }
     });
 
@@ -309,55 +335,75 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         if (webViewController != null) {
           final jsonStr = jsonEncode(vocabMap);
           final jsString = jsonEncode(jsonStr);
-          webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+          webViewController?.evaluateJavascript(
+            source:
+                "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
+          );
         }
       });
     });
 
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
-          if (didPop && mounted) {
-             _handleImmediateSave();
-          }
+        if (didPop && mounted) {
+          _handleImmediateSave();
+        }
       },
       child: Scaffold(
-        backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
+        backgroundColor: _theme == 'dark'
+            ? const Color(0xFF121212)
+            : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
         appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(
-          color: _theme == 'light' ? Colors.black87 : Colors.white,
-        ),
-        title: Text(
-          "${_progress.round()}% Read",
-          style: TextStyle(
-            fontSize: 14,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: IconThemeData(
             color: _theme == 'light' ? Colors.black87 : Colors.white,
           ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            _handleImmediateSave();
-            context.pop();
-          },
-        ),
+          title: Text(
+            "${_progress.round()}% Read",
+            style: TextStyle(
+              fontSize: 14,
+              color: _theme == 'light' ? Colors.black87 : Colors.white,
+            ),
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              _handleImmediateSave();
+              context.pop();
+            },
+          ),
           actions: [
             // NEW: MARK PAGE KNOWN BUTTON
             IconButton(
-              icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+              icon: const Icon(
+                Icons.check_circle_outline,
+                color: Colors.greenAccent,
+              ),
               onPressed: () async {
                 final book = bookAsync.value;
                 if (book == null) return;
-                final wordsObj = await webViewController?.evaluateJavascript(source: "window.getVisibleUnknownWords();");
+                final wordsObj = await webViewController?.evaluateJavascript(
+                  source: "window.getVisibleUnknownWords();",
+                );
                 if (wordsObj != null && wordsObj is List) {
-                   final words = wordsObj.map((e) => e.toString()).toList();
-                   if (words.isNotEmpty) {
-                       ref.read(vocabularyProvider.notifier).markBatchKnown(words, book.targetLanguage);
-                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Marked ${words.length} words as known")));
-                   } else {
-                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No unknown words on this page.")));
-                   }
+                  final words = wordsObj.map((e) => e.toString()).toList();
+                  if (words.isNotEmpty) {
+                    ref
+                        .read(vocabularyProvider.notifier)
+                        .markBatchKnown(words, book.targetLanguage);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Marked ${words.length} words as known"),
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("No unknown words on this page."),
+                      ),
+                    );
+                  }
                 }
               },
             ),
@@ -385,152 +431,219 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children:[
-                        const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
+                      children: [
+                        const CircularProgressIndicator(
+                          color: LiquidTheme.primaryAccent,
+                        ),
                         const SizedBox(height: 16),
-                        Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
-                      ]
-                    )
+                        Text(
+                          "Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%",
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
                   );
                 }
-        
+
                 if (!_localFileReady || _localPort == null) {
-                  return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: LiquidTheme.primaryAccent,
+                    ),
+                  );
                 }
-        
+
                 return InAppWebView(
                   // CHANGE: Use initialUrlRequest instead of initialData for better Linux compatibility
                   initialUrlRequest: URLRequest(
-                    url: WebUri("http://localhost:$_localPort/")
+                    url: WebUri("http://localhost:$_localPort/"),
                   ),
                   initialSettings: InAppWebViewSettings(
                     javaScriptEnabled: true,
+                    domStorageEnabled: true,
+                    databaseEnabled: true,
                     isInspectable: kDebugMode,
                     allowUniversalAccessFromFileURLs: true,
                     allowFileAccessFromFileURLs: true,
-                    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                    mixedContentMode:
+                        MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
                     // NEW CODE: Fix potential compositor issues on Linux/GTK
                     transparentBackground: true,
+                    safeBrowsingEnabled: false,
+                    allowContentAccess: true,
+                    allowFileAccess: true,
+                    javaScriptCanOpenWindowsAutomatically: true,
                   ),
-              onWebViewCreated: (controller) {
-                webViewController = controller;
-                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
-                  if (!mounted) return;
+                  onWebViewCreated: (controller) {
+                    webViewController = controller;
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onProgress',
+                      callback: (args) {
+                        if (!mounted) return;
 
-                  final cfi = args[0] as String;
-                  final pct = (args[1] as num).toDouble();
-                  
-                  if (mounted && (pct > 0 || _canSaveToBackend)) {
-                    setState(() {
-                      _progress = pct; 
-                      _lastCfi = cfi;
-                    });
-                  }
+                        final cfi = args[0] as String;
+                        final pct = (args[1] as num).toDouble();
 
-                  if (!_canSaveToBackend && pct <= 0) {
-                      return;
-                  }
+                        if (mounted) {
+                          setState(() {
+                            _progress = pct;
+                            _lastCfi = cfi;
+                          });
+                        }
 
-                  _progressDebounce?.cancel();
-                  _progressDebounce = Timer(const Duration(milliseconds: 1500), () {
-                    if (mounted) {
-                      ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
-                    }
-                  });
+                        // Ensure we don't push progress to the backend while the +1 jump is happening
+                        if (!_canSaveToBackend) return;
 
-                  _updateReaderStyles();
-                });
+                        _progressDebounce?.cancel();
+                        _progressDebounce = Timer(
+                          const Duration(milliseconds: 1500),
+                          () {
+                            if (mounted) {
+                              ref
+                                  .read(bookNotifierProvider.notifier)
+                                  .updateProgress(book.id, cfi, pct);
+                            }
+                          },
+                        );
 
-                controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
-                  final tocData = args[0] as List<dynamic>;
-                  if (mounted) setState(() => _toc = tocData);
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onParagraphTranslate', callback: (args) {
-                  final text = args[0].toString();
-                  _showTranslationSheet(
-                    context, 
-                    selectedText: text, 
-                    contextText: text, 
-                    sourceLang: book.targetLanguage, 
-                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
-                  );
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
-                  // 1. Trigger the load from backend
-                  ref.read(vocabularyProvider.notifier).loadVocabulary(book.targetLanguage);
-                  
-                  Future.delayed(const Duration(milliseconds: 2000), () {
-                    if (mounted) setState(() => _canSaveToBackend = true);
-                  });
-                  _updateReaderStyles();
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onWordTap', callback: (args) {
-                  final word = args[0] as String;
-                  final contextText = args[3] as String;
-                  
-                  // 1. Handle vocabulary update for unknown words
-                  final currentStatus = ref.read(vocabularyProvider).value?[word.toLowerCase()];
-                  if (currentStatus == null || currentStatus.toLowerCase() == 'unknown') {
-                    final book = ref.read(bookDetailProvider(widget.bookId)).value;
-                    if (book != null) {
-                      ref.read(vocabularyProvider.notifier).updateWordStatus(word, 'known', book.targetLanguage);
-                    }
-                  }
-
-                  // 2. Open the existing bottom sheet instead of a tooltip
-                  final book = ref.read(bookDetailProvider(widget.bookId)).value;
-                  final profile = ref.read(userProfileProvider).value;
-                  
-                  if (book != null && profile != null) {
-                    _showTranslationSheet(
-                      context, 
-                      selectedText: word, 
-                      contextText: contextText, 
-                      sourceLang: book.targetLanguage, 
-                      nativeLang: profile.nativeLanguage ?? 'english',
+                        _updateReaderStyles();
+                      },
                     );
-                  }
-                });
 
-                controller.addJavaScriptHandler(handlerName: 'onBackgroundTap', callback: (_) {
-                  // No action needed for background tap
-                });
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onToc',
+                      callback: (args) {
+                        final tocData = args[0] as List<dynamic>;
+                        if (mounted) setState(() => _toc = tocData);
+                      },
+                    );
 
-                controller.addJavaScriptHandler(handlerName: 'onChapterReady', callback: (_) {
-                  // Ensure current vocab is sent to every new chapter as it loads
-                  final vocabData = ref.read(vocabularyProvider).value;
-                  if (vocabData != null) {
-                    final jsonStr = jsonEncode(vocabData);
-                    final jsString = jsonEncode(jsonStr);
-                    webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
-                  }
-                });
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onParagraphTranslate',
+                      callback: (args) {
+                        final text = args[0].toString();
+                        _showTranslationSheet(
+                          context,
+                          selectedText: text,
+                          contextText: text,
+                          sourceLang: book.targetLanguage,
+                          nativeLang:
+                              profileAsync.value?.nativeLanguage ?? 'english',
+                        );
+                      },
+                    );
 
-                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                  _showTranslationSheet(
-                    context, 
-                    selectedText: args[0].toString(), 
-                    contextText: args[1].toString(), 
-                    sourceLang: book.targetLanguage, 
-                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
-                  );
-                });
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onReady',
+                      callback: (_) {
+                        // 1. Trigger the load from backend
+                        ref
+                            .read(vocabularyProvider.notifier)
+                            .loadVocabulary(book.targetLanguage);
+
+                        Future.delayed(const Duration(milliseconds: 1500), () {
+                          if (mounted) setState(() => _canSaveToBackend = true);
+                        });
+
+                        _updateReaderStyles();
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onWordTap',
+                      callback: (args) {
+                        final word = args[0] as String;
+                        final contextText = args[3] as String;
+
+                        // 1. Handle vocabulary update for unknown words
+                        final currentStatus = ref
+                            .read(vocabularyProvider)
+                            .value?[word.toLowerCase()];
+                        if (currentStatus == null ||
+                            currentStatus.toLowerCase() == 'unknown') {
+                          final book = ref
+                              .read(bookDetailProvider(widget.bookId))
+                              .value;
+                          if (book != null) {
+                            ref
+                                .read(vocabularyProvider.notifier)
+                                .updateWordStatus(
+                                  word,
+                                  'known',
+                                  book.targetLanguage,
+                                );
+                          }
+                        }
+
+                        // 2. Open the existing bottom sheet instead of a tooltip
+                        final book = ref
+                            .read(bookDetailProvider(widget.bookId))
+                            .value;
+                        final profile = ref.read(userProfileProvider).value;
+
+                        if (book != null && profile != null) {
+                          _showTranslationSheet(
+                            context,
+                            selectedText: word,
+                            contextText: contextText,
+                            sourceLang: book.targetLanguage,
+                            nativeLang: profile.nativeLanguage ?? 'english',
+                          );
+                        }
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onBackgroundTap',
+                      callback: (_) {
+                        // No action needed for background tap
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onChapterReady',
+                      callback: (_) {
+                        // Ensure current vocab is sent to every new chapter as it loads
+                        final vocabData = ref.read(vocabularyProvider).value;
+                        if (vocabData != null) {
+                          final jsonStr = jsonEncode(vocabData);
+                          final jsString = jsonEncode(jsonStr);
+                          webViewController?.evaluateJavascript(
+                            source:
+                                "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
+                          );
+                        }
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onTextSelected',
+                      callback: (args) {
+                        _showTranslationSheet(
+                          context,
+                          selectedText: args[0].toString(),
+                          contextText: args[1].toString(),
+                          sourceLang: book.targetLanguage,
+                          nativeLang:
+                              profileAsync.value?.nativeLanguage ?? 'english',
+                        );
+                      },
+                    );
+                  },
+                  onLoadStop: (controller, _) async {
+                    if (_localPort != null) {
+                      // NEW CODE START: Since we now load the HTML from the root, ensure the URL is relative to origin
+                      final localUrl =
+                          "http://localhost:$_localPort/books/${book.id}.epub";
+                      // NEW CODE END
+                      final jsCall =
+                          "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                      await controller.evaluateJavascript(source: jsCall);
+                    }
+                  },
+                );
               },
-                onLoadStop: (controller, _) async {
-                  if (_localPort != null) {
-                     // NEW CODE START: Since we now load the HTML from the root, ensure the URL is relative to origin
-                     final localUrl = "http://localhost:$_localPort/books/${book.id}.epub";
-                     // NEW CODE END
-                     final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
-                     await controller.evaluateJavascript(source: jsCall);
-                  }
-                },
-            );
-         },
-        ),
+            ),
           ],
         ),
       ),
@@ -541,7 +654,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.6,
@@ -552,32 +667,51 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.all(16.0),
-              child: Text("Table of Contents", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              child: Text(
+                "Table of Contents",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const Divider(color: Colors.white10),
             Expanded(
               child: ListView.separated(
                 controller: scrollController,
                 itemCount: _toc.length,
-                separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+                separatorBuilder: (context, index) =>
+                    const Divider(color: Colors.white10, height: 1),
                 itemBuilder: (context, index) {
                   final chapter = _toc[index];
                   final int level = chapter['level'] ?? 0;
-                  
+
                   return ListTile(
-                    contentPadding: EdgeInsets.only(left: 16.0 + (level * 16.0), right: 16.0),
+                    contentPadding: EdgeInsets.only(
+                      left: 16.0 + (level * 16.0),
+                      right: 16.0,
+                    ),
                     title: Text(
-                      chapter['label'].toString().trim(), 
+                      chapter['label'].toString().trim(),
                       style: TextStyle(
                         color: level == 0 ? Colors.white : Colors.white70,
-                        fontWeight: level == 0 ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: level == 0
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         fontSize: level == 0 ? 15 : 14,
-                      )
+                      ),
                     ),
-                    trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
+                    trailing: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white24,
+                      size: 16,
+                    ),
                     onTap: () {
                       final href = chapter['href'].toString();
-                      webViewController?.evaluateJavascript(source: "rendition.display('${href}');");
+                      webViewController?.evaluateJavascript(
+                        source: "rendition.display('${href}');",
+                      );
                       Navigator.pop(context);
                     },
                   );
@@ -595,32 +729,54 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              const Text(
+                "Appearance",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
-                  onTap: () { 
-                    setState(() => _theme = t); 
-                    setModalState((){}); 
-                    _updateReaderStyles(); 
-                  },
-                  child: Container(
-                    width: 60, height: 60,
-                    decoration: BoxDecoration(
-                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
-                    ),
-                  ),
-                )).toList(),
+                children: ['light', 'dark', 'sepia']
+                    .map(
+                      (t) => GestureDetector(
+                        onTap: () {
+                          setState(() => _theme = t);
+                          setModalState(() {});
+                          _updateReaderStyles();
+                        },
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: t == 'light'
+                                ? Colors.white
+                                : (t == 'sepia'
+                                      ? const Color(0xFFf4ecd8)
+                                      : const Color(0xFF333333)),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _theme == t
+                                  ? LiquidTheme.primaryAccent
+                                  : Colors.transparent,
+                              width: 3,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
               ),
               const SizedBox(height: 32),
               Row(
@@ -628,10 +784,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   const Icon(Icons.text_fields, size: 16),
                   Expanded(
                     child: Slider(
-                      value: _fontSize, min: 80, max: 200,
-                      onChanged: (v) { 
-                        setState(() => _fontSize = v); 
-                        setModalState((){}); 
+                      value: _fontSize,
+                      min: 80,
+                      max: 200,
+                      onChanged: (v) {
+                        setState(() => _fontSize = v);
+                        setModalState(() {});
                       },
                       onChangeEnd: (v) {
                         _updateReaderStyles();
@@ -640,7 +798,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   ),
                   const Icon(Icons.text_fields, size: 24),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -648,12 +806,20 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     );
   }
 
-  Future<void> _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) async {
+  Future<void> _showTranslationSheet(
+    BuildContext context, {
+    required String selectedText,
+    required String contextText,
+    required String sourceLang,
+    required String nativeLang,
+  }) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) => _TranslationBottomSheet(
         selectedText: selectedText,
         contextText: contextText,
@@ -662,12 +828,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       ),
     );
 
-    webViewController?.evaluateJavascript(source: """
+    webViewController?.evaluateJavascript(
+      source: """
       if (typeof rendition !== 'undefined' && rendition) {
         rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
         window.lastReportedText = "";
       }
-    """);
+    """,
+    );
   }
 }
 
@@ -685,10 +853,12 @@ class _TranslationBottomSheet extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_TranslationBottomSheet> createState() => _TranslationBottomSheetState();
+  ConsumerState<_TranslationBottomSheet> createState() =>
+      _TranslationBottomSheetState();
 }
 
-class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet> {
+class _TranslationBottomSheetState
+    extends ConsumerState<_TranslationBottomSheet> {
   bool _isLoadingFast = true;
   bool _isLoadingContext = false;
   String? _fastTranslation;
@@ -707,11 +877,23 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
     final logger = ref.read(loggerProvider);
     try {
       final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
-      if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
+      final result = await aiService.translate(
+        widget.selectedText,
+        widget.sourceLang,
+        widget.targetLang,
+      );
+      if (mounted)
+        setState(() {
+          _fastTranslation = result;
+          _isLoadingFast = false;
+        });
     } catch (e, st) {
       logger.error('BookReader: Fast translation failed', e, st);
-      if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
+      if (mounted)
+        setState(() {
+          _fastTranslation = "Failed to translate";
+          _isLoadingFast = false;
+        });
     }
   }
 
@@ -737,14 +919,19 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
       }
     } catch (e, st) {
       logger.error('BookReader: Context translation failed', e, st);
-      if (mounted) setState(() { _isLoadingContext = false; });
+      if (mounted)
+        setState(() {
+          _isLoadingContext = false;
+        });
     }
   }
 
   Future<void> _handleAddToDeck() async {
     final logger = ref.read(loggerProvider);
     setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+    final success = await ref
+        .read(srsProvider.notifier)
+        .addToDeckFromTranslation(
           front: widget.selectedText,
           back: _contextualTranslation ?? _fastTranslation!,
           language: widget.sourceLang,
@@ -752,17 +939,19 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
         );
 
     if (mounted) {
-      setState(() { 
-        _isAdding = false; 
+      setState(() {
+        _isAdding = false;
         if (success) {
           _isAdded = true;
           // NEW: Trigger local vocab update so the word color changes in the background
-          ref.read(vocabularyProvider.notifier).updateWordStatus(
-            widget.selectedText, 
-            'learning', 
-            widget.sourceLang
-          );
-        } 
+          ref
+              .read(vocabularyProvider.notifier)
+              .updateWordStatus(
+                widget.selectedText,
+                'learning',
+                widget.sourceLang,
+              );
+        }
       });
     }
   }
@@ -770,54 +959,111 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 24,
+        right: 24,
+        top: 24,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children:[
-          Text(widget.selectedText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+        children: [
+          Text(
+            widget.selectedText,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
           const SizedBox(height: 16),
-          
+
           if (_isLoadingFast)
             const CircularProgressIndicator()
           else
-            Text(_fastTranslation ?? "", style: const TextStyle(fontSize: 18, color: LiquidTheme.primaryAccent, fontWeight: FontWeight.w600)),
-            
+            Text(
+              _fastTranslation ?? "",
+              style: const TextStyle(
+                fontSize: 18,
+                color: LiquidTheme.primaryAccent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
           const SizedBox(height: 24),
-          
+
           if (_contextualTranslation == null && !_isLoadingContext)
             OutlinedButton.icon(
               onPressed: _fetchContextTranslation,
               icon: const Icon(Icons.auto_awesome, color: Colors.white),
-              label: const Text("Deep Translate with Context", style: TextStyle(color: Colors.white)),
-              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+              label: const Text(
+                "Deep Translate with Context",
+                style: TextStyle(color: Colors.white),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.white24),
+              ),
             )
           else if (_isLoadingContext)
-            const Center(child: CircularProgressIndicator(color: LiquidTheme.secondaryAccent))
+            const Center(
+              child: CircularProgressIndicator(
+                color: LiquidTheme.secondaryAccent,
+              ),
+            )
           else ...[
-             Container(
-               padding: const EdgeInsets.all(16),
-               decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
-               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[
-                 Text(_contextualTranslation!, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
-                 const SizedBox(height: 8),
-                 Text(_explanation ?? "", style: const TextStyle(fontSize: 14, color: Colors.white70)),
-               ]),
-             )
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _contextualTranslation!,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _explanation ?? "",
+                    style: const TextStyle(fontSize: 14, color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
           ],
-          
+
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent,
+                backgroundColor: _isAdded
+                    ? Colors.green.withValues(alpha: 0.2)
+                    : LiquidTheme.primaryAccent,
                 foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              onPressed: (_isLoadingFast || _isAdded || _isAdding) ? null : _handleAddToDeck,
-              icon: _isAdding ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_isAdded ? Icons.check : Icons.add),
-              label: Text(_isAdded ? "Added to Deck" : "Add to Study Deck", style: const TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: (_isLoadingFast || _isAdded || _isAdding)
+                  ? null
+                  : _handleAddToDeck,
+              icon: _isAdding
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(_isAdded ? Icons.check : Icons.add),
+              label: Text(
+                _isAdded ? "Added to Deck" : "Add to Study Deck",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ),
           const SizedBox(height: 32),
