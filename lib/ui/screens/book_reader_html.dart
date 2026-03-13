@@ -133,15 +133,24 @@ const String bookReaderHtmlTemplate = """
           
           const paragraphs = doc.querySelectorAll('p');
           paragraphs.forEach((p) => {
-            if (p.textContent.trim().length < 20) return;
+            // Filter out short fragments like page numbers or headers
+            if (p.textContent.trim().length < 25) return;
+            
+            // Prevent duplicate buttons on chapter re-loads
+            if (p.querySelector('.para-translate-btn')) return;
+            
+            // Set relative positioning directly on the element as a fallback
+            p.style.position = 'relative';
+            
             const btn = doc.createElement('div');
             btn.className = 'para-translate-btn';
             btn.innerHTML = '文'; 
-            btn.onclick = (e) => {
+            
+            btn.addEventListener('click', (e) => {
               e.preventDefault();
               e.stopPropagation();
               window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
-            };
+            });
             p.appendChild(btn);
           });
           

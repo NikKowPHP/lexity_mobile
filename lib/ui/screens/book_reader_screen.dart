@@ -112,29 +112,29 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             },
             // END NEW CSS
             ".para-translate-btn": {
-              "position": "absolute",
-              "right": "0px",
-              "top": "0px",
-              "width": "32px",
-              "height": "32px",
-              "border-radius": "8px",
+              "position": "absolute !important",
+              "right": "5px !important",
+              "top": "0px !important",
+              "width": "34px !important",
+              "height": "34px !important",
+              "border-radius": "10px !important",
               "background": "${_theme == 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)'} !important",
               "border": "1px solid ${_theme == 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)'} !important",
-              "color": "${colors['fg']} !important",
-              "display": "flex",
-              "align-items": "center",
-              "justify-content": "center",
-              "cursor": "pointer",
-              "font-size": "16px",
-              "user-select": "none",
-              "-webkit-user-select": "none",
-              "opacity": "0.8",
-              "transition": "opacity 0.2s",
-              "z-index": "10"
+              "color": "${_theme == 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.5)'} !important",
+              "display": "flex !important",
+              "align-items": "center !important",
+              "justify-content": "center !important",
+              "cursor": "pointer !important",
+              "font-size": "16px !important",
+              "user-select": "none !important",
+              "-webkit-user-select": "none !important",
+              "transition": "all 0.2s !important",
+              "z-index": "10 !important"
             },
             ".para-translate-btn:active": {
-              "opacity": "1.0",
-              "transform": "scale(0.95)"
+              "background": "rgba(99, 102, 241, 0.3) !important",
+              "color": "#6366F1 !important",
+              "transform": "scale(0.9) !important"
             },
             "::selection": {
               "background-color": "rgba(99, 102, 241, 0.3) !important",
