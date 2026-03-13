@@ -21,6 +21,7 @@ import '../ui/screens/listening_screen.dart';
 import '../ui/screens/library_screen.dart';
 import '../ui/screens/book_reader_screen.dart';
 import '../ui/screens/vocabulary_screen.dart';
+import '../ui/screens/srs_items_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -60,6 +61,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/vocabulary',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const VocabularyScreen(),
+      ),
+      GoRoute(
+        path: '/srs-items',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const SrsItemsScreen(),
       ),
 
       // standalone STANDALONE ROUTE for the Bubble
@@ -210,16 +221,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/translator',
                 pageBuilder: (context, state) =>
                     _buildFadePage(const TranslatorScreen(), state),
-              ),
-            ],
-          ),
-          // Branch 6: Vocabulary
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/vocabulary',
-                pageBuilder: (context, state) =>
-                    _buildFadePage(const VocabularyScreen(), state),
               ),
             ],
           ),

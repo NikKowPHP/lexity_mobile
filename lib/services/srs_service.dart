@@ -154,6 +154,17 @@ class SrsService {
       return [];
     }
   }
+
+  Future<void> deleteItem(String id) async {
+    _logger.info('SrsService: Deleting SRS item: $id');
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/api/srs/items?id=$id'),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete flashcard');
+    }
+  }
 }
 
 final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));

@@ -9,30 +9,35 @@ class DashboardSummaryCard extends StatelessWidget {
   final String label;
   final String value;
   final String? subValue;
+  final VoidCallback? onTap;
 
   const DashboardSummaryCard({
     super.key,
     required this.label,
     required this.value,
     this.subValue,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      padding: 16,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          if (subValue != null)
-            Text(subValue!, style: const TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12)),
-        ],
+    return GestureDetector(
+      onTap: onTap,
+      child: GlassCard(
+        padding: 16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            if (subValue != null)
+              Text(subValue!, style: const TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }

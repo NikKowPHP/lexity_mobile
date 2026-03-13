@@ -2,11 +2,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import '../../models/srs_item.dart';
 import '../../providers/srs_provider.dart';
 import '../../providers/user_provider.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
+import '../widgets/analytics_components.dart';
 
 class StudyScreen extends ConsumerStatefulWidget {
   const StudyScreen({super.key});
@@ -17,6 +19,7 @@ class StudyScreen extends ConsumerStatefulWidget {
 
 class _StudyScreenState extends ConsumerState<StudyScreen> {
   bool isFlipped = false;
+  bool isSessionActive = false;
 
   @override
   void initState() {
@@ -33,22 +36,72 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     ref.read(srsProvider.notifier).answerCard(quality);
   }
 
+  Widget buildDashboard(int dueCount) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: DashboardSummaryCard(
+                label: "DUE TODAY",
+                value: "$dueCount",
+                onTap: dueCount > 0 ? () => setState(() => isSessionActive = true) : null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DashboardSummaryCard(
+                label: "SRS DECK",
+                value: "Cards",
+                subValue: "Browse & Edit",
+                onTap: () => context.push('/srs-items'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        DashboardSummaryCard(
+          label: "VOCABULARY",
+          value: "Master List",
+          subValue: "Words you know or are learning",
+          onTap: () => context.push('/vocabulary'),
+        ),
+        const SizedBox(height: 32),
+        LiquidButton(
+          text: "Start Session",
+          onTap: dueCount > 0 ? () => setState(() => isSessionActive = true) : () {},
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(srsProvider);
     final activeLang = ref.watch(activeLanguageProvider);
 
-    return GlassScaffold(
-      title: 'Study',
-      subtitle: '${state.deck.length} cards remaining',
-      showBackButton: false,
-      body: SliverFillRemaining(
-        hasScrollBody: false,
-        child: state.isLoading 
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : state.currentCard == null 
-            ? _buildEmptyState(activeLang)
-            : _buildFlashcard(state.currentCard!),
+    return PopScope(
+      canPop: !isSessionActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && isSessionActive) {
+          setState(() => isSessionActive = false);
+        }
+      },
+      child: GlassScaffold(
+        title: isSessionActive ? 'Study Session' : 'Study',
+        subtitle: isSessionActive ? '${state.deck.length} remaining' : 'SRS Overview',
+        showBackButton: isSessionActive,
+        body: SliverFillRemaining(
+          hasScrollBody: false,
+          child: state.isLoading 
+            ? const Center(child: CircularProgressIndicator(color: Colors.white))
+            : !isSessionActive 
+              ? buildDashboard(state.deck.length)
+              : state.currentCard == null 
+                ? _buildEmptyState(activeLang)
+                : _buildFlashcard(state.currentCard!),
+        ),
       ),
     );
   }
