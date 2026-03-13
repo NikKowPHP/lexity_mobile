@@ -96,10 +96,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               "background": "transparent !important"
             },
             // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
-            ".lexity-word": { "cursor": "pointer", "transition": "background-color 0.2s" },
+            ".lexity-word": { 
+              "cursor": "pointer", 
+              "transition": "background-color 0.3s, border-bottom 0.3s" 
+            },
             ".lexity-word.unknown": { 
-              "background-color": "rgba(99, 102, 241, 0.1) !important",
-              "border-bottom": "1px dashed rgba(99, 102, 241, 0.4) !important" 
+              "background-color": "rgba(99, 102, 241, 0.15) !important",
+              "border-bottom": "1px dashed #6366F1 !important" 
             },
             ".lexity-word.learning": { 
               "background-color": "rgba(236, 72, 153, 0.2) !important", 
@@ -107,7 +110,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             },
             ".lexity-word.known": { 
               "background-color": "transparent !important",
-              "border-bottom": "none !important"
+              "border-bottom": "none !important",
+              "color": "inherit !important"
             },
             // END NEW CSS
             ".para-translate-btn": {
@@ -459,6 +463,16 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   final x = (args[1] as num).toDouble();
                   final y = (args[2] as num).toDouble();
                   final contextText = args[3] as String;
+                  
+                  // NEW CODE: If the word is currently unknown, mark it as known immediately
+                  final currentStatus = ref.read(vocabularyProvider).value?[word.toLowerCase()];
+                  if (currentStatus == null || currentStatus.toLowerCase() == 'unknown') {
+                    final book = ref.read(bookDetailProvider(widget.bookId)).value;
+                    if (book != null) {
+                      ref.read(vocabularyProvider.notifier).updateWordStatus(word, 'known', book.targetLanguage);
+                    }
+                  }
+
                   if (mounted) {
                     setState(() {
                       _tooltipWord = word;

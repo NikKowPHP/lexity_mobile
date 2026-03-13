@@ -33,7 +33,12 @@ const String bookReaderHtmlTemplate = """
               const word = dataWord.toLowerCase();
               // Normalize the status to lowercase to match CSS selectors
               const status = (vocabMap[word] || 'unknown').toLowerCase();
-              span.className = 'lexity-word ' + status;
+              
+              // Only update if the class has actually changed to prevent flickering
+              const newClassName = 'lexity-word ' + status;
+              if (span.className !== newClassName) {
+                  span.className = newClassName;
+              }
           });
       });
     };

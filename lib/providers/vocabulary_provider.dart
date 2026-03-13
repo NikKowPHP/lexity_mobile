@@ -17,7 +17,7 @@ class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> 
   }
 
   Future<void> updateWordStatus(String word, String status, String language) async {
-    final currentMap = state.asData?.value ?? {};
+    final currentMap = state.value ?? {};
     final wordLower = word.toLowerCase();
     final statusLower = status.toLowerCase();
     
@@ -26,8 +26,9 @@ class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> 
 
     try {
       await _service.updateStatus(wordLower, statusLower, language);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+    } catch (e) {
+      // Rollback to previous state on error to keep UI consistent with reality
+      state = AsyncValue.data(currentMap);
     }
   }
 
