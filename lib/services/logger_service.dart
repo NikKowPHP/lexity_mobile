@@ -28,6 +28,8 @@ class LoggerService {
 
     // Initialize file logging
     try {
+      if (kIsWeb) return; // Prevent MissingPluginException on the Web
+      
       final directory = await getApplicationDocumentsDirectory();
       final String filePath = '${directory.path}/app_logs.txt';
       _logFile = File(filePath);

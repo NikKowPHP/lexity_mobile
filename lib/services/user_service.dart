@@ -20,10 +20,12 @@ class UserService {
     try {
       final token = await _authTokenService.getToken();
       
-      // DEBUG: Check if token looks like a real JWT (starts with ey...)
-      print(
-        "Sending Token: ${token?.substring(0, token.length > 10 ? 10 : token.length)}...",
-      );
+      // FIX: Use null-aware operators to prevent crash if token is null
+      final tokenPreview = token != null 
+        ? "${token.substring(0, token.length > 10 ? 10 : token.length)}..."
+        : "null";
+
+      print("Sending Token: $tokenPreview");
 
       final response = await http.get(
         Uri.parse('${AppConstants.baseUrl}/api/user/profile'),

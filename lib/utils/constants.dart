@@ -3,23 +3,32 @@ import 'package:flutter/foundation.dart';
 
 class AppConstants {
   static String get baseUrl {
-    // Determine if we are in production mode. 
-    // Uses kReleaseMode (true for release builds) or a custom --dart-define=IS_PROD=true flag.
+    // Allow override via --dart-define=API_URL=https://api.example.com
+    const String envUrl = String.fromEnvironment('API_URL');
+    if (envUrl.isNotEmpty) return envUrl;
+
+    // Determine if we are in production mode.
     const bool isProd = bool.fromEnvironment('IS_PROD', defaultValue: kReleaseMode);
 
     if (isProd) {
       return 'https://www.lexity.app';
     }
 
-    // Development fallbacks
+    // Web handles loopback differently; 127.0.0.1 is often safer than 'localhost'
     if (kIsWeb) {
-      return 'http://localhost:3555';
+      return 'http://127.0.0.1:3555';
     }
-    if (Platform.isAndroid) {
-      // 10.0.2.2 is the alias for the host loopback interface in the Android emulator
-      return 'http://10.0.2.2:3555';
+
+    // Use 10.0.2.2 only for Android physical/emulator when not on Web
+    try {
+      if (Platform.isAndroid) {
+        return 'http://10.0.2.2:3555';
+      }
+    } catch (_) {
+      // Fallback if Platform access fails
     }
-    return 'http://localhost:3555';
+
+    return 'http://127.0.0.1:3555';
   }
 
   static const List<Map<String, String>> supportedLanguages = [

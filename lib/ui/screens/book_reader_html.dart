@@ -23,6 +23,14 @@ const String bookReaderHtmlTemplate = """
     window.vocabMap = {}; // NEW: Global cache in JS
     window.lastReportedText = "";
 
+    // NEW: Safe wrapper for calling the Dart side
+    function callFlutter(handlerName, ...args) {
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        return window.flutter_inappwebview.callHandler(handlerName, ...args);
+      }
+      return null;
+    }
+
     window.applyVocabStyles = function(vocabMapJson) {
       if (!rendition) return;
       window.vocabMap = JSON.parse(vocabMapJson); // NEW: Update global cache
@@ -63,10 +71,18 @@ const String bookReaderHtmlTemplate = """
 
     async function loadBook(url, initialCfi) {
       try {
-        console.log("BookReader JS: Starting ePub initialization");
+        console.log("BookReader JS: Attempting to load EPUB from: " + url);
+        
+        // FIX: Add a small timeout to ensure the viewer container is fully painted in the DOM
+        await new Promise(r => setTimeout(r, 100));
+
         book = ePub(url);
         
-        await book.opened;
+        book.opened.then(() => {
+          console.log("BookReader JS: EPUB opened successfully");
+        }).catch(err => {
+          console.error("BookReader JS: Error opening EPUB: ", err);
+        });
 
         rendition = book.renderTo("viewer", { 
           width: "100%", 
@@ -86,7 +102,7 @@ const String bookReaderHtmlTemplate = """
             const currentLocation = rendition.currentLocation();
             if (currentLocation && currentLocation.start) {
               const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
-              window.flutter_inappwebview.callHandler('onProgress', currentLocation.start.cfi, pct);
+              callFlutter('onProgress', currentLocation.start.cfi, pct);
             }
           });
         });
@@ -130,12 +146,12 @@ const String bookReaderHtmlTemplate = """
                   const word = span.getAttribute('data-word');
                   let contextText = span.parentElement.innerText;
                   if (!contextText || contextText.length < 10) contextText = word; 
-                  window.flutter_inappwebview.callHandler('onWordTap', word, rect.left, rect.top, contextText);
+                  callFlutter('onWordTap', word, rect.left, rect.top, contextText);
               } else {
-                  window.flutter_inappwebview.callHandler('onBackgroundTap');
+                  callFlutter('onBackgroundTap');
               }
           });
-          window.flutter_inappwebview.callHandler('onChapterReady');
+          callFlutter('onChapterReady');
           
           const paragraphs = doc.querySelectorAll('p');
           paragraphs.forEach((p) => {
@@ -151,7 +167,7 @@ const String bookReaderHtmlTemplate = """
             btn.onclick = (e) => {
               e.preventDefault();
               e.stopPropagation();
-              window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
+              callFlutter('onParagraphTranslate', p.innerText);
             };
             p.appendChild(btn);
           });
@@ -170,21 +186,106 @@ const String bookReaderHtmlTemplate = """
                       if (container && container.nodeType === 3) container = container.parentNode;
                       if (container) contextText = container.textContent.trim();
                   }
-                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
+                  callFlutter('onTextSelected', text, contextText);
               } else if (text.length === 0) {
                   window.lastReportedText = "";
               }
           }
 
-          doc.addEventListener('selectionchange', () => {
-              clearTimeout(window.selectionTimeout);
-              window.selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
-          });
-
           doc.addEventListener('touchend', () => {
               setTimeout(() => checkAndReportSelection(win), 150);
           });
         });
+
+        window.applyTheme = function(c, f, t) {
+            if (!rendition) return;
+            try {
+                rendition.themes.fontSize(f + "%");
+                rendition.themes.register(t, {
+                    "body": { 
+                        "background": c.bg + " !important", 
+                        "color": c.fg + " !important"
+                    },
+                    "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": c.fg + " !important", "background": "transparent !important" },
+                    "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
+                });
+                rendition.themes.select(t);
+                
+                rendition.getContents().forEach(contents => {
+                    if (contents && contents.document) {
+                        contents.addStylesheetRules({
+                            "body": {
+                                "background-color": c.bg + " !important",
+                                "color": c.fg + " !important",
+                                "font-size": f + "% !important"
+                            },
+                            "p": {
+                                "position": "relative !important",
+                                "padding-right": "50px !important",
+                                "margin-bottom": "1.5em !important",
+                                "color": c.fg + " !important",
+                                "line-height": "1.6 !important"
+                            },
+                            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
+                                "color": c.fg + " !important",
+                                "background": "transparent !important"
+                            },
+                            ".lexity-word": { 
+                                "cursor": "pointer", 
+                                "transition": "background-color 0.3s, border-bottom 0.3s" 
+                            },
+                            ".lexity-word.unknown": { 
+                                "background-color": "rgba(99, 102, 241, 0.15) !important",
+                                "border-bottom": "1px dashed " + (t === 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)') + " !important" 
+                            },
+                            ".lexity-word.learning": { 
+                                "background-color": "rgba(236, 72, 153, 0.2) !important", 
+                                "border-bottom": "2px solid #EC4899 !important" 
+                            },
+                            ".lexity-word.known": { 
+                                "background-color": "transparent !important",
+                                "border-bottom": "none !important",
+                                "color": "inherit !important"
+                            },
+                            ".para-translate-btn": {
+                                "position": "absolute !important",
+                                "right": "14px !important",
+                                "top": "2px !important",
+                                "padding": "4px !important",
+                                "border-radius": "8px !important",
+                                "background": (t === 'light' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.2)') + " !important",
+                                "border": "1px solid " + (t === 'light' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.3)') + " !important",
+                                "color": "#6366F1 !important", 
+                                "display": "flex !important",
+                                "align-items": "center !important",
+                                "justify-content": "center !important",
+                                "cursor": "pointer !important",
+                                "font-size": "16px !important",
+                                "font-weight": "bold !important",
+                                "user-select": "none !important",
+                                "-webkit-user-select": "none !important",
+                                "transition": "all 0.2s ease-in-out !important",
+                                "box-shadow": "0 2px 4px rgba(0,0,0,0.1) !important",
+                                "z-index": "10 !important"
+                            },
+                            ".para-translate-btn:active": {
+                                "background": "#6366F1 !important",
+                                "color": "#ffffff !important",
+                                "transform": "scale(0.95) !important"
+                            },
+                            "::selection": {
+                                "background-color": "rgba(99, 102, 241, 0.3) !important",
+                                "text-decoration": "underline !important",
+                                "text-decoration-color": "#6366F1 !important",
+                                "color": "inherit !important"
+                            }
+                        });
+                    }
+                });
+            } catch (e) {
+                console.error("Style update error:", e);
+            }
+        };
 
         let touchStartX = 0;
         rendition.on("touchstart", (e) => { 
@@ -199,30 +300,13 @@ const String bookReaderHtmlTemplate = """
           } 
         });
 
-        let hasAppliedOffset = false;
-        rendition.on("rendered", (section) => {
-          if (initialCfi && !hasAppliedOffset) {
-            hasAppliedOffset = true;
-            // Wait for layout to settle before jumping a page forward
-            setTimeout(() => {
-              console.log("BookReader JS: Initial render complete, applying +1 page offset");
-              rendition.next();
-            }, 250);
-          }
-        });
 
         await rendition.display(initialCfi || undefined);
 
-        window.flutter_inappwebview.callHandler('onReady');
+        callFlutter('onReady');
         
         await book.ready;
         await book.locations.generate(1600);
-
-        const loc = rendition.currentLocation();
-        if (loc && loc.start) {
-            const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
-            window.flutter_inappwebview.callHandler('onProgress', loc.start.cfi, pct);
-        }
 
         const flattenToc = (items, level = 0) => {
           return items.reduce((acc, item) => {
@@ -234,7 +318,7 @@ const String bookReaderHtmlTemplate = """
           }, []);
         };
         const toc = flattenToc(book.navigation.toc);
-        window.flutter_inappwebview.callHandler('onToc', toc);
+        callFlutter('onToc', toc);
 
       } catch (error) {
         console.error("EPUB Loading Error: " + error.message);

@@ -9942,23 +9942,32 @@ import 'package:flutter/foundation.dart';
 
 class AppConstants {
   static String get baseUrl {
-    // Determine if we are in production mode. 
-    // Uses kReleaseMode (true for release builds) or a custom --dart-define=IS_PROD=true flag.
+    // Allow override via --dart-define=API_URL=https://api.example.com
+    const String envUrl = String.fromEnvironment('API_URL');
+    if (envUrl.isNotEmpty) return envUrl;
+
+    // Determine if we are in production mode.
     const bool isProd = bool.fromEnvironment('IS_PROD', defaultValue: kReleaseMode);
 
     if (isProd) {
       return 'https://www.lexity.app';
     }
 
-    // Development fallbacks
+    // Web handles loopback differently; 127.0.0.1 is often safer than 'localhost'
     if (kIsWeb) {
-      return 'http://localhost:3555';
+      return 'http://127.0.0.1:3555';
     }
-    if (Platform.isAndroid) {
-      // 10.0.2.2 is the alias for the host loopback interface in the Android emulator
-      return 'http://10.0.2.2:3555';
+
+    // Use 10.0.2.2 only for Android physical/emulator when not on Web
+    try {
+      if (Platform.isAndroid) {
+        return 'http://10.0.2.2:3555';
+      }
+    } catch (_) {
+      // Fallback if Platform access fails
     }
-    return 'http://localhost:3555';
+
+    return 'http://127.0.0.1:3555';
   }
 
   static const List<Map<String, String>> supportedLanguages = [
@@ -10231,7 +10240,7 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
         _ref.invalidate(booksProvider);
       });
 
-      _logger.info('BookNotifier: Progress update successful for $id');
+      _logger.info('BookNotifier: Progress update successful for $id $cfi $progressPct');
     } catch (e, st) {
       _logger.error('BookNotifier: Progress update failed for $id', e, st);
     }
@@ -11615,10 +11624,12 @@ class UserService {
     try {
       final token = await _authTokenService.getToken();
       
-      // DEBUG: Check if token looks like a real JWT (starts with ey...)
-      print(
-        "Sending Token: ${token?.substring(0, token.length > 10 ? 10 : token.length)}...",
-      );
+      // FIX: Use null-aware operators to prevent crash if token is null
+      final tokenPreview = token != null 
+        ? "${token.substring(0, token.length > 10 ? 10 : token.length)}..."
+        : "null";
+
+      print("Sending Token: $tokenPreview");
 
       final response = await http.get(
         Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
@@ -11800,249 +11811,6 @@ class UserService {
 }
 
 final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
-</file>
-
-<file path="lib/ui/screens/book_reader_html.dart">
-const String bookReaderHtmlTemplate = """
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
-  <style>
-    html, body { 
-      margin: 0; padding: 0; width: 100%; height: 100%; 
-      background-color: #121212;
-    }
-    #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-    mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
-  </style>
-</head>
-<body>
-  <div id="viewer"></div>
-  <script>
-    let book;
-    let rendition;
-    window.vocabMap = {}; // NEW: Global cache in JS
-    window.lastReportedText = "";
-
-    window.applyVocabStyles = function(vocabMapJson) {
-      if (!rendition) return;
-      window.vocabMap = JSON.parse(vocabMapJson); // NEW: Update global cache
-      const vocabMap = window.vocabMap;
-      rendition.getContents().forEach(content => {
-          const spans = content.document.querySelectorAll('.lexity-word');
-          spans.forEach(span => {
-              const dataWord = span.getAttribute('data-word');
-              if (!dataWord) return;
-              const word = dataWord.toLowerCase();
-              // Normalize the status to lowercase to match CSS selectors
-              const status = (vocabMap[word] || 'unknown').toLowerCase();
-              
-              // Only update if the class has actually changed to prevent flickering
-              const newClassName = 'lexity-word ' + status;
-              if (span.className !== newClassName) {
-                  span.className = newClassName;
-              }
-          });
-      });
-    };
-
-    window.getVisibleUnknownWords = function() {
-      if (!rendition) return [];
-      const visible =[];
-      rendition.getContents().forEach(content => {
-          const win = content.window;
-          const spans = content.document.querySelectorAll('.lexity-word.unknown');
-          spans.forEach(span => {
-              const rect = span.getBoundingClientRect();
-              if (rect.top >= 0 && rect.left >= 0 && Math.floor(rect.bottom) <= win.innerHeight && Math.floor(rect.right) <= win.innerWidth) {
-                  visible.push(span.getAttribute('data-word').toLowerCase());
-              }
-          });
-      });
-      return Array.from(new Set(visible));
-    };
-
-    async function loadBook(url, initialCfi) {
-      try {
-        console.log("BookReader JS: Starting ePub initialization");
-        book = ePub(url);
-        
-        await book.opened;
-
-        rendition = book.renderTo("viewer", { 
-          width: "100%", 
-          height: "100%", 
-          flow: "paginated", 
-          manager: "continuous" 
-        });
-
-        // Force epub.js to allow scripts within its internal iframes.
-        if (!rendition.settings.contents) {
-            rendition.settings.contents = {};
-        }
-        rendition.settings.contents.allowScriptedContent = true;
-        
-        rendition.on("relocated", (location) => {
-          window.requestAnimationFrame(() => {
-            const currentLocation = rendition.currentLocation();
-            if (currentLocation && currentLocation.start) {
-              const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
-              window.flutter_inappwebview.callHandler('onProgress', currentLocation.start.cfi, pct);
-            }
-          });
-        });
-
-        rendition.hooks.content.register((contents) => {
-          const win = contents.window;
-          const doc = contents.document;
-
-          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-          let node;
-          const nodes =[];
-          while (node = walker.nextNode()) nodes.push(node);
-
-          nodes.forEach(textNode => {
-              if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'span' && textNode.parentNode.classList.contains('lexity-word')) return;
-              if (textNode.parentNode && (textNode.parentNode.nodeName.toLowerCase() === 'script' || textNode.parentNode.nodeName.toLowerCase() === 'style')) return;
-              if (textNode.nodeValue.trim().length === 0) return;
-
-              const regex = /([\\p{L}\\p{M}]+)/gu;
-              if (regex.test(textNode.nodeValue)) {
-                  const span = doc.createElement('span');
-                  span.className = 'lexity-word-wrapper';
-                  
-                  // Wrap each word match in a span with appropriate status
-                  span.innerHTML = textNode.nodeValue.replace(regex, (match) => {
-                      const normalizedWord = match.toLowerCase();
-                      // Use the global cache that was pushed from Dart on startup
-                      const status = (window.vocabMap[normalizedWord] || 'unknown').toLowerCase();
-                      return `<span class="lexity-word \${status}" data-word="\${normalizedWord}">\${match}</span>`;
-                  });
-                  textNode.parentNode.replaceChild(span, textNode);
-              }
-          });
-
-          doc.addEventListener('click', (e) => {
-              const span = e.target.closest('.lexity-word');
-              if (span) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const rect = span.getBoundingClientRect();
-                  const word = span.getAttribute('data-word');
-                  let contextText = span.parentElement.innerText;
-                  if (!contextText || contextText.length < 10) contextText = word; 
-                  window.flutter_inappwebview.callHandler('onWordTap', word, rect.left, rect.top, contextText);
-              } else {
-                  window.flutter_inappwebview.callHandler('onBackgroundTap');
-              }
-          });
-          window.flutter_inappwebview.callHandler('onChapterReady');
-          
-          const paragraphs = doc.querySelectorAll('p');
-          paragraphs.forEach((p) => {
-            // Only add buttons to substantial text blocks
-            if (p.textContent.trim().length < 25) return;
-            if (p.querySelector('.para-translate-btn')) return;
-            
-            const btn = doc.createElement('div');
-            btn.className = 'para-translate-btn';
-            // Use a spans for the icon text to ensure it's centered
-            btn.innerHTML = '<span>文</span>'; 
-            
-            btn.onclick = (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
-            };
-            p.appendChild(btn);
-          });
-          
-          function checkAndReportSelection(win) {
-              if (!win) return;
-              const sel = win.getSelection();
-              if (!sel) return;
-              
-              const text = sel.toString().trim();
-              if (text.length > 0 && text !== window.lastReportedText) {
-                  window.lastReportedText = text;
-                  let contextText = text;
-                  if (sel.rangeCount > 0) {
-                      let container = sel.getRangeAt(0).commonAncestorContainer;
-                      if (container && container.nodeType === 3) container = container.parentNode;
-                      if (container) contextText = container.textContent.trim();
-                  }
-                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
-              } else if (text.length === 0) {
-                  window.lastReportedText = "";
-              }
-          }
-
-          doc.addEventListener('selectionchange', () => {
-              clearTimeout(window.selectionTimeout);
-              window.selectionTimeout = setTimeout(() => checkAndReportSelection(win), 800);
-          });
-
-          doc.addEventListener('touchend', () => {
-              setTimeout(() => checkAndReportSelection(win), 150);
-          });
-        });
-
-        let touchStartX = 0;
-        rendition.on("touchstart", (e) => { 
-          touchStartX = e.changedTouches[0].screenX; 
-        });
-        
-        rendition.on("touchend", (e) => {
-          const dx = touchStartX - e.changedTouches[0].screenX;
-          if (Math.abs(dx) > 50) {
-            if (dx > 0) rendition.next();
-            else rendition.prev();
-          } 
-        });
-
-        await rendition.display(initialCfi || undefined);
-        
-        // Compensate for epub.js landing one page early on resume
-        if (initialCfi) {
-          console.log("BookReader JS: Resuming at CFI, jumping +1 page to fix offset");
-          rendition.next();
-        }
-
-        window.flutter_inappwebview.callHandler('onReady');
-        
-        await book.ready;
-        await book.locations.generate(1600);
-
-        const loc = rendition.currentLocation();
-        if (loc && loc.start) {
-            const pct = loc.start.percentage ? Math.round(loc.start.percentage * 100) : 0;
-            window.flutter_inappwebview.callHandler('onProgress', loc.start.cfi, pct);
-        }
-
-        const flattenToc = (items, level = 0) => {
-          return items.reduce((acc, item) => {
-            acc.push({ label: item.label, href: item.href, level: level });
-            if (item.subitems && item.subitems.length > 0) {
-              acc.push(...flattenToc(item.subitems, level + 1));
-            }
-            return acc;
-          }, []);
-        };
-        const toc = flattenToc(book.navigation.toc);
-        window.flutter_inappwebview.callHandler('onToc', toc);
-
-      } catch (error) {
-        console.error("EPUB Loading Error: " + error.message);
-      }
-    }
-  </script>
-</body>
-</html>
-""";
 </file>
 
 <file path="lib/ui/screens/library_screen.dart">
@@ -13132,6 +12900,323 @@ class JournalService {
 }
 
 final journalServiceProvider = Provider((ref) => JournalService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
+</file>
+
+<file path="lib/ui/screens/book_reader_html.dart">
+const String bookReaderHtmlTemplate = """
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+  <style>
+    html, body { 
+      margin: 0; padding: 0; width: 100%; height: 100%; 
+      background-color: #121212;
+    }
+    #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+    mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+  <script>
+    let book;
+    let rendition;
+    window.vocabMap = {}; // NEW: Global cache in JS
+    window.lastReportedText = "";
+
+    window.applyVocabStyles = function(vocabMapJson) {
+      if (!rendition) return;
+      window.vocabMap = JSON.parse(vocabMapJson); // NEW: Update global cache
+      const vocabMap = window.vocabMap;
+      rendition.getContents().forEach(content => {
+          const spans = content.document.querySelectorAll('.lexity-word');
+          spans.forEach(span => {
+              const dataWord = span.getAttribute('data-word');
+              if (!dataWord) return;
+              const word = dataWord.toLowerCase();
+              // Normalize the status to lowercase to match CSS selectors
+              const status = (vocabMap[word] || 'unknown').toLowerCase();
+              
+              // Only update if the class has actually changed to prevent flickering
+              const newClassName = 'lexity-word ' + status;
+              if (span.className !== newClassName) {
+                  span.className = newClassName;
+              }
+          });
+      });
+    };
+
+    window.getVisibleUnknownWords = function() {
+      if (!rendition) return [];
+      const visible =[];
+      rendition.getContents().forEach(content => {
+          const win = content.window;
+          const spans = content.document.querySelectorAll('.lexity-word.unknown');
+          spans.forEach(span => {
+              const rect = span.getBoundingClientRect();
+              if (rect.top >= 0 && rect.left >= 0 && Math.floor(rect.bottom) <= win.innerHeight && Math.floor(rect.right) <= win.innerWidth) {
+                  visible.push(span.getAttribute('data-word').toLowerCase());
+              }
+          });
+      });
+      return Array.from(new Set(visible));
+    };
+
+    async function loadBook(url, initialCfi) {
+      try {
+        console.log("BookReader JS: Starting ePub initialization");
+        book = ePub(url);
+        
+        await book.opened;
+
+        rendition = book.renderTo("viewer", { 
+          width: "100%", 
+          height: "100%", 
+          flow: "paginated", 
+          manager: "continuous" 
+        });
+
+        // Force epub.js to allow scripts within its internal iframes.
+        if (!rendition.settings.contents) {
+            rendition.settings.contents = {};
+        }
+        rendition.settings.contents.allowScriptedContent = true;
+        
+        rendition.on("relocated", (location) => {
+          window.requestAnimationFrame(() => {
+            const currentLocation = rendition.currentLocation();
+            if (currentLocation && currentLocation.start) {
+              const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
+              window.flutter_inappwebview.callHandler('onProgress', currentLocation.start.cfi, pct);
+            }
+          });
+        });
+
+        rendition.hooks.content.register((contents) => {
+          const win = contents.window;
+          const doc = contents.document;
+
+          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+          let node;
+          const nodes =[];
+          while (node = walker.nextNode()) nodes.push(node);
+
+          nodes.forEach(textNode => {
+              if (textNode.parentNode && textNode.parentNode.nodeName.toLowerCase() === 'span' && textNode.parentNode.classList.contains('lexity-word')) return;
+              if (textNode.parentNode && (textNode.parentNode.nodeName.toLowerCase() === 'script' || textNode.parentNode.nodeName.toLowerCase() === 'style')) return;
+              if (textNode.nodeValue.trim().length === 0) return;
+
+              const regex = /([\\p{L}\\p{M}]+)/gu;
+              if (regex.test(textNode.nodeValue)) {
+                  const span = doc.createElement('span');
+                  span.className = 'lexity-word-wrapper';
+                  
+                  // Wrap each word match in a span with appropriate status
+                  span.innerHTML = textNode.nodeValue.replace(regex, (match) => {
+                      const normalizedWord = match.toLowerCase();
+                      // Use the global cache that was pushed from Dart on startup
+                      const status = (window.vocabMap[normalizedWord] || 'unknown').toLowerCase();
+                      return `<span class="lexity-word \${status}" data-word="\${normalizedWord}">\${match}</span>`;
+                  });
+                  textNode.parentNode.replaceChild(span, textNode);
+              }
+          });
+
+          doc.addEventListener('click', (e) => {
+              const span = e.target.closest('.lexity-word');
+              if (span) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = span.getBoundingClientRect();
+                  const word = span.getAttribute('data-word');
+                  let contextText = span.parentElement.innerText;
+                  if (!contextText || contextText.length < 10) contextText = word; 
+                  window.flutter_inappwebview.callHandler('onWordTap', word, rect.left, rect.top, contextText);
+              } else {
+                  window.flutter_inappwebview.callHandler('onBackgroundTap');
+              }
+          });
+          window.flutter_inappwebview.callHandler('onChapterReady');
+          
+          const paragraphs = doc.querySelectorAll('p');
+          paragraphs.forEach((p) => {
+            // Only add buttons to substantial text blocks
+            if (p.textContent.trim().length < 25) return;
+            if (p.querySelector('.para-translate-btn')) return;
+            
+            const btn = doc.createElement('div');
+            btn.className = 'para-translate-btn';
+            // Use a spans for the icon text to ensure it's centered
+            btn.innerHTML = '<span>文</span>'; 
+            
+            btn.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              window.flutter_inappwebview.callHandler('onParagraphTranslate', p.innerText);
+            };
+            p.appendChild(btn);
+          });
+          
+          function checkAndReportSelection(win) {
+              if (!win) return;
+              const sel = win.getSelection();
+              if (!sel) return;
+              
+              const text = sel.toString().trim();
+              if (text.length > 0 && text !== window.lastReportedText) {
+                  window.lastReportedText = text;
+                  let contextText = text;
+                  if (sel.rangeCount > 0) {
+                      let container = sel.getRangeAt(0).commonAncestorContainer;
+                      if (container && container.nodeType === 3) container = container.parentNode;
+                      if (container) contextText = container.textContent.trim();
+                  }
+                  window.flutter_inappwebview.callHandler('onTextSelected', text, contextText);
+              } else if (text.length === 0) {
+                  window.lastReportedText = "";
+              }
+          }
+
+          doc.addEventListener('touchend', () => {
+              setTimeout(() => checkAndReportSelection(win), 150);
+          });
+        });
+
+        window.applyTheme = function(c, f, t) {
+            if (!rendition) return;
+            try {
+                rendition.themes.fontSize(f + "%");
+                rendition.themes.register(t, {
+                    "body": { 
+                        "background": c.bg + " !important", 
+                        "color": c.fg + " !important"
+                    },
+                    "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": c.fg + " !important", "background": "transparent !important" },
+                    "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
+                });
+                rendition.themes.select(t);
+                
+                rendition.getContents().forEach(contents => {
+                    if (contents && contents.document) {
+                        contents.addStylesheetRules({
+                            "body": {
+                                "background-color": c.bg + " !important",
+                                "color": c.fg + " !important",
+                                "font-size": f + "% !important"
+                            },
+                            "p": {
+                                "position": "relative !important",
+                                "padding-right": "50px !important",
+                                "margin-bottom": "1.5em !important",
+                                "color": c.fg + " !important",
+                                "line-height": "1.6 !important"
+                            },
+                            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
+                                "color": c.fg + " !important",
+                                "background": "transparent !important"
+                            },
+                            ".lexity-word": { 
+                                "cursor": "pointer", 
+                                "transition": "background-color 0.3s, border-bottom 0.3s" 
+                            },
+                            ".lexity-word.unknown": { 
+                                "background-color": "rgba(99, 102, 241, 0.15) !important",
+                                "border-bottom": "1px dashed " + (t === 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)') + " !important" 
+                            },
+                            ".lexity-word.learning": { 
+                                "background-color": "rgba(236, 72, 153, 0.2) !important", 
+                                "border-bottom": "2px solid #EC4899 !important" 
+                            },
+                            ".lexity-word.known": { 
+                                "background-color": "transparent !important",
+                                "border-bottom": "none !important",
+                                "color": "inherit !important"
+                            },
+                            ".para-translate-btn": {
+                                "position": "absolute !important",
+                                "right": "14px !important",
+                                "top": "2px !important",
+                                "padding": "4px !important",
+                                "border-radius": "8px !important",
+                                "background": (t === 'light' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.2)') + " !important",
+                                "border": "1px solid " + (t === 'light' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.3)') + " !important",
+                                "color": "#6366F1 !important", 
+                                "display": "flex !important",
+                                "align-items": "center !important",
+                                "justify-content": "center !important",
+                                "cursor": "pointer !important",
+                                "font-size": "16px !important",
+                                "font-weight": "bold !important",
+                                "user-select": "none !important",
+                                "-webkit-user-select": "none !important",
+                                "transition": "all 0.2s ease-in-out !important",
+                                "box-shadow": "0 2px 4px rgba(0,0,0,0.1) !important",
+                                "z-index": "10 !important"
+                            },
+                            ".para-translate-btn:active": {
+                                "background": "#6366F1 !important",
+                                "color": "#ffffff !important",
+                                "transform": "scale(0.95) !important"
+                            },
+                            "::selection": {
+                                "background-color": "rgba(99, 102, 241, 0.3) !important",
+                                "text-decoration": "underline !important",
+                                "text-decoration-color": "#6366F1 !important",
+                                "color": "inherit !important"
+                            }
+                        });
+                    }
+                });
+            } catch (e) {
+                console.error("Style update error:", e);
+            }
+        };
+
+        let touchStartX = 0;
+        rendition.on("touchstart", (e) => { 
+          touchStartX = e.changedTouches[0].screenX; 
+        });
+        
+        rendition.on("touchend", (e) => {
+          const dx = touchStartX - e.changedTouches[0].screenX;
+          if (Math.abs(dx) > 50) {
+            if (dx > 0) rendition.next();
+            else rendition.prev();
+          } 
+        });
+
+
+        await rendition.display(initialCfi || undefined);
+
+        window.flutter_inappwebview.callHandler('onReady');
+        
+        await book.ready;
+        await book.locations.generate(1600);
+
+        const flattenToc = (items, level = 0) => {
+          return items.reduce((acc, item) => {
+            acc.push({ label: item.label, href: item.href, level: level });
+            if (item.subitems && item.subitems.length > 0) {
+              acc.push(...flattenToc(item.subitems, level + 1));
+            }
+            return acc;
+          }, []);
+        };
+        const toc = flattenToc(book.navigation.toc);
+        window.flutter_inappwebview.callHandler('onToc', toc);
+
+      } catch (error) {
+        console.error("EPUB Loading Error: " + error.message);
+      }
+    }
+  </script>
+</body>
+</html>
+""";
 </file>
 
 <file path="lib/ui/screens/module_detail_screen.dart">
@@ -14963,7 +15048,8 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   InAppWebViewController? webViewController;
-  late double _progress;
+  // FIX: Initialize immediately to prevent LateInitializationError
+  double _progress = 0.0;
   String? _lastCfi;
   bool _isDownloading = false;
   bool _localFileReady = false;
@@ -14977,124 +15063,44 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   int? _localPort;
 
   bool _isInitialized = false;
-  
+
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
 
   void _updateReaderStyles() {
     final logger = ref.read(loggerProvider);
-    logger.debug('BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)');
-    
+    logger.debug(
+      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)',
+    );
+
     final colors = {
       'light': {'bg': '#ffffff', 'fg': '#000000'},
       'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
       'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
     }[_theme]!;
 
-    final js = """
-      if (typeof rendition !== 'undefined' && rendition) {
-        try {
-          rendition.themes.fontSize("$_fontSize%");
-          rendition.themes.register("$_theme", {
-            "body": { 
-              "background": "${colors['bg']} !important", 
-              "color": "${colors['fg']} !important"
-            },
-            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
-            "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
-          });
-          rendition.themes.select("$_theme");
-          
-          rendition.getContents().forEach(c => {
-            if (c && c.document) {
-              c.addStylesheetRules({
-                "body": {
-                  "background-color": "${colors['bg']} !important",
-                  "color": "${colors['fg']} !important",
-                  "font-size": "$_fontSize% !important"
-                },
-                "p": {
-                  "position": "relative !important",
-                  "padding-right": "48px !important",
-                  "margin-bottom": "1.5em !important",
-                  "color": "${colors['fg']} !important",
-                  "line-height": "1.6 !important"
-                },
-                "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
-                  "color": "${colors['fg']} !important",
-                  "background": "transparent !important"
-                },
-                // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
-                ".lexity-word": { 
-                  "cursor": "pointer", 
-                  "transition": "background-color 0.3s, border-bottom 0.3s" 
-                },
-                ".lexity-word.unknown": { 
-                  "background-color": "rgba(99, 102, 241, 0.15) !important",
-                  "border-bottom": "1px dashed ${_theme == 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)'} !important" 
-                },
-                ".lexity-word.learning": { 
-                  "background-color": "rgba(236, 72, 153, 0.2) !important", 
-                  "border-bottom": "2px solid #EC4899 !important" 
-                },
-                ".lexity-word.known": { 
-                  "background-color": "transparent !important",
-                  "border-bottom": "none !important",
-                  "color": "inherit !important"
-                },
-                // END NEW CSS
-                ".para-translate-btn": {
-                  "position": "absolute !important",
-                  "right": "0px !important",
-                  "top": "2px !important",
-                  "width": "32px !important",
-                  "height": "32px !important",
-                  "border-radius": "8px !important",
-                  "background": "${_theme == 'light' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.2)'} !important",
-                  "border": "1px solid ${_theme == 'light' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.3)'} !important",
-                  "color": "#6366F1 !important", 
-                  "display": "flex !important",
-                  "align-items": "center !important",
-                  "justify-content": "center !important",
-                  "cursor": "pointer !important",
-                  "font-size": "16px !important",
-                  "font-weight": "bold !important",
-                  "user-select": "none !important",
-                  "-webkit-user-select": "none !important",
-                  "transition": "all 0.2s ease-in-out !important",
-                  "box-shadow": "0 2px 4px rgba(0,0,0,0.1) !important",
-                  "z-index": "10 !important"
-                },
-                ".para-translate-btn:active": {
-                  "background": "#6366F1 !important",
-                  "color": "#ffffff !important",
-                  "transform": "scale(0.95) !important"
-                },
-                "::selection": {
-                  "background-color": "rgba(99, 102, 241, 0.3) !important",
-                  "text-decoration": "underline !important",
-                  "text-decoration-color": "#6366F1 !important",
-                  "color": "inherit !important"
-                }
-              });
-            }
-          });
-        } catch (e) {
-          console.error("Style update error:", e);
-        }
-      }
-    """;
-    webViewController?.evaluateJavascript(source: js);
+    webViewController?.evaluateJavascript(
+      source: "if (window.applyTheme) window.applyTheme(${jsonEncode(colors)}, $_fontSize, '$_theme');",
+    );
   }
 
   @override
   void initState() {
     super.initState();
-    _startLocalServer();
+    if (!kIsWeb) {
+      _startLocalServer();
+    } else {
+      // On Web, we don't use a local server. Set a dummy port to pass the initialization check.
+      _localPort = 0;
+    }
   }
 
   Future<void> _startLocalServer() async {
     final logger = ref.read(loggerProvider);
+    if (kIsWeb) {
+      logger.info('BookReader: Web detected, skipping local server.');
+      return;
+    }
     logger.info('BookReader: Initializing local file server');
     try {
       _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -15102,16 +15108,19 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         setState(() => _localPort = _localServer!.port);
         logger.info('BookReader: Local server bound to port $_localPort');
       }
-      
+
       _localServer!.listen((HttpRequest request) async {
         request.response.headers.add('Access-Control-Allow-Origin', '*');
-        request.response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        request.response.headers.add(
+          'Access-Control-Allow-Methods',
+          'GET, OPTIONS',
+        );
         request.response.headers.add('Access-Control-Allow-Headers', '*');
-        
+
         if (request.method == 'OPTIONS') {
-           request.response.statusCode = 200;
-           await request.response.close();
-           return;
+          request.response.statusCode = 200;
+          await request.response.close();
+          return;
         }
 
         // NEW CODE START: Serve the reader HTML at the root to avoid initialData bugs on Linux
@@ -15123,19 +15132,23 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         }
         // NEW CODE END
         if (request.uri.path.startsWith('/books/')) {
-           final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
-           final dir = await getApplicationDocumentsDirectory();
-           final file = File('${dir.path}/books/$bookId.epub');
-           
-           if (await file.exists()) {
-             logger.debug('BookReader: Serving local EPUB file for $bookId');
-             final length = await file.length();
-             request.response.contentLength = length;
-             request.response.headers.contentType = ContentType('application', 'epub+zip', charset: 'utf-8');
-             await request.response.addStream(file.openRead());
-             await request.response.close();
-             return;
-           }
+          final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
+          final dir = await getApplicationDocumentsDirectory();
+          final file = File('${dir.path}/books/$bookId.epub');
+
+          if (await file.exists()) {
+            logger.debug('BookReader: Serving local EPUB file for $bookId');
+            final length = await file.length();
+            request.response.contentLength = length;
+            request.response.headers.contentType = ContentType(
+              'application',
+              'epub+zip',
+              charset: 'utf-8',
+            );
+            await request.response.addStream(file.openRead());
+            await request.response.close();
+            return;
+          }
         }
         request.response.statusCode = 404;
         await request.response.close();
@@ -15148,7 +15161,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   Future<void> _ensureBookDownloaded(UserBook book) async {
     final logger = ref.read(loggerProvider);
     if (_isDownloading || _localFileReady) return;
-    
+
+    if (kIsWeb) {
+      setState(() => _localFileReady = true);
+      return;
+    }
+
     try {
       final dir = await getApplicationDocumentsDirectory();
       final booksDir = Directory('${dir.path}/books');
@@ -15161,7 +15179,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         return;
       }
 
-      logger.info('BookReader: Book not found locally, starting download for "${book.title}"');
+      logger.info(
+        'BookReader: Book not found locally, starting download for "${book.title}"',
+      );
       if (book.signedUrl == null) {
         logger.error('BookReader: Missing signedUrl for book ${book.id}');
         throw Exception("No download URL provided");
@@ -15182,7 +15202,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         (chunk) {
           bytes.addAll(chunk);
           received += chunk.length;
-          if (total > 0 && mounted) setState(() => _downloadProgress = received / total);
+          if (total > 0 && mounted)
+            setState(() => _downloadProgress = received / total);
         },
         onDone: () async {
           await file.writeAsBytes(bytes);
@@ -15205,14 +15226,19 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     }
   }
 
-
   void _handleImmediateSave() {
     if (!mounted || _lastCfi == null) return;
+    // Prevent saving if the book hasn't fully settled on the correct page yet
+    if (!_canSaveToBackend) return;
 
     final logger = ref.read(loggerProvider);
     _progressDebounce?.cancel();
-    logger.info('BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi');
-    ref.read(bookNotifierProvider.notifier).updateProgress(widget.bookId, _lastCfi!, _progress);
+    logger.info(
+      'BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi',
+    );
+    ref
+        .read(bookNotifierProvider.notifier)
+        .updateProgress(widget.bookId, _lastCfi!, _progress);
     _lastCfi = null; // Prevent double saving
   }
 
@@ -15232,13 +15258,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
     bookAsync.whenData((book) {
       if (!_isInitialized) {
-          logger.info('BookReader: Initializing state. Saved CFI: ${book.currentCfi}');
-          _isInitialized = true;
-          setState(() {
-            _progress = book.progressPct;
-            _lastCfi = book.currentCfi;
-          });
-          _ensureBookDownloaded(book);
+        logger.info(
+          'BookReader: Initializing state. Saved CFI: ${book.currentCfi}',
+        );
+        _isInitialized = true;
+        setState(() {
+          _progress = book.progressPct;
+          _lastCfi = book.currentCfi;
+        });
+        _ensureBookDownloaded(book);
       }
     });
 
@@ -15247,55 +15275,75 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         if (webViewController != null) {
           final jsonStr = jsonEncode(vocabMap);
           final jsString = jsonEncode(jsonStr);
-          webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
+          webViewController?.evaluateJavascript(
+            source:
+                "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
+          );
         }
       });
     });
 
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
-          if (didPop && mounted) {
-             _handleImmediateSave();
-          }
+        if (didPop && mounted) {
+          _handleImmediateSave();
+        }
       },
       child: Scaffold(
-        backgroundColor: _theme == 'dark' ? const Color(0xFF121212) : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
+        backgroundColor: _theme == 'dark'
+            ? const Color(0xFF121212)
+            : (_theme == 'sepia' ? const Color(0xFFf4ecd8) : Colors.white),
         appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(
-          color: _theme == 'light' ? Colors.black87 : Colors.white,
-        ),
-        title: Text(
-          "${_progress.round()}% Read",
-          style: TextStyle(
-            fontSize: 14,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: IconThemeData(
             color: _theme == 'light' ? Colors.black87 : Colors.white,
           ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            _handleImmediateSave();
-            context.pop();
-          },
-        ),
+          title: Text(
+            "${_progress.round()}% Read",
+            style: TextStyle(
+              fontSize: 14,
+              color: _theme == 'light' ? Colors.black87 : Colors.white,
+            ),
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              _handleImmediateSave();
+              context.pop();
+            },
+          ),
           actions: [
             // NEW: MARK PAGE KNOWN BUTTON
             IconButton(
-              icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+              icon: const Icon(
+                Icons.check_circle_outline,
+                color: Colors.greenAccent,
+              ),
               onPressed: () async {
                 final book = bookAsync.value;
                 if (book == null) return;
-                final wordsObj = await webViewController?.evaluateJavascript(source: "window.getVisibleUnknownWords();");
+                final wordsObj = await webViewController?.evaluateJavascript(
+                  source: "window.getVisibleUnknownWords();",
+                );
                 if (wordsObj != null && wordsObj is List) {
-                   final words = wordsObj.map((e) => e.toString()).toList();
-                   if (words.isNotEmpty) {
-                       ref.read(vocabularyProvider.notifier).markBatchKnown(words, book.targetLanguage);
-                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Marked ${words.length} words as known")));
-                   } else {
-                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No unknown words on this page.")));
-                   }
+                  final words = wordsObj.map((e) => e.toString()).toList();
+                  if (words.isNotEmpty) {
+                    ref
+                        .read(vocabularyProvider.notifier)
+                        .markBatchKnown(words, book.targetLanguage);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Marked ${words.length} words as known"),
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("No unknown words on this page."),
+                      ),
+                    );
+                  }
                 }
               },
             ),
@@ -15323,24 +15371,40 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children:[
-                        const CircularProgressIndicator(color: LiquidTheme.primaryAccent),
+                      children: [
+                        const CircularProgressIndicator(
+                          color: LiquidTheme.primaryAccent,
+                        ),
                         const SizedBox(height: 16),
-                        Text("Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%", style: const TextStyle(color: Colors.white70)),
-                      ]
-                    )
+                        Text(
+                          "Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%",
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
                   );
                 }
-        
+
                 if (!_localFileReady || _localPort == null) {
-                  return const Center(child: CircularProgressIndicator(color: LiquidTheme.primaryAccent));
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: LiquidTheme.primaryAccent,
+                    ),
+                  );
                 }
-        
+
                 return InAppWebView(
-                  // CHANGE: Use initialUrlRequest instead of initialData for better Linux compatibility
-                  initialUrlRequest: URLRequest(
-                    url: WebUri("http://localhost:$_localPort/")
-                  ),
+                  // FIX: On Web, use initialData. On Mobile, use the Proxy Server.
+                  initialData: kIsWeb
+                      ? InAppWebViewInitialData(
+                          data: bookReaderHtmlTemplate,
+                        )
+                      : null,
+                  initialUrlRequest: !kIsWeb
+                      ? URLRequest(
+                          url: WebUri("http://localhost:$_localPort/"),
+                        )
+                      : null,
                   initialSettings: InAppWebViewSettings(
                     javaScriptEnabled: true,
                     domStorageEnabled: true,
@@ -15348,7 +15412,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     isInspectable: kDebugMode,
                     allowUniversalAccessFromFileURLs: true,
                     allowFileAccessFromFileURLs: true,
-                    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                    mixedContentMode:
+                        MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
                     // NEW CODE: Fix potential compositor issues on Linux/GTK
                     transparentBackground: true,
                     safeBrowsingEnabled: false,
@@ -15356,128 +15421,180 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     allowFileAccess: true,
                     javaScriptCanOpenWindowsAutomatically: true,
                   ),
-              onWebViewCreated: (controller) {
-                webViewController = controller;
-                controller.addJavaScriptHandler(handlerName: 'onProgress', callback: (args) {
-                  if (!mounted) return;
+                  onWebViewCreated: (controller) {
+                    webViewController = controller;
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onProgress',
+                      callback: (args) {
+                        if (!mounted) return;
 
-                  final cfi = args[0] as String;
-                  final pct = (args[1] as num).toDouble();
-                  
-                  // Ensure we don't save progress while the +1 jump is happening during init
-                  if (!_canSaveToBackend) return;
+                        final cfi = args[0] as String;
+                        final pct = (args[1] as num).toDouble();
 
-                  if (mounted) {
-                    setState(() {
-                      _progress = pct; 
-                      _lastCfi = cfi;
-                    });
-                  }
+                        if (mounted) {
+                          setState(() {
+                            // Always track the current location so we don't lose our place
+                            _lastCfi = cfi;
 
-                  if (!_canSaveToBackend && pct <= 0) {
-                      return;
-                  }
+                            // Only update visual percentage after initial load settles to prevent jitter
+                            if (_canSaveToBackend) {
+                              _progress = pct;
+                            }
+                          });
+                        }
 
-                  _progressDebounce?.cancel();
-                  _progressDebounce = Timer(const Duration(milliseconds: 1500), () {
-                    if (mounted) {
-                      ref.read(bookNotifierProvider.notifier).updateProgress(book.id, cfi, pct);
-                    }
-                  });
+                        // Ensure we don't push progress to the backend during initial setup
+                        if (!_canSaveToBackend) return;
 
-                  _updateReaderStyles();
-                });
+                        _progressDebounce?.cancel();
+                        _progressDebounce = Timer(
+                          const Duration(milliseconds: 1500),
+                          () {
+                            if (mounted) {
+                              ref
+                                  .read(bookNotifierProvider.notifier)
+                                  .updateProgress(book.id, cfi, pct);
+                            }
+                          },
+                        );
 
-                controller.addJavaScriptHandler(handlerName: 'onToc', callback: (args) {
-                  final tocData = args[0] as List<dynamic>;
-                  if (mounted) setState(() => _toc = tocData);
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onParagraphTranslate', callback: (args) {
-                  final text = args[0].toString();
-                  _showTranslationSheet(
-                    context, 
-                    selectedText: text, 
-                    contextText: text, 
-                    sourceLang: book.targetLanguage, 
-                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
-                  );
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onReady', callback: (_) {
-                  // 1. Trigger the load from backend
-                  ref.read(vocabularyProvider.notifier).loadVocabulary(book.targetLanguage);
-                  
-                  Future.delayed(const Duration(milliseconds: 2000), () {
-                    if (mounted) setState(() => _canSaveToBackend = true);
-                  });
-                  _updateReaderStyles();
-                });
-
-                controller.addJavaScriptHandler(handlerName: 'onWordTap', callback: (args) {
-                  final word = args[0] as String;
-                  final contextText = args[3] as String;
-                  
-                  // 1. Handle vocabulary update for unknown words
-                  final currentStatus = ref.read(vocabularyProvider).value?[word.toLowerCase()];
-                  if (currentStatus == null || currentStatus.toLowerCase() == 'unknown') {
-                    final book = ref.read(bookDetailProvider(widget.bookId)).value;
-                    if (book != null) {
-                      ref.read(vocabularyProvider.notifier).updateWordStatus(word, 'known', book.targetLanguage);
-                    }
-                  }
-
-                  // 2. Open the existing bottom sheet instead of a tooltip
-                  final book = ref.read(bookDetailProvider(widget.bookId)).value;
-                  final profile = ref.read(userProfileProvider).value;
-                  
-                  if (book != null && profile != null) {
-                    _showTranslationSheet(
-                      context, 
-                      selectedText: word, 
-                      contextText: contextText, 
-                      sourceLang: book.targetLanguage, 
-                      nativeLang: profile.nativeLanguage ?? 'english',
+                        _updateReaderStyles();
+                      },
                     );
-                  }
-                });
 
-                controller.addJavaScriptHandler(handlerName: 'onBackgroundTap', callback: (_) {
-                  // No action needed for background tap
-                });
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onToc',
+                      callback: (args) {
+                        final tocData = args[0] as List<dynamic>;
+                        if (mounted) setState(() => _toc = tocData);
+                      },
+                    );
 
-                controller.addJavaScriptHandler(handlerName: 'onChapterReady', callback: (_) {
-                  // Ensure current vocab is sent to every new chapter as it loads
-                  final vocabData = ref.read(vocabularyProvider).value;
-                  if (vocabData != null) {
-                    final jsonStr = jsonEncode(vocabData);
-                    final jsString = jsonEncode(jsonStr);
-                    webViewController?.evaluateJavascript(source: "if (window.applyVocabStyles) window.applyVocabStyles($jsString);");
-                  }
-                });
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onParagraphTranslate',
+                      callback: (args) {
+                        final text = args[0].toString();
+                        _showTranslationSheet(
+                          context,
+                          selectedText: text,
+                          contextText: text,
+                          sourceLang: book.targetLanguage,
+                          nativeLang:
+                              profileAsync.value?.nativeLanguage ?? 'english',
+                        );
+                      },
+                    );
 
-                controller.addJavaScriptHandler(handlerName: 'onTextSelected', callback: (args) {
-                  _showTranslationSheet(
-                    context, 
-                    selectedText: args[0].toString(), 
-                    contextText: args[1].toString(), 
-                    sourceLang: book.targetLanguage, 
-                    nativeLang: profileAsync.value?.nativeLanguage ?? 'english',
-                  );
-                });
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onReady',
+                      callback: (_) {
+                        // 1. Trigger the load from backend
+                        ref
+                            .read(vocabularyProvider.notifier)
+                            .loadVocabulary(book.targetLanguage);
+
+                        Future.delayed(const Duration(milliseconds: 1500), () {
+                          if (mounted) setState(() => _canSaveToBackend = true);
+                        });
+
+                        _updateReaderStyles();
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onWordTap',
+                      callback: (args) {
+                        final word = args[0] as String;
+                        final contextText = args[3] as String;
+
+                        // 1. Handle vocabulary update for unknown words
+                        final currentStatus = ref
+                            .read(vocabularyProvider)
+                            .value?[word.toLowerCase()];
+                        if (currentStatus == null ||
+                            currentStatus.toLowerCase() == 'unknown') {
+                          final book = ref
+                              .read(bookDetailProvider(widget.bookId))
+                              .value;
+                          if (book != null) {
+                            ref
+                                .read(vocabularyProvider.notifier)
+                                .updateWordStatus(
+                                  word,
+                                  'known',
+                                  book.targetLanguage,
+                                );
+                          }
+                        }
+
+                        // 2. Open the existing bottom sheet instead of a tooltip
+                        final book = ref
+                            .read(bookDetailProvider(widget.bookId))
+                            .value;
+                        final profile = ref.read(userProfileProvider).value;
+
+                        if (book != null && profile != null) {
+                          _showTranslationSheet(
+                            context,
+                            selectedText: word,
+                            contextText: contextText,
+                            sourceLang: book.targetLanguage,
+                            nativeLang: profile.nativeLanguage ?? 'english',
+                          );
+                        }
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onBackgroundTap',
+                      callback: (_) {
+                        // No action needed for background tap
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onChapterReady',
+                      callback: (_) {
+                        // Ensure current vocab is sent to every new chapter as it loads
+                        final vocabData = ref.read(vocabularyProvider).value;
+                        if (vocabData != null) {
+                          final jsonStr = jsonEncode(vocabData);
+                          final jsString = jsonEncode(jsonStr);
+                          webViewController?.evaluateJavascript(
+                            source:
+                                "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
+                          );
+                        }
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onTextSelected',
+                      callback: (args) {
+                        _showTranslationSheet(
+                          context,
+                          selectedText: args[0].toString(),
+                          contextText: args[1].toString(),
+                          sourceLang: book.targetLanguage,
+                          nativeLang:
+                              profileAsync.value?.nativeLanguage ?? 'english',
+                        );
+                      },
+                    );
+                  },
+                  onLoadStop: (controller, _) async {
+                    if (kIsWeb || _localPort != null) {
+                      final String bookUrl = kIsWeb
+                          ? (book.signedUrl ?? '')
+                          : "http://localhost:$_localPort/books/${book.id}.epub";
+                      final jsCall =
+                          "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                      await controller.evaluateJavascript(source: jsCall);
+                    }
+                  },
+                );
               },
-                onLoadStop: (controller, _) async {
-                  if (_localPort != null) {
-                     // NEW CODE START: Since we now load the HTML from the root, ensure the URL is relative to origin
-                     final localUrl = "http://localhost:$_localPort/books/${book.id}.epub";
-                     // NEW CODE END
-                     final jsCall = "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
-                     await controller.evaluateJavascript(source: jsCall);
-                  }
-                },
-            );
-         },
-        ),
+            ),
           ],
         ),
       ),
@@ -15488,7 +15605,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.6,
@@ -15499,32 +15618,51 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.all(16.0),
-              child: Text("Table of Contents", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              child: Text(
+                "Table of Contents",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const Divider(color: Colors.white10),
             Expanded(
               child: ListView.separated(
                 controller: scrollController,
                 itemCount: _toc.length,
-                separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+                separatorBuilder: (context, index) =>
+                    const Divider(color: Colors.white10, height: 1),
                 itemBuilder: (context, index) {
                   final chapter = _toc[index];
                   final int level = chapter['level'] ?? 0;
-                  
+
                   return ListTile(
-                    contentPadding: EdgeInsets.only(left: 16.0 + (level * 16.0), right: 16.0),
+                    contentPadding: EdgeInsets.only(
+                      left: 16.0 + (level * 16.0),
+                      right: 16.0,
+                    ),
                     title: Text(
-                      chapter['label'].toString().trim(), 
+                      chapter['label'].toString().trim(),
                       style: TextStyle(
                         color: level == 0 ? Colors.white : Colors.white70,
-                        fontWeight: level == 0 ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: level == 0
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         fontSize: level == 0 ? 15 : 14,
-                      )
+                      ),
                     ),
-                    trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
+                    trailing: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white24,
+                      size: 16,
+                    ),
                     onTap: () {
                       final href = chapter['href'].toString();
-                      webViewController?.evaluateJavascript(source: "rendition.display('${href}');");
+                      webViewController?.evaluateJavascript(
+                        source: "rendition.display('${href}');",
+                      );
                       Navigator.pop(context);
                     },
                   );
@@ -15542,32 +15680,54 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("Appearance", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              const Text(
+                "Appearance",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['light', 'dark', 'sepia'].map((t) => GestureDetector(
-                  onTap: () { 
-                    setState(() => _theme = t); 
-                    setModalState((){}); 
-                    _updateReaderStyles(); 
-                  },
-                  child: Container(
-                    width: 60, height: 60,
-                    decoration: BoxDecoration(
-                      color: t == 'light' ? Colors.white : (t == 'sepia' ? const Color(0xFFf4ecd8) : const Color(0xFF333333)),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _theme == t ? LiquidTheme.primaryAccent : Colors.transparent, width: 3)
-                    ),
-                  ),
-                )).toList(),
+                children: ['light', 'dark', 'sepia']
+                    .map(
+                      (t) => GestureDetector(
+                        onTap: () {
+                          setState(() => _theme = t);
+                          setModalState(() {});
+                          _updateReaderStyles();
+                        },
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: t == 'light'
+                                ? Colors.white
+                                : (t == 'sepia'
+                                      ? const Color(0xFFf4ecd8)
+                                      : const Color(0xFF333333)),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _theme == t
+                                  ? LiquidTheme.primaryAccent
+                                  : Colors.transparent,
+                              width: 3,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
               ),
               const SizedBox(height: 32),
               Row(
@@ -15575,10 +15735,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   const Icon(Icons.text_fields, size: 16),
                   Expanded(
                     child: Slider(
-                      value: _fontSize, min: 80, max: 200,
-                      onChanged: (v) { 
-                        setState(() => _fontSize = v); 
-                        setModalState((){}); 
+                      value: _fontSize,
+                      min: 80,
+                      max: 200,
+                      onChanged: (v) {
+                        setState(() => _fontSize = v);
+                        setModalState(() {});
                       },
                       onChangeEnd: (v) {
                         _updateReaderStyles();
@@ -15587,7 +15749,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                   ),
                   const Icon(Icons.text_fields, size: 24),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -15595,12 +15757,20 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     );
   }
 
-  Future<void> _showTranslationSheet(BuildContext context, {required String selectedText, required String contextText, required String sourceLang, required String nativeLang}) async {
+  Future<void> _showTranslationSheet(
+    BuildContext context, {
+    required String selectedText,
+    required String contextText,
+    required String sourceLang,
+    required String nativeLang,
+  }) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) => _TranslationBottomSheet(
         selectedText: selectedText,
         contextText: contextText,
@@ -15609,12 +15779,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       ),
     );
 
-    webViewController?.evaluateJavascript(source: """
+    webViewController?.evaluateJavascript(
+      source: """
       if (typeof rendition !== 'undefined' && rendition) {
         rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
         window.lastReportedText = "";
       }
-    """);
+    """,
+    );
   }
 }
 
@@ -15632,10 +15804,12 @@ class _TranslationBottomSheet extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_TranslationBottomSheet> createState() => _TranslationBottomSheetState();
+  ConsumerState<_TranslationBottomSheet> createState() =>
+      _TranslationBottomSheetState();
 }
 
-class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet> {
+class _TranslationBottomSheetState
+    extends ConsumerState<_TranslationBottomSheet> {
   bool _isLoadingFast = true;
   bool _isLoadingContext = false;
   String? _fastTranslation;
@@ -15654,11 +15828,23 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
     final logger = ref.read(loggerProvider);
     try {
       final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.translate(widget.selectedText, widget.sourceLang, widget.targetLang);
-      if (mounted) setState(() { _fastTranslation = result; _isLoadingFast = false; });
+      final result = await aiService.translate(
+        widget.selectedText,
+        widget.sourceLang,
+        widget.targetLang,
+      );
+      if (mounted)
+        setState(() {
+          _fastTranslation = result;
+          _isLoadingFast = false;
+        });
     } catch (e, st) {
       logger.error('BookReader: Fast translation failed', e, st);
-      if (mounted) setState(() { _fastTranslation = "Failed to translate"; _isLoadingFast = false; });
+      if (mounted)
+        setState(() {
+          _fastTranslation = "Failed to translate";
+          _isLoadingFast = false;
+        });
     }
   }
 
@@ -15684,14 +15870,19 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
       }
     } catch (e, st) {
       logger.error('BookReader: Context translation failed', e, st);
-      if (mounted) setState(() { _isLoadingContext = false; });
+      if (mounted)
+        setState(() {
+          _isLoadingContext = false;
+        });
     }
   }
 
   Future<void> _handleAddToDeck() async {
     final logger = ref.read(loggerProvider);
     setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+    final success = await ref
+        .read(srsProvider.notifier)
+        .addToDeckFromTranslation(
           front: widget.selectedText,
           back: _contextualTranslation ?? _fastTranslation!,
           language: widget.sourceLang,
@@ -15699,17 +15890,19 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
         );
 
     if (mounted) {
-      setState(() { 
-        _isAdding = false; 
+      setState(() {
+        _isAdding = false;
         if (success) {
           _isAdded = true;
           // NEW: Trigger local vocab update so the word color changes in the background
-          ref.read(vocabularyProvider.notifier).updateWordStatus(
-            widget.selectedText, 
-            'learning', 
-            widget.sourceLang
-          );
-        } 
+          ref
+              .read(vocabularyProvider.notifier)
+              .updateWordStatus(
+                widget.selectedText,
+                'learning',
+                widget.sourceLang,
+              );
+        }
       });
     }
   }
@@ -15717,54 +15910,111 @@ class _TranslationBottomSheetState extends ConsumerState<_TranslationBottomSheet
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 24,
+        right: 24,
+        top: 24,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children:[
-          Text(widget.selectedText, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+        children: [
+          Text(
+            widget.selectedText,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
           const SizedBox(height: 16),
-          
+
           if (_isLoadingFast)
             const CircularProgressIndicator()
           else
-            Text(_fastTranslation ?? "", style: const TextStyle(fontSize: 18, color: LiquidTheme.primaryAccent, fontWeight: FontWeight.w600)),
-            
+            Text(
+              _fastTranslation ?? "",
+              style: const TextStyle(
+                fontSize: 18,
+                color: LiquidTheme.primaryAccent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
           const SizedBox(height: 24),
-          
+
           if (_contextualTranslation == null && !_isLoadingContext)
             OutlinedButton.icon(
               onPressed: _fetchContextTranslation,
               icon: const Icon(Icons.auto_awesome, color: Colors.white),
-              label: const Text("Deep Translate with Context", style: TextStyle(color: Colors.white)),
-              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+              label: const Text(
+                "Deep Translate with Context",
+                style: TextStyle(color: Colors.white),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.white24),
+              ),
             )
           else if (_isLoadingContext)
-            const Center(child: CircularProgressIndicator(color: LiquidTheme.secondaryAccent))
+            const Center(
+              child: CircularProgressIndicator(
+                color: LiquidTheme.secondaryAccent,
+              ),
+            )
           else ...[
-             Container(
-               padding: const EdgeInsets.all(16),
-               decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
-               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children:[
-                 Text(_contextualTranslation!, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
-                 const SizedBox(height: 8),
-                 Text(_explanation ?? "", style: const TextStyle(fontSize: 14, color: Colors.white70)),
-               ]),
-             )
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _contextualTranslation!,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _explanation ?? "",
+                    style: const TextStyle(fontSize: 14, color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
           ],
-          
+
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent,
+                backgroundColor: _isAdded
+                    ? Colors.green.withValues(alpha: 0.2)
+                    : LiquidTheme.primaryAccent,
                 foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              onPressed: (_isLoadingFast || _isAdded || _isAdding) ? null : _handleAddToDeck,
-              icon: _isAdding ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(_isAdded ? Icons.check : Icons.add),
-              label: Text(_isAdded ? "Added to Deck" : "Add to Study Deck", style: const TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: (_isLoadingFast || _isAdded || _isAdding)
+                  ? null
+                  : _handleAddToDeck,
+              icon: _isAdding
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(_isAdded ? Icons.check : Icons.add),
+              label: Text(
+                _isAdded ? "Added to Deck" : "Add to Study Deck",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ),
           const SizedBox(height: 32),

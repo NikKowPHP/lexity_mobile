@@ -34,7 +34,8 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   InAppWebViewController? webViewController;
-  late double _progress;
+  // FIX: Initialize immediately to prevent LateInitializationError
+  double _progress = 0.0;
   String? _lastCfi;
   bool _isDownloading = false;
   bool _localFileReady = false;
@@ -64,110 +65,28 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
     }[_theme]!;
 
-    final js =
-        """
-      if (typeof rendition !== 'undefined' && rendition) {
-        try {
-          rendition.themes.fontSize("$_fontSize%");
-          rendition.themes.register("$_theme", {
-            "body": { 
-              "background": "${colors['bg']} !important", 
-              "color": "${colors['fg']} !important"
-            },
-            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": { "color": "${colors['fg']} !important", "background": "transparent !important" },
-            "::selection": { "background": "rgba(99, 102, 241, 0.3) !important", "text-decoration": "underline !important" }
-          });
-          rendition.themes.select("$_theme");
-          
-          rendition.getContents().forEach(c => {
-            if (c && c.document) {
-              c.addStylesheetRules({
-                "body": {
-                  "background-color": "${colors['bg']} !important",
-                  "color": "${colors['fg']} !important",
-                  "font-size": "$_fontSize% !important"
-                },
-                "p": {
-                  "position": "relative !important",
-                  "padding-right": "48px !important",
-                  "margin-bottom": "1.5em !important",
-                  "color": "${colors['fg']} !important",
-                  "line-height": "1.6 !important"
-                },
-                "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
-                  "color": "${colors['fg']} !important",
-                  "background": "transparent !important"
-                },
-                // NEW CSS RULES FOR LEXITY VOCAB SYSTEM
-                ".lexity-word": { 
-                  "cursor": "pointer", 
-                  "transition": "background-color 0.3s, border-bottom 0.3s" 
-                },
-                ".lexity-word.unknown": { 
-                  "background-color": "rgba(99, 102, 241, 0.15) !important",
-                  "border-bottom": "1px dashed ${_theme == 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)'} !important" 
-                },
-                ".lexity-word.learning": { 
-                  "background-color": "rgba(236, 72, 153, 0.2) !important", 
-                  "border-bottom": "2px solid #EC4899 !important" 
-                },
-                ".lexity-word.known": { 
-                  "background-color": "transparent !important",
-                  "border-bottom": "none !important",
-                  "color": "inherit !important"
-                },
-                // END NEW CSS
-                ".para-translate-btn": {
-                  "position": "absolute !important",
-                  "right": "0px !important",
-                  "top": "2px !important",
-                  "padding": "4px !important",
-                  "border-radius": "8px !important",
-                  "background": "${_theme == 'light' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.2)'} !important",
-                  "border": "1px solid ${_theme == 'light' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.3)'} !important",
-                  "color": "#6366F1 !important", 
-                  "display": "flex !important",
-                  "align-items": "center !important",
-                  "justify-content": "center !important",
-                  "cursor": "pointer !important",
-                  "font-size": "16px !important",
-                  "font-weight": "bold !important",
-                  "user-select": "none !important",
-                  "-webkit-user-select": "none !important",
-                  "transition": "all 0.2s ease-in-out !important",
-                  "box-shadow": "0 2px 4px rgba(0,0,0,0.1) !important",
-                  "z-index": "10 !important"
-                },
-                ".para-translate-btn:active": {
-                  "background": "#6366F1 !important",
-                  "color": "#ffffff !important",
-                  "transform": "scale(0.95) !important"
-                },
-                "::selection": {
-                  "background-color": "rgba(99, 102, 241, 0.3) !important",
-                  "text-decoration": "underline !important",
-                  "text-decoration-color": "#6366F1 !important",
-                  "color": "inherit !important"
-                }
-              });
-            }
-          });
-        } catch (e) {
-          console.error("Style update error:", e);
-        }
-      }
-    """;
-    webViewController?.evaluateJavascript(source: js);
+    webViewController?.evaluateJavascript(
+      source: "if (window.applyTheme) window.applyTheme(${jsonEncode(colors)}, $_fontSize, '$_theme');",
+    );
   }
 
   @override
   void initState() {
     super.initState();
-    _startLocalServer();
+    if (!kIsWeb) {
+      _startLocalServer();
+    } else {
+      // On Web, we don't use a local server. Set a dummy port to pass the initialization check.
+      _localPort = 0;
+    }
   }
 
   Future<void> _startLocalServer() async {
     final logger = ref.read(loggerProvider);
+    if (kIsWeb) {
+      logger.info('BookReader: Web detected, skipping local server.');
+      return;
+    }
     logger.info('BookReader: Initializing local file server');
     try {
       _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -228,6 +147,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   Future<void> _ensureBookDownloaded(UserBook book) async {
     final logger = ref.read(loggerProvider);
     if (_isDownloading || _localFileReady) return;
+
+    if (kIsWeb) {
+      setState(() => _localFileReady = true);
+      return;
+    }
 
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -290,6 +214,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
   void _handleImmediateSave() {
     if (!mounted || _lastCfi == null) return;
+    // Prevent saving if the book hasn't fully settled on the correct page yet
+    if (!_canSaveToBackend) return;
 
     final logger = ref.read(loggerProvider);
     _progressDebounce?.cancel();
@@ -418,233 +344,247 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
             ),
           ],
         ),
-        body: Stack(
-          children: [
-            bookAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, st) {
-                logger.error('BookReader: Failed to load data', e, st);
-                return Center(child: Text("Error: $e"));
-              },
-              data: (book) {
-                if (_isDownloading) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const CircularProgressIndicator(
-                          color: LiquidTheme.primaryAccent,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          "Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%",
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                      ],
+        body: SizedBox.expand(
+          child: Stack(
+            children: [
+              bookAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, st) {
+                  logger.error('BookReader: Failed to load data', e, st);
+                  return Center(child: Text("Error: $e"));
+                },
+                data: (book) {
+                  if (_isDownloading) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(
+                            color: LiquidTheme.primaryAccent,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            "Downloading... ${(_downloadProgress * 100).toStringAsFixed(0)}%",
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  if (!_localFileReady || _localPort == null) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: LiquidTheme.primaryAccent,
+                      ),
+                    );
+                  }
+
+                  return InAppWebView(
+                    // FIX: On Web, use initialData. On Mobile, use the Proxy Server.
+                    initialData: kIsWeb
+                        ? InAppWebViewInitialData(
+                            data: bookReaderHtmlTemplate,
+                            baseUrl: WebUri("/"), // Grants a proper origin context vs "null"
+                          )
+                        : null,
+                    initialUrlRequest: !kIsWeb
+                        ? URLRequest(
+                            url: WebUri("http://localhost:$_localPort/"),
+                          )
+                        : null,
+                    initialSettings: InAppWebViewSettings(
+                      javaScriptEnabled: true,
+                      domStorageEnabled: true,
+                      databaseEnabled: true,
+                      isInspectable: kDebugMode,
+                      allowUniversalAccessFromFileURLs: true,
+                      allowFileAccessFromFileURLs: true,
+                      mixedContentMode:
+                          MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                      // NEW CODE: Fix potential compositor issues on Linux/GTK
+                      transparentBackground: true,
+                      safeBrowsingEnabled: false,
+                      allowContentAccess: true,
+                      allowFileAccess: true,
+                      javaScriptCanOpenWindowsAutomatically: true,
                     ),
-                  );
-                }
+                    onWebViewCreated: (controller) {
+                      webViewController = controller;
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onProgress',
+                        callback: (args) {
+                          if (!mounted) return;
 
-                if (!_localFileReady || _localPort == null) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      color: LiquidTheme.primaryAccent,
-                    ),
-                  );
-                }
+                          final cfi = args[0] as String;
+                          final pct = (args[1] as num).toDouble();
 
-                return InAppWebView(
-                  // CHANGE: Use initialUrlRequest instead of initialData for better Linux compatibility
-                  initialUrlRequest: URLRequest(
-                    url: WebUri("http://localhost:$_localPort/"),
-                  ),
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    domStorageEnabled: true,
-                    databaseEnabled: true,
-                    isInspectable: kDebugMode,
-                    allowUniversalAccessFromFileURLs: true,
-                    allowFileAccessFromFileURLs: true,
-                    mixedContentMode:
-                        MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-                    // NEW CODE: Fix potential compositor issues on Linux/GTK
-                    transparentBackground: true,
-                    safeBrowsingEnabled: false,
-                    allowContentAccess: true,
-                    allowFileAccess: true,
-                    javaScriptCanOpenWindowsAutomatically: true,
-                  ),
-                  onWebViewCreated: (controller) {
-                    webViewController = controller;
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onProgress',
-                      callback: (args) {
-                        if (!mounted) return;
+                          if (mounted) {
+                            setState(() {
+                              // Always track the current location so we don't lose our place
+                              _lastCfi = cfi;
 
-                        final cfi = args[0] as String;
-                        final pct = (args[1] as num).toDouble();
+                              // Only update visual percentage after initial load settles to prevent jitter
+                              if (_canSaveToBackend) {
+                                _progress = pct;
+                              }
+                            });
+                          }
 
-                        if (mounted) {
-                          setState(() {
-                            _progress = pct;
-                            _lastCfi = cfi;
+                          // Ensure we don't push progress to the backend during initial setup
+                          if (!_canSaveToBackend) return;
+
+                          _progressDebounce?.cancel();
+                          _progressDebounce = Timer(
+                            const Duration(milliseconds: 1500),
+                            () {
+                              if (mounted) {
+                                ref
+                                    .read(bookNotifierProvider.notifier)
+                                    .updateProgress(book.id, cfi, pct);
+                              }
+                            },
+                          );
+
+                          _updateReaderStyles();
+                        },
+                      );
+
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onToc',
+                        callback: (args) {
+                          final tocData = args[0] as List<dynamic>;
+                          if (mounted) setState(() => _toc = tocData);
+                        },
+                      );
+
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onParagraphTranslate',
+                        callback: (args) {
+                          final text = args[0].toString();
+                          _showTranslationSheet(
+                            context,
+                            selectedText: text,
+                            contextText: text,
+                            sourceLang: book.targetLanguage,
+                            nativeLang:
+                                profileAsync.value?.nativeLanguage ?? 'english',
+                          );
+                        },
+                      );
+
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onReady',
+                        callback: (_) {
+                          // 1. Trigger the load from backend
+                          ref
+                              .read(vocabularyProvider.notifier)
+                              .loadVocabulary(book.targetLanguage);
+
+                          Future.delayed(const Duration(milliseconds: 1500), () {
+                            if (mounted) setState(() => _canSaveToBackend = true);
                           });
-                        }
 
-                        // Ensure we don't push progress to the backend while the +1 jump is happening
-                        if (!_canSaveToBackend) return;
+                          _updateReaderStyles();
+                        },
+                      );
 
-                        _progressDebounce?.cancel();
-                        _progressDebounce = Timer(
-                          const Duration(milliseconds: 1500),
-                          () {
-                            if (mounted) {
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onWordTap',
+                        callback: (args) {
+                          final word = args[0] as String;
+                          final contextText = args[3] as String;
+
+                          // 1. Handle vocabulary update for unknown words
+                          final currentStatus = ref
+                              .read(vocabularyProvider)
+                              .value?[word.toLowerCase()];
+                          if (currentStatus == null ||
+                              currentStatus.toLowerCase() == 'unknown') {
+                            final book = ref
+                                .read(bookDetailProvider(widget.bookId))
+                                .value;
+                            if (book != null) {
                               ref
-                                  .read(bookNotifierProvider.notifier)
-                                  .updateProgress(book.id, cfi, pct);
+                                  .read(vocabularyProvider.notifier)
+                                  .updateWordStatus(
+                                    word,
+                                    'known',
+                                    book.targetLanguage,
+                                  );
                             }
-                          },
-                        );
+                          }
 
-                        _updateReaderStyles();
-                      },
-                    );
-
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onToc',
-                      callback: (args) {
-                        final tocData = args[0] as List<dynamic>;
-                        if (mounted) setState(() => _toc = tocData);
-                      },
-                    );
-
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onParagraphTranslate',
-                      callback: (args) {
-                        final text = args[0].toString();
-                        _showTranslationSheet(
-                          context,
-                          selectedText: text,
-                          contextText: text,
-                          sourceLang: book.targetLanguage,
-                          nativeLang:
-                              profileAsync.value?.nativeLanguage ?? 'english',
-                        );
-                      },
-                    );
-
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onReady',
-                      callback: (_) {
-                        // 1. Trigger the load from backend
-                        ref
-                            .read(vocabularyProvider.notifier)
-                            .loadVocabulary(book.targetLanguage);
-
-                        Future.delayed(const Duration(milliseconds: 1500), () {
-                          if (mounted) setState(() => _canSaveToBackend = true);
-                        });
-
-                        _updateReaderStyles();
-                      },
-                    );
-
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onWordTap',
-                      callback: (args) {
-                        final word = args[0] as String;
-                        final contextText = args[3] as String;
-
-                        // 1. Handle vocabulary update for unknown words
-                        final currentStatus = ref
-                            .read(vocabularyProvider)
-                            .value?[word.toLowerCase()];
-                        if (currentStatus == null ||
-                            currentStatus.toLowerCase() == 'unknown') {
+                          // 2. Open the existing bottom sheet instead of a tooltip
                           final book = ref
                               .read(bookDetailProvider(widget.bookId))
                               .value;
-                          if (book != null) {
-                            ref
-                                .read(vocabularyProvider.notifier)
-                                .updateWordStatus(
-                                  word,
-                                  'known',
-                                  book.targetLanguage,
-                                );
+                          final profile = ref.read(userProfileProvider).value;
+
+                          if (book != null && profile != null) {
+                            _showTranslationSheet(
+                              context,
+                              selectedText: word,
+                              contextText: contextText,
+                              sourceLang: book.targetLanguage,
+                              nativeLang: profile.nativeLanguage ?? 'english',
+                            );
                           }
-                        }
+                        },
+                      );
 
-                        // 2. Open the existing bottom sheet instead of a tooltip
-                        final book = ref
-                            .read(bookDetailProvider(widget.bookId))
-                            .value;
-                        final profile = ref.read(userProfileProvider).value;
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onBackgroundTap',
+                        callback: (_) {
+                          // No action needed for background tap
+                        },
+                      );
 
-                        if (book != null && profile != null) {
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onChapterReady',
+                        callback: (_) {
+                          // Ensure current vocab is sent to every new chapter as it loads
+                          final vocabData = ref.read(vocabularyProvider).value;
+                          if (vocabData != null) {
+                            final jsonStr = jsonEncode(vocabData);
+                            final jsString = jsonEncode(jsonStr);
+                            webViewController?.evaluateJavascript(
+                              source:
+                                  "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
+                            );
+                          }
+                        },
+                      );
+
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onTextSelected',
+                        callback: (args) {
                           _showTranslationSheet(
                             context,
-                            selectedText: word,
-                            contextText: contextText,
+                            selectedText: args[0].toString(),
+                            contextText: args[1].toString(),
                             sourceLang: book.targetLanguage,
-                            nativeLang: profile.nativeLanguage ?? 'english',
+                            nativeLang:
+                                profileAsync.value?.nativeLanguage ?? 'english',
                           );
-                        }
-                      },
-                    );
-
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onBackgroundTap',
-                      callback: (_) {
-                        // No action needed for background tap
-                      },
-                    );
-
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onChapterReady',
-                      callback: (_) {
-                        // Ensure current vocab is sent to every new chapter as it loads
-                        final vocabData = ref.read(vocabularyProvider).value;
-                        if (vocabData != null) {
-                          final jsonStr = jsonEncode(vocabData);
-                          final jsString = jsonEncode(jsonStr);
-                          webViewController?.evaluateJavascript(
-                            source:
-                                "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
-                          );
-                        }
-                      },
-                    );
-
-                    controller.addJavaScriptHandler(
-                      handlerName: 'onTextSelected',
-                      callback: (args) {
-                        _showTranslationSheet(
-                          context,
-                          selectedText: args[0].toString(),
-                          contextText: args[1].toString(),
-                          sourceLang: book.targetLanguage,
-                          nativeLang:
-                              profileAsync.value?.nativeLanguage ?? 'english',
-                        );
-                      },
-                    );
-                  },
-                  onLoadStop: (controller, _) async {
-                    if (_localPort != null) {
-                      // NEW CODE START: Since we now load the HTML from the root, ensure the URL is relative to origin
-                      final localUrl =
-                          "http://localhost:$_localPort/books/${book.id}.epub";
-                      // NEW CODE END
-                      final jsCall =
-                          "loadBook(${jsonEncode(localUrl)}, ${jsonEncode(_lastCfi ?? '')});";
-                      await controller.evaluateJavascript(source: jsCall);
-                    }
-                  },
-                );
-              },
-            ),
-          ],
+                        },
+                      );
+                    },
+                    onLoadStop: (controller, _) async {
+                      if (kIsWeb || _localPort != null) {
+                        final String bookUrl = kIsWeb
+                            ? (book.signedUrl ?? '')
+                            : "http://localhost:$_localPort/books/${book.id}.epub";
+                        final jsCall =
+                            "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                        await controller.evaluateJavascript(source: jsCall);
+                      }
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

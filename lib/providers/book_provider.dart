@@ -58,7 +58,7 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
         _ref.invalidate(booksProvider);
       });
 
-      _logger.info('BookNotifier: Progress update successful for $id');
+      _logger.info('BookNotifier: Progress update successful for $id $cfi $progressPct');
     } catch (e, st) {
       _logger.error('BookNotifier: Progress update failed for $id', e, st);
     }
