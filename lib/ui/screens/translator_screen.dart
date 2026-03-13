@@ -10,6 +10,8 @@ import '../../models/translation_result.dart';
 import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
+import '../widgets/tutor_chat_dialog.dart';
+import '../../services/ai_service.dart';
 
 class TranslatorScreen extends ConsumerStatefulWidget {
   final bool isBubbleMode;
@@ -150,6 +152,25 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
             GlassCard(
               padding: 20,
               child: Text(state.fullTranslation, style: const TextStyle(fontSize: 18, color: Colors.white, height: 1.5)),
+            ),
+            const SizedBox(height: 12),
+            LiquidButton(
+              text: "Explain Nuances with Lexi",
+              onTap: () => showDialog(
+                context: context,
+                builder: (c) => TutorChatDialog(
+                  title: "Translation Analysis",
+                  onSendMessage: (msg, history) => ref.read(aiServiceProvider).getTutorResponse(
+                    endpoint: '/api/ai/translator-tutor-chat',
+                    context: {
+                      'sourceText': _inputController.text,
+                      'fullTranslation': state.fullTranslation,
+                      'targetLanguage': effectiveTarget,
+                    },
+                    chatHistory: history,
+                  ),
+                ),
+              ),
             ),
           ],
         ],

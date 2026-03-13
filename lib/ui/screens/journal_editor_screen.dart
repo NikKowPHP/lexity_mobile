@@ -7,6 +7,9 @@ import '../widgets/glass_scaffold.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/path_provider.dart';
+import '../../services/ai_service.dart';
+import '../widgets/audio_recorder_widget.dart';
+import 'dart:async';
 
 class JournalEditorScreen extends ConsumerStatefulWidget {
   final String? moduleId;
@@ -29,7 +32,7 @@ class JournalEditorScreen extends ConsumerStatefulWidget {
 class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
-  bool _isRecording = false;
+  List<String>? _hints;
 
   @override
   void initState() {
@@ -38,12 +41,38 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
       text: widget.initialTopic ?? "Free Write",
     );
     _contentController = TextEditingController();
+    _contentController.addListener(_resetStuckTimer);
+  }
+
+  Timer? _stuckTimer;
+  void _resetStuckTimer() {
+    _stuckTimer?.cancel();
+    _stuckTimer = Timer(const Duration(seconds: 7), () async {
+      if (_contentController.text.isNotEmpty && mounted) {
+        final suggestions = await ref.read(aiServiceProvider).generateStuckWriterSuggestions(
+          _titleController.text, 
+          _contentController.text, 
+          ref.read(activeLanguageProvider)
+        );
+        _showNudge(suggestions);
+      }
+    });
+  }
+
+  void _showNudge(List<String> hints) {
+    if (!mounted) return;
+    setState(() => _hints = hints);
+    // Auto-hide after 2 minutes to match web
+    Timer(const Duration(minutes: 2), () {
+      if (mounted) setState(() => _hints = null);
+    });
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _stuckTimer?.cancel();
     super.dispose();
   }
 
@@ -97,7 +126,7 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
 
             // 2. ADAPTIVE INPUT (Audio vs Text)
             if (isAudioMode) ...[
-              _buildAudioInterface(),
+              const AudioRecorderWidget(),
               const SizedBox(height: 24),
             ],
 
@@ -138,6 +167,28 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
 
             const SizedBox(height: 16),
             
+            if (_hints != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: GlassCard(
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Need a nudge?", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold)),
+                          IconButton(icon: const Icon(Icons.close, size: 16, color: Colors.white54), onPressed: () => setState(() => _hints = null)),
+                        ],
+                      ),
+                      ..._hints!.map((h) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4.0),
+                        child: Text("• $h", style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                      )),
+                    ],
+                  ),
+                ),
+              ),
+            
             GlassInput(controller: _titleController, hint: "Title / Topic"),
             
             const SizedBox(height: 16),
@@ -176,51 +227,6 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildAudioInterface() {
-    return GlassCard(
-      child: Column(
-        children: [
-          Icon(
-            _isRecording ? Icons.mic : Icons.mic_none,
-            size: 64,
-            color: _isRecording ? Colors.redAccent : Colors.white,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _isRecording ? "Listening..." : "Tap to Speak",
-            style: const TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: () => setState(() => _isRecording = !_isRecording),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _isRecording
-                    ? Colors.redAccent.withValues(alpha: 0.1)
-                    : Colors.white10,
-              ),
-              child: Icon(
-                _isRecording ? Icons.stop : Icons.play_arrow,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          if (!_isRecording && _contentController.text.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 20),
-              child: Text(
-                "Transcript: ${_contentController.text}",
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ),
-        ],
       ),
     );
   }

@@ -16,6 +16,7 @@ import '../../providers/vocabulary_provider.dart';
 import '../../services/logger_service.dart';
 import '../../theme/liquid_theme.dart';
 import '../../services/ai_service.dart';
+import '../widgets/liquid_components.dart';
 
 import 'book_reader_html.dart';
 
@@ -37,6 +38,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   // FIX: Initialize immediately to prevent LateInitializationError
   double _progress = 0.0;
   String? _lastCfi;
+  String? _currentCfi; // Track for page flips
   bool _isDownloading = false;
   bool _localFileReady = false;
   String _theme = 'light';
@@ -419,10 +421,27 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                           final cfi = args[0] as String;
                           final pct = (args[1] as num).toDouble();
 
+                          // Detect Page Flip (CFI changed)
+                          if (_currentCfi != null && _currentCfi != cfi) {
+                            // Get words that WERE visible on the page we just left
+                            webViewController
+                                ?.evaluateJavascript(
+                                  source: "window.getVisibleUnknownWords();",
+                                )
+                                .then((wordsObj) {
+                              if (wordsObj != null && wordsObj is List) {
+                                final words =
+                                    wordsObj.map((e) => e.toString()).toList();
+                                if (words.isNotEmpty) _triggerVocabReview(words);
+                              }
+                            });
+                          }
+
                           if (mounted) {
                             setState(() {
                               // Always track the current location so we don't lose our place
                               _lastCfi = cfi;
+                              _currentCfi = cfi;
 
                               // Only update visual percentage after initial load settles to prevent jitter
                               if (_canSaveToBackend) {
@@ -777,6 +796,23 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     """,
     );
   }
+
+  void _triggerVocabReview(List<String> words) {
+    if (!mounted || words.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => _VocabularyReviewSheet(
+        words: words,
+        targetLanguage: ref.read(activeLanguageProvider),
+      ),
+    );
+  }
 }
 
 class _TranslationBottomSheet extends ConsumerStatefulWidget {
@@ -822,18 +858,20 @@ class _TranslationBottomSheetState
         widget.sourceLang,
         widget.targetLang,
       );
-      if (mounted)
+      if (mounted) {
         setState(() {
           _fastTranslation = result;
           _isLoadingFast = false;
         });
+      }
     } catch (e, st) {
       logger.error('BookReader: Fast translation failed', e, st);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _fastTranslation = "Failed to translate";
           _isLoadingFast = false;
         });
+      }
     }
   }
 
@@ -867,7 +905,6 @@ class _TranslationBottomSheetState
   }
 
   Future<void> _handleAddToDeck() async {
-    final logger = ref.read(loggerProvider);
     setState(() => _isAdding = true);
     final success = await ref
         .read(srsProvider.notifier)
@@ -884,9 +921,7 @@ class _TranslationBottomSheetState
         if (success) {
           _isAdded = true;
           // NEW: Trigger local vocab update so the word color changes in the background
-          ref
-              .read(vocabularyProvider.notifier)
-              .updateWordStatus(
+          ref.read(vocabularyProvider.notifier).updateWordStatus(
                 widget.selectedText,
                 'learning',
                 widget.sourceLang,
@@ -1007,6 +1042,82 @@ class _TranslationBottomSheetState
             ),
           ),
           const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+}
+
+class _VocabularyReviewSheet extends ConsumerWidget {
+  final List<String> words;
+  final String targetLanguage;
+
+  const _VocabularyReviewSheet({
+    required this.words,
+    required this.targetLanguage,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            "${words.length} New Words",
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "How do you want to handle these words?",
+            style: TextStyle(color: Colors.white54),
+          ),
+          const SizedBox(height: 24),
+          Flexible(
+            child: ListView.builder(
+              itemCount: words.length,
+              itemBuilder: (context, i) => ListTile(
+                title:
+                    Text(words[i], style: const TextStyle(color: Colors.white)),
+                trailing: const Icon(
+                  Icons.help_outline,
+                  color: Colors.white24,
+                  size: 18,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: LiquidButton(
+                  text: "Mark All Known",
+                  onTap: () {
+                    ref
+                        .read(vocabularyProvider.notifier)
+                        .markBatchKnown(words, targetLanguage);
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ],
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              "I'll handle them manually",
+              style: TextStyle(color: Colors.white38),
+            ),
+          ),
         ],
       ),
     );

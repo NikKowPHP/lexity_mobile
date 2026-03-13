@@ -54,6 +54,8 @@ class UserProfile {
   final UserGoals? goals;
   final int currentStreak;
   final int longestStreak;
+  final bool onboardingCompleted;
+  final int srsCount;
 
   UserProfile({
     required this.id,
@@ -70,6 +72,8 @@ class UserProfile {
     this.goals,
     this.currentStreak = 0,
     this.longestStreak = 0,
+    this.onboardingCompleted = false,
+    this.srsCount = 0,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -92,6 +96,8 @@ class UserProfile {
       goals: json['goals'] != null ? UserGoals.fromJson(json['goals']) : null,
       currentStreak: json['currentStreak'] ?? 0,
       longestStreak: json['longestStreak'] ?? 0,
+      onboardingCompleted: json['onboardingCompleted'] ?? false,
+      srsCount: json['srsCount'] ?? 0,
     );
   }
 
@@ -106,6 +112,8 @@ class UserProfile {
     UserGoals? goals,
     int? currentStreak,
     int? longestStreak,
+    bool? onboardingCompleted,
+    int? srsCount,
   }) {
     return UserProfile(
       id: id,
@@ -122,6 +130,8 @@ class UserProfile {
       goals: goals ?? this.goals,
       currentStreak: currentStreak ?? this.currentStreak,
       longestStreak: longestStreak ?? this.longestStreak,
+      onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      srsCount: srsCount ?? this.srsCount,
     );
   }
 }

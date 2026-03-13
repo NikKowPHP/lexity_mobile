@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/learning_module.dart';
 import '../services/learning_path_service.dart';
 import 'user_provider.dart';
+import '../services/journal_service.dart';
 
 final learningPathProvider = FutureProvider.autoDispose<List<LearningModule>>((ref) async {
   final service = ref.watch(learningPathServiceProvider);
@@ -45,6 +46,19 @@ class PathNotifier extends StateNotifier<AsyncValue<void>> {
     } catch (e) {
       // Handle error
     }
+  }
+
+  void startSelfHealing(String journalId) {
+    // Replicates the web's 60s timeout re-trigger
+    Future.delayed(const Duration(seconds: 60), () async {
+      try {
+        // If analysis seems stuck, we can re-trigger journal analysis
+        await _ref.read(journalServiceProvider).analyzeEntry(journalId);
+        _ref.invalidate(learningPathProvider);
+      } catch (e) {
+        // Silent fail for healing
+      }
+    });
   }
 }
 

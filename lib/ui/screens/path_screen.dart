@@ -6,6 +6,11 @@ import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 import '../../providers/path_provider.dart';
 import '../../models/learning_module.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/onboarding_provider.dart';
+import '../../providers/journal_provider.dart';
+import '../../models/user_profile.dart';
+import '../../models/journal_entry.dart';
 
 class PathScreen extends ConsumerWidget {
   const PathScreen({super.key});
@@ -31,6 +36,30 @@ class PathScreen extends ConsumerWidget {
           ),
         ),
         data: (modules) {
+          final profile = ref.watch(userProfileProvider).value;
+          final onboardingStep = ref.watch(onboardingProvider);
+          
+          if (profile != null && !profile.onboardingCompleted) {
+             final journals = ref.watch(journalHistoryProvider).value ?? [];
+             return SliverToBoxAdapter(
+               child: Padding(
+                 padding: const EdgeInsets.all(20),
+                 child: Column(
+                   children: [
+                     const Text("WELCOME TO LEXITY", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                     const SizedBox(height: 8),
+                     const Text("Complete these steps to unlock your path", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                     const SizedBox(height: 32),
+                     _buildOnboardingTimeline(profile, journals),
+                     const SizedBox(height: 32),
+                     if (onboardingStep == OnboardingStep.firstJournal)
+                        LiquidButton(text: "Start First Journal", onTap: () => context.push('/path/read')), // Using read activity as starting point or similar
+                   ],
+                 ),
+               ),
+             );
+          }
+
           if (modules.isEmpty) {
             return SliverFillRemaining(
               hasScrollBody: false,
@@ -141,6 +170,59 @@ class _TimelineModuleItem extends StatelessWidget {
           ),
           if (!isPending)
             const Icon(Icons.chevron_right, color: Colors.white24),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _buildOnboardingTimeline(UserProfile profile, List<JournalEntry> journals) {
+  final step1Complete = profile.nativeLanguage != null && profile.nativeLanguage!.isNotEmpty;
+  final step2Complete = journals.isNotEmpty;
+  final step3Complete = journals.isNotEmpty && journals.first.analysis != null;
+  final step4Complete = profile.onboardingCompleted;
+
+  return Column(
+    children: [
+      _TimelineNode(title: "1. Language Setup", isDone: step1Complete),
+      _TimelineNode(title: "2. First Journal Entry", isDone: step2Complete, isActive: step1Complete),
+      _TimelineNode(title: "3. AI Analysis", isDone: step3Complete, isActive: step2Complete),
+      _TimelineNode(title: "4. Personalized Path", isDone: step4Complete, isActive: step3Complete),
+    ],
+  );
+}
+
+class _TimelineNode extends StatelessWidget {
+  final String title;
+  final bool isDone;
+  final bool isActive;
+
+  const _TimelineNode({required this.title, required this.isDone, this.isActive = true});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: isDone ? Colors.greenAccent : (isActive ? LiquidTheme.primaryAccent.withValues(alpha: 0.2) : Colors.white10),
+              shape: BoxShape.circle,
+              border: isDone ? null : Border.all(color: isActive ? LiquidTheme.primaryAccent : Colors.white24),
+            ),
+            child: isDone ? const Icon(Icons.check, size: 16, color: Colors.black) : null,
+          ),
+          const SizedBox(width: 16),
+          Text(
+            title,
+            style: TextStyle(
+              color: isDone ? Colors.white : (isActive ? Colors.white70 : Colors.white24),
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
         ],
       ),
     );

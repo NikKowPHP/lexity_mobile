@@ -5,7 +5,9 @@ import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 import '../widgets/analysis_widgets.dart';
+import '../widgets/tutor_chat_dialog.dart';
 import '../../providers/journal_provider.dart';
+import '../../services/ai_service.dart';
 
 class JournalDetailScreen extends ConsumerWidget {
   final String journalId;
@@ -22,6 +24,22 @@ class JournalDetailScreen extends ConsumerWidget {
         return GlassScaffold(
           title: entry.title,
           subtitle: entry.createdAt.toString().split(' ')[0],
+          floatingActionButton: FloatingActionButton.extended(
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text("Ask Lexi"),
+            backgroundColor: LiquidTheme.primaryAccent,
+            onPressed: () => showDialog(
+              context: context,
+              builder: (c) => TutorChatDialog(
+                title: "Discussing: ${entry.title}",
+                onSendMessage: (msg, history) => ref.read(aiServiceProvider).getTutorResponse(
+                  endpoint: '/api/ai/journal-tutor-chat',
+                  context: {'journalId': entry.id},
+                  chatHistory: history,
+                ),
+              ),
+            ),
+          ),
           body: SliverList(
             delegate: SliverChildListDelegate([
               GlassCard(

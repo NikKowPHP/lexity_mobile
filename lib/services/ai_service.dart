@@ -144,6 +144,73 @@ class AIService {
       rethrow;
     }
   }
+
+  Future<String> getTutorResponse({
+    required String endpoint,
+    required Map<String, dynamic> context,
+    required List<Map<String, String>> chatHistory,
+  }) async {
+    _logger.info('AIService: Requesting tutor response from $endpoint');
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}$endpoint'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        ...context,
+        'chatHistory': chatHistory,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body)['response'];
+    }
+    throw Exception('Tutor failed to respond');
+  }
+
+  Future<List<String>> generateStuckWriterSuggestions(
+    String title,
+    String content,
+    String language,
+  ) async {
+    _logger.info('AIService: Requesting stuck writer suggestions');
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/ai/stuck-writer'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'title': title,
+        'content': content,
+        'targetLanguage': language,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final List suggestions = jsonDecode(response.body)['suggestions'] ?? [];
+      return suggestions.map((s) => s.toString()).toList();
+    }
+    return ["Try writing about how you feel today.", "What did you eat for breakfast?"];
+  }
+
+  Future<List<String>> getStuckSpeakerSuggestions(
+    List<int> audioBytes,
+    String language,
+  ) async {
+    _logger.info('AIService: Requesting stuck speaker suggestions');
+    // Simplified for now: just sending bytes. 
+    // In a real app, we might use multipart/form-data for files.
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/ai/stuck-speaker'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'audioBase64': base64Encode(audioBytes),
+        'targetLanguage': language,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final List suggestions = jsonDecode(response.body)['suggestions'] ?? [];
+      return suggestions.map((s) => s.toString()).toList();
+    }
+    return ["Try saying: 'I am practicing my speaking.'"];
+  }
 }
 
 final aiServiceProvider = Provider(
