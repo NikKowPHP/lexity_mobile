@@ -49,14 +49,19 @@ class VocabularyService {
   }
 
   Future<void> markBatchKnown(List<String> words, String language) async {
-    await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary/batch-known'),
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
       headers: await _getHeaders(),
       body: jsonEncode({
         'words': words,
         'targetLanguage': language,
+        'status': 'KNOWN',
       }),
     );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to batch update vocabulary');
+    }
   }
 
   Future<void> deleteWord(String word, String language) async {

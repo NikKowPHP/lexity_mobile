@@ -602,8 +602,16 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                         final String bookUrl = kIsWeb
                             ? (book.signedUrl ?? '')
                             : "http://localhost:$_localPort/books/${book.id}.epub";
+                        
+                        // NEW: Pass expected percentage to JS for self-healing
+                        await controller.evaluateJavascript(
+                            source: "window.expectedProgressPct = $_progress;");
+                        
+                        // NEW: Pass the locations string from the DB to the JS function
+                        final String locationsJson = book.locations ?? 'null';
+                        
                         final jsCall =
-                            "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                            "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')}, $locationsJson);";
                         await controller.evaluateJavascript(source: jsCall);
                       }
                     },
@@ -817,6 +825,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       builder: (context) => _VocabularyReviewSheet(
         words: words,
         targetLanguage: ref.read(activeLanguageProvider),
+        webViewController: webViewController,
       ),
     );
   }
@@ -1056,17 +1065,41 @@ class _TranslationBottomSheetState
   }
 }
 
-class _VocabularyReviewSheet extends ConsumerWidget {
+class _VocabularyReviewSheet extends ConsumerStatefulWidget {
   final List<String> words;
   final String targetLanguage;
+  final InAppWebViewController? webViewController;
 
   const _VocabularyReviewSheet({
     required this.words,
     required this.targetLanguage,
+    this.webViewController,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_VocabularyReviewSheet> createState() => _VocabularyReviewSheetState();
+}
+
+class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> {
+  late List<String> _pendingWords;
+
+  @override
+  void initState() {
+    super.initState();
+    _pendingWords = List.from(widget.words);
+  }
+
+  void _removeWord(String word) {
+    setState(() {
+      _pendingWords.remove(word);
+    });
+    if (_pendingWords.isEmpty) {
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
       constraints: BoxConstraints(
@@ -1076,7 +1109,7 @@ class _VocabularyReviewSheet extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            "${words.length} New Words",
+            "${_pendingWords.length} New Words",
             style: const TextStyle(
               color: Colors.white,
               fontSize: 20,
@@ -1091,15 +1124,34 @@ class _VocabularyReviewSheet extends ConsumerWidget {
           const SizedBox(height: 24),
           Flexible(
             child: ListView.builder(
-              itemCount: words.length,
-              itemBuilder: (context, i) => ListTile(
-                title:
-                    Text(words[i], style: const TextStyle(color: Colors.white)),
-                trailing: const Icon(
-                  Icons.help_outline,
-                  color: Colors.white24,
-                  size: 18,
-                ),
+              itemCount: _pendingWords.length,
+              itemBuilder: (context, i) => _VocabListItem(
+                word: _pendingWords[i],
+                targetLanguage: widget.targetLanguage,
+                webViewController: widget.webViewController,
+                onMarkKnown: () {
+                  // 1. Update Remote + Provider state
+                  ref.read(vocabularyProvider.notifier).updateWordStatus(_pendingWords[i], 'known', widget.targetLanguage);
+                  
+                  // 2. Trigger JS to update the highlight color in the reader
+                  widget.webViewController?.evaluateJavascript(
+                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'known'}).replaceAll("'", "\\'")}');"
+                  );
+
+                  // 3. Remove from UI list
+                  _removeWord(_pendingWords[i]);
+                },
+                onAddedToDeck: () {
+                  // Status will sync implicitly or can be updated directly
+                  ref.read(vocabularyProvider.notifier).updateWordStatus(_pendingWords[i], 'learning', widget.targetLanguage);
+                  
+                  // Update reader highlight via JS
+                  widget.webViewController?.evaluateJavascript(
+                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'learning'}).replaceAll("'", "\\'")}');"
+                  );
+
+                  _removeWord(_pendingWords[i]);
+                },
               ),
             ),
           ),
@@ -1112,7 +1164,14 @@ class _VocabularyReviewSheet extends ConsumerWidget {
                   onTap: () {
                     ref
                         .read(vocabularyProvider.notifier)
-                        .markBatchKnown(words, targetLanguage);
+                        .markBatchKnown(_pendingWords, widget.targetLanguage);
+                    
+                    // Bulk update reader highlights
+                    final bulkHighlights = {for (var w in _pendingWords) w.toLowerCase(): 'known'};
+                    widget.webViewController?.evaluateJavascript(
+                      source: "window.applyVocabStyles('${jsonEncode(bulkHighlights).replaceAll("'", "\\'")}');"
+                    );
+
                     Navigator.pop(context);
                   },
                 ),
@@ -1126,6 +1185,143 @@ class _VocabularyReviewSheet extends ConsumerWidget {
               style: TextStyle(color: Colors.white38),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VocabListItem extends ConsumerStatefulWidget {
+  final String word;
+  final String targetLanguage;
+  final InAppWebViewController? webViewController;
+  final VoidCallback onMarkKnown;
+  final VoidCallback onAddedToDeck;
+
+  const _VocabListItem({
+    required this.word,
+    required this.targetLanguage,
+    this.webViewController,
+    required this.onMarkKnown,
+    required this.onAddedToDeck,
+  });
+
+  @override
+  ConsumerState<_VocabListItem> createState() => _VocabListItemState();
+}
+
+class _VocabListItemState extends ConsumerState<_VocabListItem> {
+  bool _expanded = false;
+  bool _loading = false;
+  String? _translation;
+
+  void _toggle() async {
+    setState(() => _expanded = !_expanded);
+    if (_expanded && _translation == null) {
+      setState(() => _loading = true);
+      try {
+        final nativeLang = ref.read(userProfileProvider).value?.nativeLanguage ?? 'english';
+        final res = await ref.read(aiServiceProvider).translate(
+              widget.word,
+              widget.targetLanguage,
+              nativeLang,
+            );
+        if (mounted) {
+          setState(() {
+            _translation = res;
+            _loading = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _translation = "Error translating";
+            _loading = false;
+          });
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(
+              widget.word,
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            onTap: _toggle,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.check, color: Colors.greenAccent),
+                  onPressed: widget.onMarkKnown,
+                  tooltip: "Mark Known",
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add, color: LiquidTheme.primaryAccent),
+                  onPressed: () async {
+                    if (_translation == null) {
+                      setState(() => _loading = true);
+                      try {
+                        final nativeLang = ref.read(userProfileProvider).value?.nativeLanguage ?? 'english';
+                        final res = await ref.read(aiServiceProvider).translate(
+                              widget.word,
+                              widget.targetLanguage,
+                              nativeLang,
+                            );
+                        _translation = res;
+                      } catch (e) {
+                        _translation = "Unknown";
+                      }
+                    }
+                    if (mounted) {
+                       ref.read(srsProvider.notifier).addToDeckFromTranslation(
+                            front: widget.word,
+                            back: _translation!,
+                            language: widget.targetLanguage,
+                       );
+                       widget.onAddedToDeck();
+                    }
+                  },
+                  tooltip: "Add to Deck",
+                ),
+              ],
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+                    )
+                  : Row(
+                      children: [
+                        const Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.white54),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _translation ?? "Error",
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
         ],
       ),
     );

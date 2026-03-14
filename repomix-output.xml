@@ -3108,323 +3108,6 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
 }
 </file>
 
-<file path="lib/ui/widgets/audio_recorder_widget.dart">
-import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../services/ai_service.dart';
-import '../../providers/user_provider.dart';
-import 'liquid_components.dart';
-
-enum RecordingStatus { idle, recording, paused, stopped }
-
-class AudioRecorderWidget extends ConsumerStatefulWidget {
-  const AudioRecorderWidget({super.key});
-
-  @override
-  ConsumerState<AudioRecorderWidget> createState() => _AudioRecorderWidgetState();
-}
-
-class _AudioRecorderWidgetState extends ConsumerState<AudioRecorderWidget> {
-  RecordingStatus status = RecordingStatus.idle;
-  int _seconds = 0;
-  Timer? _timer;
-  List<String>? _hints;
-
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() => _seconds++);
-    });
-  }
-
-  void _stopTimer() {
-    _timer?.cancel();
-  }
-
-  void _toggleRecording() {
-    setState(() {
-      if (status == RecordingStatus.idle || status == RecordingStatus.stopped) {
-        status = RecordingStatus.recording;
-        _seconds = 0;
-        _startTimer();
-      } else if (status == RecordingStatus.recording) {
-        status = RecordingStatus.paused;
-        _stopTimer();
-      } else if (status == RecordingStatus.paused) {
-        status = RecordingStatus.recording;
-        _startTimer();
-      }
-    });
-  }
-
-  Future<void> _getSpeakerHint() async {
-    // Placeholder implementation for audio slicing
-    // In a real app, this would use 'record' or 'flutter_sound'
-    // and potentially 'ffmpeg_kit_flutter' for slicing.
-    
-    // Simulate API call
-    final hints = await ref.read(aiServiceProvider).getStuckSpeakerSuggestions(
-      [0, 1, 2, 3], // Mocked bytes
-      ref.read(activeLanguageProvider)
-    );
-    
-    _showHintsOverlay(hints);
-  }
-
-  void _showHintsOverlay(List<String> hints) {
-    if (!mounted) return;
-    setState(() => _hints = hints);
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  String _formatTime(int seconds) {
-    final mins = (seconds ~/ 60).toString().padLeft(2, '0');
-    final secs = (seconds % 60).toString().padLeft(2, '0');
-    return "$mins:$secs";
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        GlassCard(
-          padding: 24,
-          child: Column(
-            children: [
-              Text(
-                _formatTime(_seconds),
-                style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white, fontFeatures: [FontFeature.tabularFigures()]),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                status == RecordingStatus.recording ? "Recording..." : (status == RecordingStatus.paused ? "Paused" : "Ready"),
-                style: TextStyle(color: status == RecordingStatus.recording ? Colors.redAccent : Colors.white54),
-              ),
-              const SizedBox(height: 32),
-              GestureDetector(
-                onTap: _toggleRecording,
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: status == RecordingStatus.recording ? Colors.redAccent.withOpacity(0.1) : Colors.white10,
-                    border: Border.all(color: status == RecordingStatus.recording ? Colors.redAccent : Colors.white24, width: 2),
-                  ),
-                  child: Icon(
-                    status == RecordingStatus.recording ? Icons.pause : Icons.mic,
-                    color: status == RecordingStatus.recording ? Colors.redAccent : Colors.white,
-                    size: 32,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        if (status == RecordingStatus.paused)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: OutlinedButton.icon(
-              onPressed: _getSpeakerHint,
-              icon: const Icon(Icons.lightbulb, color: Colors.amber),
-              label: const Text("Get a hint from Lexi", style: TextStyle(color: Colors.white)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.white10),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ),
-          
-        if (_hints != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: GlassCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text("Lexi suggests:", style: TextStyle(color: Colors.indigoAccent, fontWeight: FontWeight.bold)),
-                      IconButton(icon: const Icon(Icons.close, size: 16, color: Colors.white54), onPressed: () => setState(() => _hints = null)),
-                    ],
-                  ),
-                  ..._hints!.map((h) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4.0),
-                    child: Text("• $h", style: const TextStyle(fontSize: 14, color: Colors.white70)),
-                  )),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/widgets/tutor_chat_dialog.dart">
-import 'package:flutter/material.dart';
-import 'liquid_components.dart';
-
-class TutorChatDialog extends StatefulWidget {
-  final String title;
-  final Future<String> Function(String message, List<Map<String, String>> history) onSendMessage;
-  
-  const TutorChatDialog({super.key, required this.title, required this.onSendMessage});
-
-  @override
-  State<TutorChatDialog> createState() => _TutorChatDialogState();
-}
-
-class _TutorChatDialogState extends State<TutorChatDialog> {
-  final List<Map<String, String>> _history = [];
-  final TextEditingController _controller = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  bool _isLoading = false;
-
-  void _send() async {
-    if (_controller.text.isEmpty || _isLoading) return;
-    final userMsg = _controller.text;
-    setState(() {
-      _history.add({'role': 'user', 'content': userMsg});
-      _isLoading = true;
-      _controller.clear();
-    });
-    
-    _scrollToBottom();
-
-    try {
-      final response = await widget.onSendMessage(userMsg, _history);
-      setState(() {
-        _history.add({'role': 'assistant', 'content': response});
-        _isLoading = false;
-      });
-      _scrollToBottom();
-    } catch (e) {
-      setState(() {
-        _history.add({'role': 'assistant', 'content': "Lexi is having a moment. Please try again later."});
-        _isLoading = false;
-      });
-      _scrollToBottom();
-    }
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-      child: GlassCard(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.title, 
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54, size: 20),
-                  onPressed: () => Navigator.pop(context),
-                )
-              ],
-            ),
-            const Divider(color: Colors.white10),
-            Flexible(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: _history.length,
-                  itemBuilder: (c, i) => _ChatBubble(msg: _history[i]),
-                ),
-              ),
-            ),
-            if (_isLoading) 
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8.0),
-                child: LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(Colors.indigoAccent)),
-              ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(child: GlassInput(hint: "Ask Lexi...", controller: _controller)),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _send, 
-                  icon: const Icon(Icons.send, color: Colors.indigoAccent),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.indigoAccent.withOpacity(0.1),
-                    padding: const EdgeInsets.all(12),
-                  ),
-                ),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatBubble extends StatelessWidget {
-  final Map<String, String> msg;
-  const _ChatBubble({required this.msg});
-  @override
-  Widget build(BuildContext context) {
-    final isUser = msg['role'] == 'user';
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isUser ? Colors.indigoAccent.withOpacity(0.2) : Colors.white10,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isUser ? 16 : 0),
-            bottomRight: Radius.circular(isUser ? 0 : 16),
-          ),
-          border: Border.all(color: isUser ? Colors.indigoAccent.withOpacity(0.3) : Colors.white10),
-        ),
-        child: Text(
-          msg['content']!, 
-          style: const TextStyle(fontSize: 14, color: Colors.white),
-        ),
-      ),
-    );
-  }
-}
-</file>
-
 <file path="linux/flutter/CMakeLists.txt">
 # This file controls Flutter-level build steps. It should not be edited.
 cmake_minimum_required(VERSION 3.10)
@@ -6879,6 +6562,8 @@ class UserBook {
   final DateTime createdAt;
   final String? signedUrl;
 
+  final String? locations;
+
   UserBook({
     required this.id,
     required this.title,
@@ -6890,6 +6575,7 @@ class UserBook {
     required this.progressPct,
     required this.createdAt,
     this.signedUrl,
+    this.locations,
   });
 
   factory UserBook.fromJson(Map<String, dynamic> json) {
@@ -6906,6 +6592,7 @@ class UserBook {
       signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true 
           ? '${AppConstants.baseUrl}${json['signedUrl']}' 
           : json['signedUrl'],
+      locations: json['locations'],
     );
   }
 }
@@ -7200,107 +6887,6 @@ class LiquidTheme {
         surface: Colors.transparent, // Important for glass
       ),
       useMaterial3: true,
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/screens/journal_detail_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../../theme/liquid_theme.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../widgets/analysis_widgets.dart';
-import '../widgets/tutor_chat_dialog.dart';
-import '../../providers/journal_provider.dart';
-import '../../services/ai_service.dart';
-
-class JournalDetailScreen extends ConsumerWidget {
-  final String journalId;
-  const JournalDetailScreen({super.key, required this.journalId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final entryAsync = ref.watch(journalDetailProvider(journalId));
-
-    return entryAsync.when(
-      loading: () => const Scaffold(body: LiquidBackground(child: Center(child: CircularProgressIndicator()))),
-      error: (e, _) => Scaffold(body: LiquidBackground(child: Center(child: Text("Error: $e")))),
-      data: (entry) {
-        return GlassScaffold(
-          title: entry.title,
-          subtitle: entry.createdAt.toString().split(' ')[0],
-          floatingActionButton: FloatingActionButton.extended(
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text("Ask Lexi"),
-            backgroundColor: LiquidTheme.primaryAccent,
-            onPressed: () => showDialog(
-              context: context,
-              builder: (c) => TutorChatDialog(
-                title: "Discussing: ${entry.title}",
-                onSendMessage: (msg, history) => ref.read(aiServiceProvider).getTutorResponse(
-                  endpoint: '/api/ai/journal-tutor-chat',
-                  context: {'journalId': entry.id},
-                  chatHistory: history,
-                ),
-              ),
-            ),
-          ),
-          body: SliverList(
-            delegate: SliverChildListDelegate([
-              GlassCard(
-                padding: 20,
-                child: Text(entry.content, style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.5)),
-              ),
-              const SizedBox(height: 32),
-              
-              if (entry.analysis != null) ...[
-                 const Text("AI ANALYSIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
-                 const SizedBox(height: 12),
-                 AnalysisScoreCard(analysis: entry.analysis!),
-                 const SizedBox(height: 24),
-                 
-                 if (entry.analysis!.feedback.isNotEmpty) ...[
-                   GlassCard(
-                     child: Column(
-                       crossAxisAlignment: CrossAxisAlignment.start,
-                       children: [
-                         const Row(children: [Icon(Icons.auto_awesome, color: LiquidTheme.primaryAccent, size: 16), SizedBox(width: 8), Text("Feedback", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))]),
-                         const SizedBox(height: 8),
-                         Text(entry.analysis!.feedback, style: const TextStyle(color: Colors.white70)),
-                       ],
-                     ),
-                   ),
-                   const SizedBox(height: 24),
-                 ],
-                 
-                 if (entry.analysis!.mistakes.isNotEmpty) ...[
-                   const Text("CORRECTIONS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
-                   const SizedBox(height: 12),
-                   MistakesList(mistakes: entry.analysis!.mistakes),
-                 ]
-              ] else ...[
-                 Center(child: Text("Analysis pending...", style: TextStyle(color: Colors.white38))),
-              ],
-              
-              const SizedBox(height: 40),
-              Center(
-                child: TextButton.icon(
-                  onPressed: () {
-                     ref.read(journalNotifierProvider.notifier).deleteEntry(entry.id);
-                     context.pop();
-                  },
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  label: const Text("Delete Entry", style: TextStyle(color: Colors.redAccent)),
-                ),
-              ),
-              const SizedBox(height: 40),
-            ]),
-          ),
-        );
-      },
     );
   }
 }
@@ -8168,296 +7754,316 @@ class SimpleHeatmap extends StatelessWidget {
 }
 </file>
 
-<file path="lib/ui/widgets/glass_scaffold.dart">
+<file path="lib/ui/widgets/audio_recorder_widget.dart">
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../services/ai_service.dart';
+import '../../providers/user_provider.dart';
+import 'liquid_components.dart';
 
-class GlassScaffold extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final Widget body;
-  final Widget? floatingActionButton;
-  final bool? showBackButton;
+enum RecordingStatus { idle, recording, paused, stopped }
 
-  const GlassScaffold({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.body,
-    this.floatingActionButton,
-    this.showBackButton,
-  });
+class AudioRecorderWidget extends ConsumerStatefulWidget {
+  const AudioRecorderWidget({super.key});
+
+  @override
+  ConsumerState<AudioRecorderWidget> createState() => _AudioRecorderWidgetState();
+}
+
+class _AudioRecorderWidgetState extends ConsumerState<AudioRecorderWidget> {
+  RecordingStatus status = RecordingStatus.idle;
+  int _seconds = 0;
+  Timer? _timer;
+  List<String>? _hints;
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() => _seconds++);
+    });
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+  }
+
+  void _toggleRecording() {
+    setState(() {
+      if (status == RecordingStatus.idle || status == RecordingStatus.stopped) {
+        status = RecordingStatus.recording;
+        _seconds = 0;
+        _startTimer();
+      } else if (status == RecordingStatus.recording) {
+        status = RecordingStatus.paused;
+        _stopTimer();
+      } else if (status == RecordingStatus.paused) {
+        status = RecordingStatus.recording;
+        _startTimer();
+      }
+    });
+  }
+
+  Future<void> _getSpeakerHint() async {
+    // Placeholder implementation for audio slicing
+    // In a real app, this would use 'record' or 'flutter_sound'
+    // and potentially 'ffmpeg_kit_flutter' for slicing.
+    
+    // Simulate API call
+    final hints = await ref.read(aiServiceProvider).getStuckSpeakerSuggestions(
+      [0, 1, 2, 3], // Mocked bytes
+      ref.read(activeLanguageProvider)
+    );
+    
+    _showHintsOverlay(hints);
+  }
+
+  void _showHintsOverlay(List<String> hints) {
+    if (!mounted) return;
+    setState(() => _hints = hints);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _formatTime(int seconds) {
+    final mins = (seconds ~/ 60).toString().padLeft(2, '0');
+    final secs = (seconds % 60).toString().padLeft(2, '0');
+    return "$mins:$secs";
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width > 800;
-    final canPop = showBackButton ?? context.canPop();
-
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: floatingActionButton,
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(isDesktop ? 100 : 24, 60, 24, 20),
+    return Column(
+      children: [
+        GlassCard(
+          padding: 24,
+          child: Column(
+            children: [
+              Text(
+                _formatTime(_seconds),
+                style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white, fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                status == RecordingStatus.recording ? "Recording..." : (status == RecordingStatus.paused ? "Paused" : "Ready"),
+                style: TextStyle(color: status == RecordingStatus.recording ? Colors.redAccent : Colors.white54),
+              ),
+              const SizedBox(height: 32),
+              GestureDetector(
+                onTap: _toggleRecording,
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: status == RecordingStatus.recording ? Colors.redAccent.withValues(alpha: 0.1) : Colors.white10,
+                    border: Border.all(color: status == RecordingStatus.recording ? Colors.redAccent : Colors.white24, width: 2),
+                  ),
+                  child: Icon(
+                    status == RecordingStatus.recording ? Icons.pause : Icons.mic,
+                    color: status == RecordingStatus.recording ? Colors.redAccent : Colors.white,
+                    size: 32,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        if (status == RecordingStatus.paused)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: OutlinedButton.icon(
+              onPressed: _getSpeakerHint,
+              icon: const Icon(Icons.lightbulb, color: Colors.amber),
+              label: const Text("Get a hint from Lexi", style: TextStyle(color: Colors.white)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.white10),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          
+        if (_hints != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: GlassCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (canPop)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: GestureDetector(
-                        onTap: () => context.pop(),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.arrow_back_ios_new,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                    ),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Lexi suggests:", style: TextStyle(color: Colors.indigoAccent, fontWeight: FontWeight.bold)),
+                      IconButton(icon: const Icon(Icons.close, size: 16, color: Colors.white54), onPressed: () => setState(() => _hints = null)),
+                    ],
                   ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white.withValues(alpha: 0.6),
-                    ),
-                  ),
+                  ..._hints!.map((h) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4.0),
+                    child: Text("• $h", style: const TextStyle(fontSize: 14, color: Colors.white70)),
+                  )),
                 ],
               ),
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: body,
-          ),
-          // Spacer for Bottom Navigation Bar
-          const SliverToBoxAdapter(child: SizedBox(height: 120)),
-        ],
-      ),
+      ],
     );
   }
 }
 </file>
 
-<file path="lib/ui/widgets/translation_tooltip.dart">
+<file path="lib/ui/widgets/tutor_chat_dialog.dart">
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/srs_provider.dart';
-import '../../providers/vocabulary_provider.dart';
-import '../../services/ai_service.dart';
-import '../../theme/liquid_theme.dart';
+import 'liquid_components.dart';
 
-class TranslationTooltip extends ConsumerStatefulWidget {
-  final String selectedText;
-  final String contextText;
-  final String sourceLang; 
-  final String targetLang; 
-  final double x;
-  final double y;
-  final VoidCallback onClose;
-
-  const TranslationTooltip({
-    super.key,
-    required this.selectedText,
-    required this.contextText,
-    required this.sourceLang,
-    required this.targetLang,
-    required this.x,
-    required this.y,
-    required this.onClose,
-  });
+class TutorChatDialog extends StatefulWidget {
+  final String title;
+  final Future<String> Function(String message, List<Map<String, String>> history) onSendMessage;
+  
+  const TutorChatDialog({super.key, required this.title, required this.onSendMessage});
 
   @override
-  ConsumerState<TranslationTooltip> createState() => _TranslationTooltipState();
+  State<TutorChatDialog> createState() => _TutorChatDialogState();
 }
 
-class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
-  bool _isLoading = true;
-  String? _translation;
-  String? _explanation;
-  bool _isAdding = false;
-  bool _isAdded = false;
+class _TutorChatDialogState extends State<TutorChatDialog> {
+  final List<Map<String, String>> _history = [];
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoading = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchTranslation();
-  }
+  void _send() async {
+    if (_controller.text.isEmpty || _isLoading) return;
+    final userMsg = _controller.text;
+    setState(() {
+      _history.add({'role': 'user', 'content': userMsg});
+      _isLoading = true;
+      _controller.clear();
+    });
+    
+    _scrollToBottom();
 
-  Future<void> _fetchTranslation() async {
     try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.contextualTranslate(
-        selectedText: widget.selectedText,
-        context: widget.contextText,
-        sourceLanguage: widget.sourceLang,
-        targetLanguage: widget.targetLang,
-        nativeLanguage: widget.targetLang,
-      );
-      if (mounted) {
-        setState(() {
-          _translation = result['translation'];
-          _explanation = result['explanation'];
-          _isLoading = false;
-        });
-      }
+      final response = await widget.onSendMessage(userMsg, _history);
+      setState(() {
+        _history.add({'role': 'assistant', 'content': response});
+        _isLoading = false;
+      });
+      _scrollToBottom();
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _translation = "Failed to translate";
-        });
-      }
+      setState(() {
+        _history.add({'role': 'assistant', 'content': "Lexi is having a moment. Please try again later."});
+        _isLoading = false;
+      });
+      _scrollToBottom();
     }
   }
 
-  Future<void> _handleAddToDeck() async {
-    setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
-          front: widget.selectedText,
-          back: _translation!,
-          language: widget.sourceLang,
-          explanation: _explanation,
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
         );
-
-    if (mounted) {
-      setState(() {
-        _isAdding = false;
-        if (success) {
-          _isAdded = true;
-          // Instantly update vocabulary state locally and remotely
-          ref.read(vocabularyProvider.notifier).updateWordStatus(
-              widget.selectedText, 'learning', widget.sourceLang);
-        }
-      });
-    }
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final tooltipWidth = 280.0;
-    
-    double left = widget.x - (tooltipWidth / 2);
-    if (left < 16) left = 16;
-    if (left + tooltipWidth > screenWidth - 16) left = screenWidth - tooltipWidth - 16;
-    
-    double top = widget.y + 10;
-    if (top > MediaQuery.of(context).size.height - 200) {
-      top = widget.y - 180;
-    }
-
-    return Positioned(
-      left: left,
-      top: top,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          width: tooltipWidth,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A).withOpacity(0.98),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white24),
-            boxShadow: const[
-              BoxShadow(
-                color: Colors.black54,
-                blurRadius: 20,
-                offset: Offset(0, 10),
-              )
-            ],
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children:[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children:[
-                  Expanded(
-                    child: Text(
-                      widget.selectedText,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+      child: GlassCard(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title, 
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  GestureDetector(
-                    onTap: widget.onClose,
-                    child: const Icon(Icons.close, size: 18, color: Colors.white54),
-                  ),
-                ],
-              ),
-              const Divider(color: Colors.white24),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else ...[
-                Text(
-                  _translation ?? "",
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
-                if (_explanation != null) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children:[
-                        const Icon(Icons.lightbulb, size: 14, color: Colors.amber),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _explanation!,
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _isAdded ? Colors.green.withOpacity(0.2) : LiquidTheme.primaryAccent.withOpacity(0.2),
-                      foregroundColor: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
-                    icon: _isAdding 
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Icon(_isAdded ? Icons.check : Icons.add, size: 16),
-                    label: Text(_isAdded ? "Added" : "Add to Deck"),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                )
+              ],
+            ),
+            const Divider(color: Colors.white10),
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: _history.length,
+                  itemBuilder: (c, i) => _ChatBubble(msg: _history[i]),
+                ),
+              ),
+            ),
+            if (_isLoading) 
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(Colors.indigoAccent)),
+              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: GlassInput(hint: "Ask Lexi...", controller: _controller)),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _send, 
+                  icon: const Icon(Icons.send, color: Colors.indigoAccent),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.indigoAccent.withValues(alpha: 0.1),
+                    padding: const EdgeInsets.all(12),
                   ),
                 ),
               ],
-            ],
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatBubble extends StatelessWidget {
+  final Map<String, String> msg;
+  const _ChatBubble({required this.msg});
+  @override
+  Widget build(BuildContext context) {
+    final isUser = msg['role'] == 'user';
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isUser ? Colors.indigoAccent.withValues(alpha: 0.2) : Colors.white10,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isUser ? 16 : 0),
+            bottomRight: Radius.circular(isUser ? 0 : 16),
           ),
+          border: Border.all(color: isUser ? Colors.indigoAccent.withValues(alpha: 0.3) : Colors.white10),
+        ),
+        child: Text(
+          msg['content']!, 
+          style: const TextStyle(fontSize: 14, color: Colors.white),
         ),
       ),
     );
@@ -8765,6 +8371,107 @@ final analyticsServiceProvider = Provider(
   (ref) =>
       AnalyticsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
 );
+</file>
+
+<file path="lib/ui/screens/journal_detail_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../theme/liquid_theme.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+import '../widgets/analysis_widgets.dart';
+import '../widgets/tutor_chat_dialog.dart';
+import '../../providers/journal_provider.dart';
+import '../../services/ai_service.dart';
+
+class JournalDetailScreen extends ConsumerWidget {
+  final String journalId;
+  const JournalDetailScreen({super.key, required this.journalId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final entryAsync = ref.watch(journalDetailProvider(journalId));
+
+    return entryAsync.when(
+      loading: () => const Scaffold(body: LiquidBackground(child: Center(child: CircularProgressIndicator()))),
+      error: (e, _) => Scaffold(body: LiquidBackground(child: Center(child: Text("Error: $e")))),
+      data: (entry) {
+        return GlassScaffold(
+          title: entry.title,
+          subtitle: entry.createdAt.toString().split(' ')[0],
+          floatingActionButton: FloatingActionButton.extended(
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text("Ask Lexi"),
+            backgroundColor: LiquidTheme.primaryAccent,
+            onPressed: () => showDialog(
+              context: context,
+              builder: (c) => TutorChatDialog(
+                title: "Discussing: ${entry.title}",
+                onSendMessage: (msg, history) => ref.read(aiServiceProvider).getTutorResponse(
+                  endpoint: '/api/ai/journal-tutor-chat',
+                  context: {'journalId': entry.id},
+                  chatHistory: history,
+                ),
+              ),
+            ),
+          ),
+          body: SliverList(
+            delegate: SliverChildListDelegate([
+              GlassCard(
+                padding: 20,
+                child: Text(entry.content, style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.5)),
+              ),
+              const SizedBox(height: 32),
+              
+              if (entry.analysis != null) ...[
+                 const Text("AI ANALYSIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
+                 const SizedBox(height: 12),
+                 AnalysisScoreCard(analysis: entry.analysis!),
+                 const SizedBox(height: 24),
+                 
+                 if (entry.analysis!.feedback.isNotEmpty) ...[
+                   GlassCard(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         const Row(children: [Icon(Icons.auto_awesome, color: LiquidTheme.primaryAccent, size: 16), SizedBox(width: 8), Text("Feedback", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))]),
+                         const SizedBox(height: 8),
+                         Text(entry.analysis!.feedback, style: const TextStyle(color: Colors.white70)),
+                       ],
+                     ),
+                   ),
+                   const SizedBox(height: 24),
+                 ],
+                 
+                 if (entry.analysis!.mistakes.isNotEmpty) ...[
+                   const Text("CORRECTIONS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.2)),
+                   const SizedBox(height: 12),
+                   MistakesList(mistakes: entry.analysis!.mistakes),
+                 ]
+              ] else ...[
+                 Center(child: Text("Analysis pending...", style: TextStyle(color: Colors.white38))),
+              ],
+              
+              const SizedBox(height: 40),
+              Center(
+                child: TextButton.icon(
+                  onPressed: () {
+                     ref.read(journalNotifierProvider.notifier).deleteEntry(entry.id);
+                     if (context.canPop()) context.pop();
+                  },
+                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  label: const Text("Delete Entry", style: TextStyle(color: Colors.redAccent)),
+                ),
+              ),
+              const SizedBox(height: 40),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
 </file>
 
 <file path="lib/ui/screens/journal_screen.dart">
@@ -10088,6 +9795,307 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
 }
 </file>
 
+<file path="lib/ui/widgets/glass_scaffold.dart">
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+class GlassScaffold extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final bool? showBackButton;
+
+  const GlassScaffold({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.body,
+    this.floatingActionButton,
+    this.showBackButton,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > 800;
+    final canPop = showBackButton ?? context.canPop();
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: floatingActionButton,
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(isDesktop ? 100 : 24, 60, 24, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (canPop)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: GestureDetector(
+                        onTap: () {
+                          if (context.canPop()) {
+                            context.pop();
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back_ios_new,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            sliver: body,
+          ),
+          // Spacer for Bottom Navigation Bar
+          const SliverToBoxAdapter(child: SizedBox(height: 120)),
+        ],
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/widgets/translation_tooltip.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/srs_provider.dart';
+import '../../providers/vocabulary_provider.dart';
+import '../../services/ai_service.dart';
+import '../../theme/liquid_theme.dart';
+
+class TranslationTooltip extends ConsumerStatefulWidget {
+  final String selectedText;
+  final String contextText;
+  final String sourceLang; 
+  final String targetLang; 
+  final double x;
+  final double y;
+  final VoidCallback onClose;
+
+  const TranslationTooltip({
+    super.key,
+    required this.selectedText,
+    required this.contextText,
+    required this.sourceLang,
+    required this.targetLang,
+    required this.x,
+    required this.y,
+    required this.onClose,
+  });
+
+  @override
+  ConsumerState<TranslationTooltip> createState() => _TranslationTooltipState();
+}
+
+class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
+  bool _isLoading = true;
+  String? _translation;
+  String? _explanation;
+  bool _isAdding = false;
+  bool _isAdded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTranslation();
+  }
+
+  Future<void> _fetchTranslation() async {
+    try {
+      final aiService = ref.read(aiServiceProvider);
+      final result = await aiService.contextualTranslate(
+        selectedText: widget.selectedText,
+        context: widget.contextText,
+        sourceLanguage: widget.sourceLang,
+        targetLanguage: widget.targetLang,
+        nativeLanguage: widget.targetLang,
+      );
+      if (mounted) {
+        setState(() {
+          _translation = result['translation'];
+          _explanation = result['explanation'];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _translation = "Failed to translate";
+        });
+      }
+    }
+  }
+
+  Future<void> _handleAddToDeck() async {
+    setState(() => _isAdding = true);
+    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+          front: widget.selectedText,
+          back: _translation!,
+          language: widget.sourceLang,
+          explanation: _explanation,
+        );
+
+    if (mounted) {
+      setState(() {
+        _isAdding = false;
+        if (success) {
+          _isAdded = true;
+          // Instantly update vocabulary state locally and remotely
+          ref.read(vocabularyProvider.notifier).updateWordStatus(
+              widget.selectedText, 'learning', widget.sourceLang);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final tooltipWidth = 280.0;
+    
+    double left = widget.x - (tooltipWidth / 2);
+    if (left < 16) left = 16;
+    if (left + tooltipWidth > screenWidth - 16) left = screenWidth - tooltipWidth - 16;
+    
+    double top = widget.y + 10;
+    if (top > MediaQuery.of(context).size.height - 200) {
+      top = widget.y - 180;
+    }
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: tooltipWidth,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A).withValues(alpha: 0.98),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white24),
+            boxShadow: const[
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 20,
+                offset: Offset(0, 10),
+              )
+            ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children:[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children:[
+                  Expanded(
+                    child: Text(
+                      widget.selectedText,
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: widget.onClose,
+                    child: const Icon(Icons.close, size: 18, color: Colors.white54),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.white24),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                Text(
+                  _translation ?? "",
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                if (_explanation != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children:[
+                        const Icon(Icons.lightbulb, size: 14, color: Colors.amber),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _explanation!,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent.withValues(alpha: 0.2),
+                      foregroundColor: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
+                    icon: _isAdding 
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Icon(_isAdded ? Icons.check : Icons.add, size: 16),
+                    label: Text(_isAdded ? "Added" : "Add to Deck"),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+</file>
+
 <file path="macos/Flutter/GeneratedPluginRegistrant.swift">
 //
 //  Generated file. Do not edit.
@@ -11375,265 +11383,6 @@ class AIService {
 final aiServiceProvider = Provider(
   (ref) => AIService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
 );
-</file>
-
-<file path="lib/ui/screens/journal_editor_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../../theme/liquid_theme.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../../providers/journal_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/path_provider.dart';
-import '../../services/ai_service.dart';
-import '../widgets/audio_recorder_widget.dart';
-import 'dart:async';
-
-class JournalEditorScreen extends ConsumerStatefulWidget {
-  final String? moduleId;
-  final String? initialMode;
-  final String? initialTopic;
-  final String? initialImageUrl;
-
-  const JournalEditorScreen({
-    super.key,
-    this.moduleId,
-    this.initialMode,
-    this.initialTopic,
-    this.initialImageUrl,
-  });
-
-  @override
-  ConsumerState<JournalEditorScreen> createState() => _JournalEditorScreenState();
-}
-
-class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
-  late TextEditingController _titleController;
-  late TextEditingController _contentController;
-  List<String>? _hints;
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController(
-      text: widget.initialTopic ?? "Free Write",
-    );
-    _contentController = TextEditingController();
-    _contentController.addListener(_resetStuckTimer);
-  }
-
-  Timer? _stuckTimer;
-  void _resetStuckTimer() {
-    _stuckTimer?.cancel();
-    _stuckTimer = Timer(const Duration(seconds: 7), () async {
-      if (_contentController.text.isNotEmpty && mounted) {
-        final suggestions = await ref.read(aiServiceProvider).generateStuckWriterSuggestions(
-          _titleController.text, 
-          _contentController.text, 
-          ref.read(activeLanguageProvider)
-        );
-        _showNudge(suggestions);
-      }
-    });
-  }
-
-  void _showNudge(List<String> hints) {
-    if (!mounted) return;
-    setState(() => _hints = hints);
-    // Auto-hide after 2 minutes to match web
-    Timer(const Duration(minutes: 2), () {
-      if (mounted) setState(() => _hints = null);
-    });
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _contentController.dispose();
-    _stuckTimer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final activeLang = ref.watch(activeLanguageProvider);
-    final topicsAsync = ref.watch(suggestedTopicsProvider);
-    final isAudioMode = widget.initialMode == 'audio_journal';
-    final isDescribeMode = widget.initialMode == 'describe_image';
-
-    return GlassScaffold(
-      title: isAudioMode ? 'Speak' : 'Write',
-      subtitle: 'Practice in $activeLang',
-      body: SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. IMAGE PROMPT (For Describe Image mode)
-            if (isDescribeMode && widget.initialImageUrl != null) ...[
-              const Text(
-                "DESCRIBE THIS IMAGE",
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Image.network(
-                  widget.initialImageUrl!,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 200,
-                    decoration: BoxDecoration(
-                      color: Colors.white10,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Icon(
-                      Icons.broken_image,
-                      color: Colors.white24,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // 2. ADAPTIVE INPUT (Audio vs Text)
-            if (isAudioMode) ...[
-              const AudioRecorderWidget(),
-              const SizedBox(height: 24),
-            ],
-
-            const Text("Topic Suggestions", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 40,
-              child: topicsAsync.when(
-                loading: () => const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 2,
-                    child: LinearProgressIndicator(),
-                  ),
-                ),
-                error: (_, _) => const SizedBox(),
-                data: (topics) => ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: topics.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(width: 8),
-                  itemBuilder: (context, index) => ActionChip(
-                    label: Text(topics[index]),
-                    backgroundColor: Colors.white10,
-                    labelStyle: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                    onPressed: () => _titleController.text = topics[index],
-                  ),
-                ),
-              ),
-            ),
-             Align(alignment: Alignment.centerRight, child: TextButton(
-                onPressed: () => ref.read(journalNotifierProvider.notifier).refreshTopics(activeLang),
-                child: const Text("Refresh Topics", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12))
-             )),
-
-            const SizedBox(height: 16),
-            
-            if (_hints != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: GlassCard(
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text("Need a nudge?", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold)),
-                          IconButton(icon: const Icon(Icons.close, size: 16, color: Colors.white54), onPressed: () => setState(() => _hints = null)),
-                        ],
-                      ),
-                      ..._hints!.map((h) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4.0),
-                        child: Text("• $h", style: const TextStyle(fontSize: 13, color: Colors.white70)),
-                      )),
-                    ],
-                  ),
-                ),
-              ),
-            
-            GlassInput(controller: _titleController, hint: "Title / Topic"),
-            
-            const SizedBox(height: 16),
-            
-            if (!isAudioMode) ...[
-              _buildTextInterface(),
-              const SizedBox(height: 24),
-            ],
-
-            LiquidButton(
-              text: "Save & Analyze",
-              onTap: () async {
-                if (_contentController.text.isEmpty && !isAudioMode) return;
-
-                await ref
-                    .read(journalNotifierProvider.notifier)
-                    .createEntry(
-                      _titleController.text.isEmpty
-                          ? "Untitled Entry"
-                          : _titleController.text,
-                      _contentController.text,
-                      activeLang,
-                      moduleId: widget.moduleId,
-                    );
-                 
-                if (widget.moduleId != null) {
-                  // Mark module activity done
-                  final key = widget.initialMode ?? 'writing';
-                  ref
-                      .read(pathNotifierProvider.notifier)
-                      .updateActivity(widget.moduleId!, key, true);
-                }
-
-                if (context.mounted) context.pop();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextInterface() {
-    return Container(
-      height: 300,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: TextField(
-        controller: _contentController,
-        maxLines: null,
-        expands: true,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          hintText: "Start writing...",
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-          border: InputBorder.none,
-        ),
-      ),
-    );
-  }
-}
 </file>
 
 <file path="lib/ui/screens/library_screen.dart">
@@ -13505,216 +13254,263 @@ class SrsService {
 final srsServiceProvider = Provider((ref) => SrsService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
 </file>
 
-<file path="lib/services/user_service.dart">
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+<file path="lib/ui/screens/journal_editor_screen.dart">
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/token_service.dart';
-import '../models/user_profile.dart';
-import 'logger_service.dart';
-import '../utils/constants.dart';
+import 'package:go_router/go_router.dart';
+import '../../theme/liquid_theme.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+import '../../providers/journal_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/path_provider.dart';
+import '../../services/ai_service.dart';
+import '../widgets/audio_recorder_widget.dart';
+import 'dart:async';
 
-class UserService {
-  final Ref _ref;
-  final TokenService _authTokenService;
-  late final LoggerService _logger;
+class JournalEditorScreen extends ConsumerStatefulWidget {
+  final String? moduleId;
+  final String? initialMode;
+  final String? initialTopic;
+  final String? initialImageUrl;
 
-  UserService(this._ref, this._authTokenService) {
-    _logger = _ref.read(loggerProvider);
-  }
+  const JournalEditorScreen({
+    super.key,
+    this.moduleId,
+    this.initialMode,
+    this.initialTopic,
+    this.initialImageUrl,
+  });
 
-  Future<UserProfile> fetchProfile() async {
-    _logger.info('UserService: Fetching user profile');
-    try {
-      final token = await _authTokenService.getToken();
-      
-      // FIX: Use null-aware operators to prevent crash if token is null
-      final tokenPreview = token != null 
-        ? "${token.substring(0, token.length > 10 ? 10 : token.length)}..."
-        : "null";
-
-      print("Sending Token: $tokenPreview");
-
-      final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      _logger.debug('UserService: fetchProfile response status: ${response.statusCode}');
-
-      if (response.statusCode == 401) {
-        _logger.warning(
-          'UserService: Backend rejected token. Check Supabase JWT secrets match.',
-        );
-        throw Exception('Unauthorized');
-      }
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _logger.info('UserService: Profile fetched successfully');
-        return UserProfile.fromJson(data);
-      }
-
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to load profile';
-      _logger.warning('UserService: Profile fetch failed. Reason: $errorMsg');
-      throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('UserService: Error during fetchProfile', e, stackTrace);
-      rethrow;
-    }
-  }
-
-  Future<UserProfile> updateProfile(UserProfile profile) async {
-    _logger.info('UserService: Updating user profile');
-    try {
-      final token = await _authTokenService.getToken();
-      // We map the model fields to the API expectations
-      final body = {
-        'nativeLanguage': profile.nativeLanguage,
-        'targetLanguage': profile.defaultTargetLanguage, // API expects 'targetLanguage' to update default
-        'writingStyle': profile.writingStyle,
-        'writingPurpose': profile.writingPurpose,
-        'selfAssessedLevel': profile.selfAssessedLevel,
-      };
-
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token'
-        },
-        body: jsonEncode(body),
-      );
-
-      _logger.debug('UserService: updateProfile response status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return UserProfile.fromJson(data);
-      }
-
-      throw Exception('Failed to update profile');
-    } catch (e, stackTrace) {
-      _logger.error('UserService: Error during updateProfile', e, stackTrace);
-      rethrow;
-    }
-  }
-  
-  // New specific call for adding a language
-  Future<UserProfile> addLanguage(String newLanguage) async {
-    _logger.info('UserService: Adding new language: $newLanguage');
-    try {
-      final token = await _authTokenService.getToken();
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token'
-        },
-        body: jsonEncode({
-          'newTargetLanguage': newLanguage,
-        }),
-      );
-      
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return UserProfile.fromJson(data);
-      }
-      throw Exception('Failed to add language');
-    } catch (e, st) {
-      _logger.error('UserService: Error adding language', e, st);
-      rethrow;
-    }
-  }
-  Future<void> updateGoals(UserGoals goals) async {
-    _logger.info('UserService: Updating user goals');
-    try {
-      final token = await _authTokenService.getToken();
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/user/goals'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(goals.toJson()),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to update goals');
-      }
-    } catch (e, st) {
-      _logger.error('UserService: Error updating goals', e, st);
-      rethrow;
-    }
-  }
-
-  Future<String> getBillingPortalUrl() async {
-    _logger.info('UserService: Getting billing portal URL');
-    try {
-      final token = await _authTokenService.getToken();
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/billing/portal'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['url'];
-      }
-      throw Exception('Failed to get portal URL');
-    } catch (e, st) {
-      _logger.error('UserService: Error getting portal URL', e, st);
-      rethrow;
-    }
-  }
-
-  Future<void> resetOnboarding() async {
-    _logger.info('UserService: Resetting onboarding');
-    try {
-      final token = await _authTokenService.getToken();
-      await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/user/reset-onboarding'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-    } catch (e) {
-      throw Exception('Failed to reset onboarding');
-    }
-  }
-
-  Future<void> logActivity({
-    required DateTime startTime,
-    required int durationInSeconds,
-    required String activityType,
-    required String targetLanguage,
-  }) async {
-    try {
-      final token = await _authTokenService.getToken();
-      await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/user/activity-log'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'startTime': startTime.toIso8601String(),
-          'durationInSeconds': durationInSeconds,
-          'activityType': activityType,
-          'targetLanguage': targetLanguage,
-        }),
-      );
-    } catch (e) {
-      _logger.warning('Failed to log activity: $e');
-    }
-  }
+  @override
+  ConsumerState<JournalEditorScreen> createState() => _JournalEditorScreenState();
 }
 
-final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
+class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
+  late TextEditingController _titleController;
+  late TextEditingController _contentController;
+  List<String>? _hints;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(
+      text: widget.initialTopic ?? "Free Write",
+    );
+    _contentController = TextEditingController();
+    _contentController.addListener(_resetStuckTimer);
+  }
+
+  Timer? _stuckTimer;
+  void _resetStuckTimer() {
+    _stuckTimer?.cancel();
+    _stuckTimer = Timer(const Duration(seconds: 7), () async {
+      if (_contentController.text.isNotEmpty && mounted) {
+        final suggestions = await ref.read(aiServiceProvider).generateStuckWriterSuggestions(
+          _titleController.text, 
+          _contentController.text, 
+          ref.read(activeLanguageProvider)
+        );
+        _showNudge(suggestions);
+      }
+    });
+  }
+
+  void _showNudge(List<String> hints) {
+    if (!mounted) return;
+    setState(() => _hints = hints);
+    // Auto-hide after 2 minutes to match web
+    Timer(const Duration(minutes: 2), () {
+      if (mounted) setState(() => _hints = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _contentController.dispose();
+    _stuckTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeLang = ref.watch(activeLanguageProvider);
+    final topicsAsync = ref.watch(suggestedTopicsProvider);
+    final isAudioMode = widget.initialMode == 'audio_journal';
+    final isDescribeMode = widget.initialMode == 'describe_image';
+
+    return GlassScaffold(
+      title: isAudioMode ? 'Speak' : 'Write',
+      subtitle: 'Practice in $activeLang',
+      body: SliverToBoxAdapter(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. IMAGE PROMPT (For Describe Image mode)
+            if (isDescribeMode && widget.initialImageUrl != null) ...[
+              const Text(
+                "DESCRIBE THIS IMAGE",
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.network(
+                  widget.initialImageUrl!,
+                  height: 200,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(
+                      Icons.broken_image,
+                      color: Colors.white24,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
+            // 2. ADAPTIVE INPUT (Audio vs Text)
+            if (isAudioMode) ...[
+              const AudioRecorderWidget(),
+              const SizedBox(height: 24),
+            ],
+
+            const Text("Topic Suggestions", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 40,
+              child: topicsAsync.when(
+                loading: () => const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 2,
+                    child: LinearProgressIndicator(),
+                  ),
+                ),
+                error: (_, _) => const SizedBox(),
+                data: (topics) => ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: topics.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (context, index) => ActionChip(
+                    label: Text(topics[index]),
+                    backgroundColor: Colors.white10,
+                    labelStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                    onPressed: () => _titleController.text = topics[index],
+                  ),
+                ),
+              ),
+            ),
+             Align(alignment: Alignment.centerRight, child: TextButton(
+                onPressed: () => ref.read(journalNotifierProvider.notifier).refreshTopics(activeLang),
+                child: const Text("Refresh Topics", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12))
+             )),
+
+            const SizedBox(height: 16),
+            
+            if (_hints != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: GlassCard(
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Need a nudge?", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold)),
+                          IconButton(icon: const Icon(Icons.close, size: 16, color: Colors.white54), onPressed: () => setState(() => _hints = null)),
+                        ],
+                      ),
+                      ..._hints!.map((h) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4.0),
+                        child: Text("• $h", style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                      )),
+                    ],
+                  ),
+                ),
+              ),
+            
+            GlassInput(controller: _titleController, hint: "Title / Topic"),
+            
+            const SizedBox(height: 16),
+            
+            if (!isAudioMode) ...[
+              _buildTextInterface(),
+              const SizedBox(height: 24),
+            ],
+
+            LiquidButton(
+              text: "Save & Analyze",
+              onTap: () async {
+                if (_contentController.text.isEmpty && !isAudioMode) return;
+
+                await ref
+                    .read(journalNotifierProvider.notifier)
+                    .createEntry(
+                      _titleController.text.isEmpty
+                          ? "Untitled Entry"
+                          : _titleController.text,
+                      _contentController.text,
+                      activeLang,
+                      moduleId: widget.moduleId,
+                    );
+                 
+                if (widget.moduleId != null) {
+                  // Mark module activity done
+                  final key = widget.initialMode ?? 'writing';
+                  ref
+                      .read(pathNotifierProvider.notifier)
+                      .updateActivity(widget.moduleId!, key, true);
+                }
+
+                if (context.mounted && context.canPop()) context.pop();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextInterface() {
+    return Container(
+      height: 300,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: TextField(
+        controller: _contentController,
+        maxLines: null,
+        expands: true,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: "Start writing...",
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+          border: InputBorder.none,
+        ),
+      ),
+    );
+  }
+}
 </file>
 
 <file path="lib/ui/screens/module_detail_screen.dart">
@@ -13970,6 +13766,218 @@ class _ActivityTile extends StatelessWidget {
 }
 </file>
 
+<file path="lib/services/user_service.dart">
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lexity_mobile/services/token_service.dart';
+import '../models/user_profile.dart';
+import 'logger_service.dart';
+import '../utils/constants.dart';
+
+class UserService {
+  final Ref _ref;
+  final TokenService _authTokenService;
+  late final LoggerService _logger;
+
+  UserService(this._ref, this._authTokenService) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<UserProfile> fetchProfile() async {
+    _logger.info('UserService: Fetching user profile');
+    try {
+      final token = await _authTokenService.getToken();
+      
+      // FIX: Use null-aware operators to prevent crash if token is null
+      final tokenPreview = token != null 
+        ? "${token.substring(0, token.length > 10 ? 10 : token.length)}..."
+        : "null";
+
+      _logger.debug("Sending Token: $tokenPreview");
+
+      final response = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      _logger.debug('UserService: fetchProfile response status: ${response.statusCode}');
+
+      if (response.statusCode == 401) {
+        _logger.warning(
+          'UserService: Backend rejected token. Check Supabase JWT secrets match.',
+        );
+        throw Exception('Unauthorized');
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _logger.info('UserService: Profile fetched successfully');
+        return UserProfile.fromJson(data);
+      }
+
+      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to load profile';
+      _logger.warning('UserService: Profile fetch failed. Reason: $errorMsg');
+      throw Exception(errorMsg);
+    } catch (e, stackTrace) {
+      _logger.error('UserService: Error during fetchProfile', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<UserProfile> updateProfile(UserProfile profile) async {
+    _logger.info('UserService: Updating user profile');
+    try {
+      final token = await _authTokenService.getToken();
+      // We map the model fields to the API expectations
+      final body = {
+        'nativeLanguage': profile.nativeLanguage,
+        'targetLanguage': profile.defaultTargetLanguage, // API expects 'targetLanguage' to update default
+        'writingStyle': profile.writingStyle,
+        'writingPurpose': profile.writingPurpose,
+        'selfAssessedLevel': profile.selfAssessedLevel,
+      };
+
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token'
+        },
+        body: jsonEncode(body),
+      );
+
+      _logger.debug('UserService: updateProfile response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return UserProfile.fromJson(data);
+      }
+
+      throw Exception('Failed to update profile');
+    } catch (e, stackTrace) {
+      _logger.error('UserService: Error during updateProfile', e, stackTrace);
+      rethrow;
+    }
+  }
+  
+  // New specific call for adding a language
+  Future<UserProfile> addLanguage(String newLanguage) async {
+    _logger.info('UserService: Adding new language: $newLanguage');
+    try {
+      final token = await _authTokenService.getToken();
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token'
+        },
+        body: jsonEncode({
+          'newTargetLanguage': newLanguage,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return UserProfile.fromJson(data);
+      }
+      throw Exception('Failed to add language');
+    } catch (e, st) {
+      _logger.error('UserService: Error adding language', e, st);
+      rethrow;
+    }
+  }
+  Future<void> updateGoals(UserGoals goals) async {
+    _logger.info('UserService: Updating user goals');
+    try {
+      final token = await _authTokenService.getToken();
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/user/goals'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(goals.toJson()),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to update goals');
+      }
+    } catch (e, st) {
+      _logger.error('UserService: Error updating goals', e, st);
+      rethrow;
+    }
+  }
+
+  Future<String> getBillingPortalUrl() async {
+    _logger.info('UserService: Getting billing portal URL');
+    try {
+      final token = await _authTokenService.getToken();
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/billing/portal'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['url'];
+      }
+      throw Exception('Failed to get portal URL');
+    } catch (e, st) {
+      _logger.error('UserService: Error getting portal URL', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> resetOnboarding() async {
+    _logger.info('UserService: Resetting onboarding');
+    try {
+      final token = await _authTokenService.getToken();
+      await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/user/reset-onboarding'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } catch (e) {
+      throw Exception('Failed to reset onboarding');
+    }
+  }
+
+  Future<void> logActivity({
+    required DateTime startTime,
+    required int durationInSeconds,
+    required String activityType,
+    required String targetLanguage,
+  }) async {
+    try {
+      final token = await _authTokenService.getToken();
+      await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/user/activity-log'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'startTime': startTime.toIso8601String(),
+          'durationInSeconds': durationInSeconds,
+          'activityType': activityType,
+          'targetLanguage': targetLanguage,
+        }),
+      );
+    } catch (e) {
+      _logger.warning('Failed to log activity: $e');
+    }
+  }
+}
+
+final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
+</file>
+
 <file path="lib/ui/widgets/liquid_navigation.dart">
 // lib/ui/widgets/liquid_navigation.dart
 import 'dart:ui';
@@ -13990,14 +13998,16 @@ class LiquidNavigation extends StatelessWidget {
     (icon: LucideIcons.barChart2, label: 'Progress'), // Index 3
     (icon: LucideIcons.user, label: 'Profile'),       // Index 4
     (icon: LucideIcons.languages, label: 'Translator'), // Index 5
-    (icon: LucideIcons.bookMarked, label: 'Vocab'),    // Index 6
+   
   ];
 
-  void _onTap(int index) {
-    navigationShell.goBranch(
-      index,
-      initialLocation: index == navigationShell.currentIndex,
-    );
+  void _onTap(BuildContext context, int index) {
+    if (index < navigationShell.route.branches.length) {
+      navigationShell.goBranch(
+        index,
+        initialLocation: index == navigationShell.currentIndex,
+      );
+    } 
   }
 
   @override
@@ -14029,7 +14039,7 @@ class LiquidNavigation extends StatelessWidget {
                   icon: entry.value.icon,
                   label: entry.value.label,
                   isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
+                  onTap: () => _onTap(context, entry.key),
                 );
               }).toList(),
             ),
@@ -14058,7 +14068,7 @@ class LiquidNavigation extends StatelessWidget {
                   icon: entry.value.icon,
                   label: entry.value.label,
                   isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(entry.key),
+                  onTap: () => _onTap(context, entry.key),
                   isVertical: true,
                 );
               }).toList(),
@@ -14336,35 +14346,49 @@ const String bookReaderHtmlTemplate = """
 
     window.applyVocabStyles = function(vocabMapJson) {
       if (!rendition) return;
-      window.vocabMap = JSON.parse(vocabMapJson); // NEW: Update global cache
-      const vocabMap = window.vocabMap;
-      rendition.getContents().forEach(content => {
-          const spans = content.document.querySelectorAll('.lexity-word');
-          spans.forEach(span => {
-              const dataWord = span.getAttribute('data-word');
-              if (!dataWord) return;
-              const word = dataWord.toLowerCase();
-              // Normalize the status to lowercase to match CSS selectors
-              const status = (vocabMap[word] || 'unknown').toLowerCase();
-              
-              // Only update if the class has actually changed to prevent flickering
-              const newClassName = 'lexity-word ' + status;
-              if (span.className !== newClassName) {
-                  span.className = newClassName;
-              }
-          });
-      });
+      try {
+        const newEntries = JSON.parse(vocabMapJson);
+        
+        // Update our global cache so future pages use these styles
+        Object.assign(window.vocabMap, newEntries); 
+        const vocabMap = window.vocabMap;
+
+        rendition.getContents().forEach(content => {
+            const spans = content.document.querySelectorAll('.lexity-word');
+            spans.forEach(span => {
+                const dataWord = span.getAttribute('data-word');
+                if (!dataWord) return;
+                const word = dataWord.toLowerCase();
+                // Check if this word is in our (merged) global map
+                if (vocabMap[word]) {
+                    const status = vocabMap[word].toLowerCase();
+                    const newClassName = 'lexity-word ' + status;
+                    if (span.className !== newClassName) {
+                        span.className = newClassName;
+                    }
+                }
+            });
+        });
+      } catch (e) {
+        console.error("Error applying vocab styles:", e);
+      }
     };
 
     window.getVisibleUnknownWords = function() {
       if (!rendition) return [];
-      const visible =[];
+      const visible = [];
       rendition.getContents().forEach(content => {
           const win = content.window;
-          const spans = content.document.querySelectorAll('.lexity-word.unknown');
+          const doc = content.document;
+          const clientWidth = doc.documentElement.clientWidth;
+          const clientHeight = doc.documentElement.clientHeight;
+          const spans = doc.querySelectorAll('.lexity-word.unknown');
           spans.forEach(span => {
               const rect = span.getBoundingClientRect();
-              if (rect.top >= 0 && rect.left >= 0 && Math.floor(rect.bottom) <= win.innerHeight && Math.floor(rect.right) <= win.innerWidth) {
+              // Enforce strict bounding box to isolate the current page column
+              if (rect.width > 0 && rect.height > 0 && 
+                  rect.left >= -20 && rect.right <= clientWidth + 20 && 
+                  rect.top >= -20 && rect.bottom <= clientHeight + 20) {
                   visible.push(span.getAttribute('data-word').toLowerCase());
               }
           });
@@ -14372,7 +14396,7 @@ const String bookReaderHtmlTemplate = """
       return Array.from(new Set(visible));
     };
 
-    async function loadBook(url, initialCfi) {
+    async function loadBook(url, initialCfi, precomputedLocations) {
       try {
         console.log("BookReader JS: Attempting to load EPUB from: " + url);
         
@@ -14405,7 +14429,15 @@ const String bookReaderHtmlTemplate = """
             const currentLocation = rendition.currentLocation();
             if (currentLocation && currentLocation.start) {
               const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
-              callFlutter('onProgress', currentLocation.start.cfi, pct);
+              
+              // NEW: Get pristine CFI to prevent saving DOM-mutated CFIs
+              let safeCfi = currentLocation.start.cfi;
+              if (book.locations && book.locations.length() > 0 && currentLocation.start.percentage) {
+                  const pristineCfi = book.locations.cfiFromPercentage(currentLocation.start.percentage);
+                  if (pristineCfi) safeCfi = pristineCfi;
+              }
+              
+              callFlutter('onProgress', safeCfi, pct);
             }
           });
         });
@@ -14616,7 +14648,33 @@ const String bookReaderHtmlTemplate = """
         callFlutter('onReady');
         
         await book.ready;
-        await book.locations.generate(1600);
+        
+        if (precomputedLocations) {
+          // INSTANT: Load the locations generated by Next.js
+          book.locations.load(precomputedLocations);
+          console.log("BookReader JS: Locations loaded from server");
+        } else {
+          // FALLBACK: Generate them if server failed
+          await book.locations.generate(1600);
+          console.log("BookReader JS: Locations generated locally (slow)");
+        }
+
+        // NEW: Self-Healing Logic for Flutter
+        if (window.expectedProgressPct && window.expectedProgressPct > 0) {
+            const actualCfi = book.locations.cfiFromPercentage(window.expectedProgressPct / 100);
+            if (actualCfi) {
+                const currentLocation = rendition.currentLocation();
+                const actualProgress = currentLocation && currentLocation.start && currentLocation.start.percentage 
+                    ? Math.round(currentLocation.start.percentage * 100) 
+                    : 0;
+                
+                // Correct jump if we fell back to the start of the chapter
+                if (Math.abs(actualProgress - window.expectedProgressPct) > 1) {
+                    console.log("Self-healing: Correcting jump offset.");
+                    await rendition.display(actualCfi);
+                }
+            }
+        }
 
         const flattenToc = (items, level = 0) => {
           return items.reduce((acc, item) => {
@@ -16236,8 +16294,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         (chunk) {
           bytes.addAll(chunk);
           received += chunk.length;
-          if (total > 0 && mounted)
+          if (total > 0 && mounted) {
             setState(() => _downloadProgress = received / total);
+          }
         },
         onDone: () async {
           await file.writeAsBytes(bytes);
@@ -16343,8 +16402,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () {
-              _handleImmediateSave();
-              context.pop();
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/library'); // Fallback for deep-linked reader
+              }
             },
           ),
           actions: [
@@ -16366,17 +16428,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     ref
                         .read(vocabularyProvider.notifier)
                         .markBatchKnown(words, book.targetLanguage);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text("Marked ${words.length} words as known"),
-                      ),
-                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Marked ${words.length} words as known"),
+                        ),
+                      );
+                    }
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("No unknown words on this page."),
-                      ),
-                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("No unknown words on this page."),
+                        ),
+                      );
+                    }
                   }
                 }
               },
@@ -16640,8 +16706,16 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                         final String bookUrl = kIsWeb
                             ? (book.signedUrl ?? '')
                             : "http://localhost:$_localPort/books/${book.id}.epub";
+                        
+                        // NEW: Pass expected percentage to JS for self-healing
+                        await controller.evaluateJavascript(
+                            source: "window.expectedProgressPct = $_progress;");
+                        
+                        // NEW: Pass the locations string from the DB to the JS function
+                        final String locationsJson = book.locations ?? 'null';
+                        
                         final jsCall =
-                            "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')});";
+                            "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')}, $locationsJson);";
                         await controller.evaluateJavascript(source: jsCall);
                       }
                     },
@@ -16715,9 +16789,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                     onTap: () {
                       final href = chapter['href'].toString();
                       webViewController?.evaluateJavascript(
-                        source: "rendition.display('${href}');",
+                        source: "rendition.display('$href');",
                       );
-                      Navigator.pop(context);
+                      if (context.mounted) Navigator.pop(context);
                     },
                   );
                 },
@@ -16730,7 +16804,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   }
 
   void _showSettings(BuildContext context) {
-    final logger = ref.read(loggerProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -16856,6 +16929,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       builder: (context) => _VocabularyReviewSheet(
         words: words,
         targetLanguage: ref.read(activeLanguageProvider),
+        webViewController: webViewController,
       ),
     );
   }
@@ -16943,10 +17017,11 @@ class _TranslationBottomSheetState
       }
     } catch (e, st) {
       logger.error('BookReader: Context translation failed', e, st);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoadingContext = false;
         });
+      }
     }
   }
 
@@ -17094,17 +17169,41 @@ class _TranslationBottomSheetState
   }
 }
 
-class _VocabularyReviewSheet extends ConsumerWidget {
+class _VocabularyReviewSheet extends ConsumerStatefulWidget {
   final List<String> words;
   final String targetLanguage;
+  final InAppWebViewController? webViewController;
 
   const _VocabularyReviewSheet({
     required this.words,
     required this.targetLanguage,
+    this.webViewController,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_VocabularyReviewSheet> createState() => _VocabularyReviewSheetState();
+}
+
+class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> {
+  late List<String> _pendingWords;
+
+  @override
+  void initState() {
+    super.initState();
+    _pendingWords = List.from(widget.words);
+  }
+
+  void _removeWord(String word) {
+    setState(() {
+      _pendingWords.remove(word);
+    });
+    if (_pendingWords.isEmpty) {
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
       constraints: BoxConstraints(
@@ -17114,7 +17213,7 @@ class _VocabularyReviewSheet extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            "${words.length} New Words",
+            "${_pendingWords.length} New Words",
             style: const TextStyle(
               color: Colors.white,
               fontSize: 20,
@@ -17129,15 +17228,34 @@ class _VocabularyReviewSheet extends ConsumerWidget {
           const SizedBox(height: 24),
           Flexible(
             child: ListView.builder(
-              itemCount: words.length,
-              itemBuilder: (context, i) => ListTile(
-                title:
-                    Text(words[i], style: const TextStyle(color: Colors.white)),
-                trailing: const Icon(
-                  Icons.help_outline,
-                  color: Colors.white24,
-                  size: 18,
-                ),
+              itemCount: _pendingWords.length,
+              itemBuilder: (context, i) => _VocabListItem(
+                word: _pendingWords[i],
+                targetLanguage: widget.targetLanguage,
+                webViewController: widget.webViewController,
+                onMarkKnown: () {
+                  // 1. Update Remote + Provider state
+                  ref.read(vocabularyProvider.notifier).updateWordStatus(_pendingWords[i], 'known', widget.targetLanguage);
+                  
+                  // 2. Trigger JS to update the highlight color in the reader
+                  widget.webViewController?.evaluateJavascript(
+                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i]: 'known'}).replaceAll("'", "\\'")}');"
+                  );
+
+                  // 3. Remove from UI list
+                  _removeWord(_pendingWords[i]);
+                },
+                onAddedToDeck: () {
+                  // Status will sync implicitly or can be updated directly
+                  ref.read(vocabularyProvider.notifier).updateWordStatus(_pendingWords[i], 'learning', widget.targetLanguage);
+                  
+                  // Update reader highlight via JS
+                  widget.webViewController?.evaluateJavascript(
+                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i]: 'learning'}).replaceAll("'", "\\'")}');"
+                  );
+
+                  _removeWord(_pendingWords[i]);
+                },
               ),
             ),
           ),
@@ -17150,7 +17268,14 @@ class _VocabularyReviewSheet extends ConsumerWidget {
                   onTap: () {
                     ref
                         .read(vocabularyProvider.notifier)
-                        .markBatchKnown(words, targetLanguage);
+                        .markBatchKnown(_pendingWords, widget.targetLanguage);
+                    
+                    // Bulk update reader highlights
+                    final bulkHighlights = {for (var w in _pendingWords) w: 'known'};
+                    widget.webViewController?.evaluateJavascript(
+                      source: "window.applyVocabStyles('${jsonEncode(bulkHighlights).replaceAll("'", "\\'")}');"
+                    );
+
                     Navigator.pop(context);
                   },
                 ),
@@ -17164,6 +17289,143 @@ class _VocabularyReviewSheet extends ConsumerWidget {
               style: TextStyle(color: Colors.white38),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VocabListItem extends ConsumerStatefulWidget {
+  final String word;
+  final String targetLanguage;
+  final InAppWebViewController? webViewController;
+  final VoidCallback onMarkKnown;
+  final VoidCallback onAddedToDeck;
+
+  const _VocabListItem({
+    required this.word,
+    required this.targetLanguage,
+    this.webViewController,
+    required this.onMarkKnown,
+    required this.onAddedToDeck,
+  });
+
+  @override
+  ConsumerState<_VocabListItem> createState() => _VocabListItemState();
+}
+
+class _VocabListItemState extends ConsumerState<_VocabListItem> {
+  bool _expanded = false;
+  bool _loading = false;
+  String? _translation;
+
+  void _toggle() async {
+    setState(() => _expanded = !_expanded);
+    if (_expanded && _translation == null) {
+      setState(() => _loading = true);
+      try {
+        final nativeLang = ref.read(userProfileProvider).value?.nativeLanguage ?? 'english';
+        final res = await ref.read(aiServiceProvider).translate(
+              widget.word,
+              widget.targetLanguage,
+              nativeLang,
+            );
+        if (mounted) {
+          setState(() {
+            _translation = res;
+            _loading = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _translation = "Error translating";
+            _loading = false;
+          });
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(
+              widget.word,
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            onTap: _toggle,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.check, color: Colors.greenAccent),
+                  onPressed: widget.onMarkKnown,
+                  tooltip: "Mark Known",
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add, color: LiquidTheme.primaryAccent),
+                  onPressed: () async {
+                    if (_translation == null) {
+                      setState(() => _loading = true);
+                      try {
+                        final nativeLang = ref.read(userProfileProvider).value?.nativeLanguage ?? 'english';
+                        final res = await ref.read(aiServiceProvider).translate(
+                              widget.word,
+                              widget.targetLanguage,
+                              nativeLang,
+                            );
+                        _translation = res;
+                      } catch (e) {
+                        _translation = "Unknown";
+                      }
+                    }
+                    if (mounted) {
+                       ref.read(srsProvider.notifier).addToDeckFromTranslation(
+                            front: widget.word,
+                            back: _translation!,
+                            language: widget.targetLanguage,
+                       );
+                       widget.onAddedToDeck();
+                    }
+                  },
+                  tooltip: "Add to Deck",
+                ),
+              ],
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+                    )
+                  : Row(
+                      children: [
+                        const Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.white54),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _translation ?? "Error",
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
         ],
       ),
     );

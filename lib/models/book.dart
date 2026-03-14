@@ -12,6 +12,8 @@ class UserBook {
   final DateTime createdAt;
   final String? signedUrl;
 
+  final String? locations;
+
   UserBook({
     required this.id,
     required this.title,
@@ -23,6 +25,7 @@ class UserBook {
     required this.progressPct,
     required this.createdAt,
     this.signedUrl,
+    this.locations,
   });
 
   factory UserBook.fromJson(Map<String, dynamic> json) {
@@ -39,6 +42,7 @@ class UserBook {
       signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true 
           ? '${AppConstants.baseUrl}${json['signedUrl']}' 
           : json['signedUrl'],
+      locations: json['locations'],
     );
   }
 }

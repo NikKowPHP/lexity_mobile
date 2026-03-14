@@ -33,35 +33,49 @@ const String bookReaderHtmlTemplate = """
 
     window.applyVocabStyles = function(vocabMapJson) {
       if (!rendition) return;
-      window.vocabMap = JSON.parse(vocabMapJson); // NEW: Update global cache
-      const vocabMap = window.vocabMap;
-      rendition.getContents().forEach(content => {
-          const spans = content.document.querySelectorAll('.lexity-word');
-          spans.forEach(span => {
-              const dataWord = span.getAttribute('data-word');
-              if (!dataWord) return;
-              const word = dataWord.toLowerCase();
-              // Normalize the status to lowercase to match CSS selectors
-              const status = (vocabMap[word] || 'unknown').toLowerCase();
-              
-              // Only update if the class has actually changed to prevent flickering
-              const newClassName = 'lexity-word ' + status;
-              if (span.className !== newClassName) {
-                  span.className = newClassName;
-              }
-          });
-      });
+      try {
+        const newEntries = JSON.parse(vocabMapJson);
+        
+        // Update our global cache so future pages use these styles
+        Object.assign(window.vocabMap, newEntries); 
+        const vocabMap = window.vocabMap;
+
+        rendition.getContents().forEach(content => {
+            const spans = content.document.querySelectorAll('.lexity-word');
+            spans.forEach(span => {
+                const dataWord = span.getAttribute('data-word');
+                if (!dataWord) return;
+                const word = dataWord.toLowerCase();
+                // Check if this word is in our (merged) global map
+                if (vocabMap[word]) {
+                    const status = vocabMap[word].toLowerCase();
+                    const newClassName = 'lexity-word ' + status;
+                    if (span.className !== newClassName) {
+                        span.className = newClassName;
+                    }
+                }
+            });
+        });
+      } catch (e) {
+        console.error("Error applying vocab styles:", e);
+      }
     };
 
     window.getVisibleUnknownWords = function() {
       if (!rendition) return [];
-      const visible =[];
+      const visible = [];
       rendition.getContents().forEach(content => {
           const win = content.window;
-          const spans = content.document.querySelectorAll('.lexity-word.unknown');
+          const doc = content.document;
+          const clientWidth = doc.documentElement.clientWidth;
+          const clientHeight = doc.documentElement.clientHeight;
+          const spans = doc.querySelectorAll('.lexity-word.unknown');
           spans.forEach(span => {
               const rect = span.getBoundingClientRect();
-              if (rect.top >= 0 && rect.left >= 0 && Math.floor(rect.bottom) <= win.innerHeight && Math.floor(rect.right) <= win.innerWidth) {
+              // Enforce strict bounding box to isolate the current page column
+              if (rect.width > 0 && rect.height > 0 && 
+                  rect.left >= -20 && rect.right <= clientWidth + 20 && 
+                  rect.top >= -20 && rect.bottom <= clientHeight + 20) {
                   visible.push(span.getAttribute('data-word').toLowerCase());
               }
           });
@@ -69,7 +83,7 @@ const String bookReaderHtmlTemplate = """
       return Array.from(new Set(visible));
     };
 
-    async function loadBook(url, initialCfi) {
+    async function loadBook(url, initialCfi, precomputedLocations) {
       try {
         console.log("BookReader JS: Attempting to load EPUB from: " + url);
         
@@ -100,9 +114,23 @@ const String bookReaderHtmlTemplate = """
         rendition.on("relocated", (location) => {
           window.requestAnimationFrame(() => {
             const currentLocation = rendition.currentLocation();
-            if (currentLocation && currentLocation.start) {
-              const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
-              callFlutter('onProgress', currentLocation.start.cfi, pct);
+            if (currentLocation && currentLocation.start && currentLocation.start.cfi) {
+              let pct = 0;
+              let safeCfi = currentLocation.start.cfi;
+              
+              // Use the locations object to calculate percentage and derive a safe, DOM-mutation-proof CFI
+              if (book.locations && book.locations.length() > 0) {
+                  const pctFloat = book.locations.percentageFromCfi(currentLocation.start.cfi);
+                  if (pctFloat != null) {
+                      pct = Math.round(pctFloat * 100);
+                      const pristineCfi = book.locations.cfiFromPercentage(pctFloat);
+                      if (pristineCfi) safeCfi = pristineCfi;
+                  }
+              } else if (currentLocation.start.percentage) {
+                  pct = Math.round(currentLocation.start.percentage * 100);
+              }
+              
+              callFlutter('onProgress', safeCfi, pct);
             }
           });
         });
@@ -308,12 +336,51 @@ const String bookReaderHtmlTemplate = """
         });
 
 
-        await rendition.display(initialCfi || undefined);
-
-        callFlutter('onReady');
-        
+        // --- ROBUST LOAD AND GENERATION FLOW ---
         await book.ready;
-        await book.locations.generate(1600);
+        
+        if (precomputedLocations) {
+          // INSTANT: Load the locations generated by Next.js
+          book.locations.load(precomputedLocations);
+          console.log("BookReader JS: Locations loaded from server");
+          
+          // Derive the pristine CFI directly from percentage to avoid any DOM-poisoned CFI bugs
+          if (window.expectedProgressPct && window.expectedProgressPct > 0) {
+              const actualCfi = book.locations.cfiFromPercentage(window.expectedProgressPct / 100);
+              if (actualCfi) initialCfi = actualCfi; // Override the potentially poisoned one
+          }
+          
+          await rendition.display(initialCfi || undefined);
+          callFlutter('onReady');
+        } else {
+          // SLOW PATH: Show the potentially broken page immediately so the user isn't staring at a blank screen
+          await rendition.display(initialCfi || undefined);
+          callFlutter('onReady');
+          
+          // Generate locations in the background
+          await book.locations.generate(1600);
+          console.log("BookReader JS: Locations generated locally (slow)");
+          
+          // Self-heal: If the initial CFI was broken and landed us at the chapter start, jump to the real %
+          if (window.expectedProgressPct && window.expectedProgressPct > 0) {
+              const actualCfi = book.locations.cfiFromPercentage(window.expectedProgressPct / 100);
+              if (actualCfi) {
+                  const currentLocation = rendition.currentLocation();
+                  let actualProgress = 0;
+                  
+                  // Use the freshly generated locations array to get accurate progress
+                  if (currentLocation && currentLocation.start && currentLocation.start.cfi) {
+                      const pctFloat = book.locations.percentageFromCfi(currentLocation.start.cfi);
+                      if (pctFloat != null) actualProgress = Math.round(pctFloat * 100);
+                  }
+                  
+                  if (Math.abs(actualProgress - window.expectedProgressPct) > 1) {
+                      console.log("BookReader JS: Correcting jump offset to actual percentage.");
+                      await rendition.display(actualCfi);
+                  }
+              }
+          }
+        }
 
         const flattenToc = (items, level = 0) => {
           return items.reduce((acc, item) => {
