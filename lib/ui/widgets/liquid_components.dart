@@ -81,29 +81,34 @@ class LiquidBackground extends StatelessWidget {
 class GlassCard extends StatelessWidget {
   final Widget child;
   final double padding;
+  final double borderRadius;
 
-  const GlassCard({super.key, required this.child, this.padding = 24.0});
+  const GlassCard({
+    super.key,
+    required this.child,
+    this.padding = 20.0,
+    this.borderRadius = 24.0,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
+      borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
         child: Container(
           padding: EdgeInsets.all(padding),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05), // Ultra transparent
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.1),
-              width: 1.5,
+              color: Colors.white.withValues(alpha: 0.12),
+              width: 1.0,
             ),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.white.withValues(alpha: 0.1),
+                Colors.white.withValues(alpha: 0.08),
                 Colors.white.withValues(alpha: 0.02),
               ],
             ),
@@ -177,25 +182,25 @@ class LiquidButton extends StatelessWidget {
       onTap: isLoading ? null : onTap,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        height: 54,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           gradient: const LinearGradient(
-            colors: [LiquidTheme.primaryAccent, LiquidTheme.secondaryAccent],
+            colors: [LiquidTheme.primaryAccent, Color(0xFF4F46E5)],
           ),
           boxShadow: [
             BoxShadow(
-              color: LiquidTheme.primaryAccent.withValues(alpha: 0.5),
+              color: LiquidTheme.primaryAccent.withValues(alpha: 0.3),
               blurRadius: 20,
-              offset: const Offset(0, 4),
+              offset: const Offset(0, 8),
             ),
           ],
         ),
         child: Center(
           child: isLoading
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 24,
+                  height: 24,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: Colors.white,
@@ -206,6 +211,7 @@ class LiquidButton extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
+                    color: Colors.white,
                   ),
                 ),
         ),

@@ -6547,57 +6547,6 @@ class MainActivity: FlutterActivity() {
 }
 </file>
 
-<file path="lib/models/book.dart">
-import '../utils/constants.dart';
-
-class UserBook {
-  final String id;
-  final String title;
-  final String? author;
-  final String targetLanguage;
-  final String storagePath;
-  final String? coverImageUrl;
-  final String? currentCfi;
-  final double progressPct;
-  final DateTime createdAt;
-  final String? signedUrl;
-
-  final String? locations;
-
-  UserBook({
-    required this.id,
-    required this.title,
-    this.author,
-    required this.targetLanguage,
-    required this.storagePath,
-    this.coverImageUrl,
-    this.currentCfi,
-    required this.progressPct,
-    required this.createdAt,
-    this.signedUrl,
-    this.locations,
-  });
-
-  factory UserBook.fromJson(Map<String, dynamic> json) {
-    return UserBook(
-      id: json['id'],
-      title: json['title'] ?? 'Unknown Title',
-      author: json['author'],
-      targetLanguage: json['targetLanguage'] ?? 'spanish',
-      storagePath: json['storagePath'] ?? '',
-      coverImageUrl: json['coverImageUrl'],
-      currentCfi: json['currentCfi'],
-      progressPct: (json['progressPct'] ?? 0).toDouble(),
-      createdAt: DateTime.parse(json['createdAt']),
-      signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true 
-          ? '${AppConstants.baseUrl}${json['signedUrl']}' 
-          : json['signedUrl'],
-      locations: json['locations'],
-    );
-  }
-}
-</file>
-
 <file path="lib/models/journal_entry.dart">
 import '../utils/constants.dart';
 
@@ -8165,6 +8114,57 @@ endforeach(ffi_plugin)
 Error: Exception: Test exception
 [2026-02-11 15:35:31] [error] Test error message
 Error: Exception: Test exception
+</file>
+
+<file path="lib/models/book.dart">
+import '../utils/constants.dart';
+
+class UserBook {
+  final String id;
+  final String title;
+  final String? author;
+  final String targetLanguage;
+  final String storagePath;
+  final String? coverImageUrl;
+  final String? currentCfi;
+  final double progressPct;
+  final DateTime createdAt;
+  final String? signedUrl;
+
+  final String? locations;
+
+  UserBook({
+    required this.id,
+    required this.title,
+    this.author,
+    required this.targetLanguage,
+    required this.storagePath,
+    this.coverImageUrl,
+    this.currentCfi,
+    required this.progressPct,
+    required this.createdAt,
+    this.signedUrl,
+    this.locations,
+  });
+
+  factory UserBook.fromJson(Map<String, dynamic> json) {
+    return UserBook(
+      id: json['id'],
+      title: json['title'] ?? 'Unknown Title',
+      author: json['author'],
+      targetLanguage: json['targetLanguage'] ?? 'spanish',
+      storagePath: json['storagePath'] ?? '',
+      coverImageUrl: json['coverImageUrl'],
+      currentCfi: json['currentCfi'],
+      progressPct: (json['progressPct'] ?? 0).toDouble(),
+      createdAt: DateTime.parse(json['createdAt']),
+      signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true 
+          ? '${AppConstants.baseUrl}${json['signedUrl']}' 
+          : json['signedUrl'],
+      locations: json['locations'],
+    );
+  }
+}
 </file>
 
 <file path="lib/providers/journal_provider.dart">
@@ -10713,83 +10713,6 @@ final vocabularyProvider = StateNotifierProvider<VocabularyNotifier, AsyncValue<
 });
 </file>
 
-<file path="lib/services/vocabulary_service.dart">
-import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-import 'token_service.dart';
-import '../utils/constants.dart';
-
-class VocabularyService {
-  final TokenService _authTokenService;
-
-  VocabularyService(this._authTokenService);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<Map<String, String>> getVocabulary(String language) async {
-    final response = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> data = jsonDecode(response.body);
-      // Map the dynamic JSON object to a lowercase Map<String, String>
-      return data.map((key, value) => 
-        MapEntry(key.toLowerCase(), value.toString().toLowerCase()));
-    }
-    return {};
-  }
-
-  Future<void> updateStatus(String word, String status, String language) async {
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'targetLanguage': language,
-        'words': [word.toLowerCase()], // Backend expects an array of words
-        'status': status.toUpperCase(), // Backend expects uppercase enum
-      }),
-    );
-    
-    if (response.statusCode != 200) {
-      throw Exception('Failed to update vocabulary status');
-    }
-  }
-
-  Future<void> markBatchKnown(List<String> words, String language) async {
-    await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary/batch-known'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'words': words,
-        'targetLanguage': language,
-      }),
-    );
-  }
-
-  Future<void> deleteWord(String word, String language) async {
-    final response = await http.delete(
-      Uri.parse('${AppConstants.baseUrl}/api/vocabulary?word=$word&targetLanguage=$language'),
-      headers: await _getHeaders(),
-    );
-    
-    if (response.statusCode != 200) {
-      throw Exception('Failed to delete word');
-    }
-  }
-}
-
-final vocabularyServiceProvider = Provider((ref) => VocabularyService(ref.watch(tokenServiceProvider(TokenType.auth))));
-</file>
-
 <file path="lib/ui/screens/path_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11383,6 +11306,88 @@ class AIService {
 final aiServiceProvider = Provider(
   (ref) => AIService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
 );
+</file>
+
+<file path="lib/services/vocabulary_service.dart">
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'token_service.dart';
+import '../utils/constants.dart';
+
+class VocabularyService {
+  final TokenService _authTokenService;
+
+  VocabularyService(this._authTokenService);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<Map<String, String>> getVocabulary(String language) async {
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> data = jsonDecode(response.body);
+      // Map the dynamic JSON object to a lowercase Map<String, String>
+      return data.map((key, value) => 
+        MapEntry(key.toLowerCase(), value.toString().toLowerCase()));
+    }
+    return {};
+  }
+
+  Future<void> updateStatus(String word, String status, String language) async {
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'targetLanguage': language,
+        'words': [word.toLowerCase()], // Backend expects an array of words
+        'status': status.toUpperCase(), // Backend expects uppercase enum
+      }),
+    );
+    
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update vocabulary status');
+    }
+  }
+
+  Future<void> markBatchKnown(List<String> words, String language) async {
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
+      headers: await _getHeaders(),
+      body: jsonEncode({
+        'words': words,
+        'targetLanguage': language,
+        'status': 'KNOWN',
+      }),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to batch update vocabulary');
+    }
+  }
+
+  Future<void> deleteWord(String word, String language) async {
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/api/vocabulary?word=$word&targetLanguage=$language'),
+      headers: await _getHeaders(),
+    );
+    
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete word');
+    }
+  }
+}
+
+final vocabularyServiceProvider = Provider((ref) => VocabularyService(ref.watch(tokenServiceProvider(TokenType.auth))));
 </file>
 
 <file path="lib/ui/screens/library_screen.dart">
@@ -14399,6 +14404,7 @@ const String bookReaderHtmlTemplate = """
     async function loadBook(url, initialCfi, precomputedLocations) {
       try {
         console.log("BookReader JS: Attempting to load EPUB from: " + url);
+        console.log("BookReader JS: Received initialCfi: " + initialCfi);
         
         // FIX: Add a small timeout to ensure the viewer container is fully painted in the DOM
         await new Promise(r => setTimeout(r, 100));
@@ -14425,21 +14431,16 @@ const String bookReaderHtmlTemplate = """
         rendition.settings.contents.allowScriptedContent = true;
         
         rendition.on("relocated", (location) => {
-          window.requestAnimationFrame(() => {
-            const currentLocation = rendition.currentLocation();
-            if (currentLocation && currentLocation.start) {
-              const pct = currentLocation.start.percentage ? Math.round(currentLocation.start.percentage * 100) : 0;
-              
-              // NEW: Get pristine CFI to prevent saving DOM-mutated CFIs
-              let safeCfi = currentLocation.start.cfi;
-              if (book.locations && book.locations.length() > 0 && currentLocation.start.percentage) {
-                  const pristineCfi = book.locations.cfiFromPercentage(currentLocation.start.percentage);
-                  if (pristineCfi) safeCfi = pristineCfi;
-              }
-              
-              callFlutter('onProgress', safeCfi, pct);
-            }
-          });
+          if (location && location.start) {
+            // Prefer the end CFI when a spread is visible to avoid resuming one page back.
+            const startCfi = location.start.cfi;
+            const endCfi = location.end && location.end.cfi ? location.end.cfi : null;
+            const cfi = endCfi && endCfi !== startCfi ? endCfi : startCfi;
+            const pct = (location.end && location.end.percentage)
+              ? Math.round(location.end.percentage * 100)
+              : (location.start.percentage ? Math.round(location.start.percentage * 100) : 0);
+            callFlutter('onProgress', cfi, pct);
+          }
         });
 
         rendition.hooks.content.register((contents) => {
@@ -14643,12 +14644,8 @@ const String bookReaderHtmlTemplate = """
         });
 
 
-        await rendition.display(initialCfi || undefined);
+        console.log("BookReader JS: Loading locations first, then displaying CFI: " + initialCfi);
 
-        callFlutter('onReady');
-        
-        await book.ready;
-        
         if (precomputedLocations) {
           // INSTANT: Load the locations generated by Next.js
           book.locations.load(precomputedLocations);
@@ -14659,22 +14656,23 @@ const String bookReaderHtmlTemplate = """
           console.log("BookReader JS: Locations generated locally (slow)");
         }
 
-        // NEW: Self-Healing Logic for Flutter
-        if (window.expectedProgressPct && window.expectedProgressPct > 0) {
-            const actualCfi = book.locations.cfiFromPercentage(window.expectedProgressPct / 100);
-            if (actualCfi) {
-                const currentLocation = rendition.currentLocation();
-                const actualProgress = currentLocation && currentLocation.start && currentLocation.start.percentage 
-                    ? Math.round(currentLocation.start.percentage * 100) 
-                    : 0;
-                
-                // Correct jump if we fell back to the start of the chapter
-                if (Math.abs(actualProgress - window.expectedProgressPct) > 1) {
-                    console.log("Self-healing: Correcting jump offset.");
-                    await rendition.display(actualCfi);
-                }
-            }
-        }
+        // Wait for book to be fully ready BEFORE attempting to display
+        await book.ready;
+        console.log("BookReader JS: Book ready, now displaying at CFI: " + initialCfi);
+        
+        // Use promise-based display to ensure it completes
+        await new Promise((resolve) => {
+          rendition.display(initialCfi || undefined).then(() => {
+            console.log("BookReader JS: rendition.display() promise resolved");
+            resolve();
+          });
+        });
+        
+        // Wait for the display to fully settle before notifying Flutter
+        await new Promise(r => setTimeout(r, 500));
+        
+        console.log("BookReader JS: Display completed, calling onReady");
+        callFlutter('onReady');
 
         const flattenToc = (items, level = 0) => {
           return items.reduce((acc, item) => {
@@ -16137,9 +16135,8 @@ class BookReaderScreen extends ConsumerStatefulWidget {
   ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
 }
 
-class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
+class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with WidgetsBindingObserver {
   InAppWebViewController? webViewController;
-  // FIX: Initialize immediately to prevent LateInitializationError
   double _progress = 0.0;
   String? _lastCfi;
   String? _currentCfi; // Track for page flips
@@ -16155,9 +16152,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   int? _localPort;
 
   bool _isInitialized = false;
+  String? _lastSavedCfi;
 
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
+  
+  // Track initial CFI when book opens to only save on user navigation
+  String? _initialCfiOnReady;
 
   void _updateReaderStyles() {
     final logger = ref.read(loggerProvider);
@@ -16179,6 +16180,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb) {
       _startLocalServer();
     } else {
@@ -16321,26 +16323,36 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
   void _handleImmediateSave() {
     if (!mounted || _lastCfi == null) return;
-    // Prevent saving if the book hasn't fully settled on the correct page yet
     if (!_canSaveToBackend) return;
+    if (_lastCfi == _lastSavedCfi) return; // Prevent duplicate network calls
 
     final logger = ref.read(loggerProvider);
     _progressDebounce?.cancel();
     logger.info(
-      'BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi',
+      'BookReader: Performing immediate progress save on exit/background. CFI: $_lastCfi',
     );
     ref
         .read(bookNotifierProvider.notifier)
         .updateProgress(widget.bookId, _lastCfi!, _progress);
-    _lastCfi = null; // Prevent double saving
+    _lastSavedCfi = _lastCfi;
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _handleImmediateSave(); // Catch-all guarantee
     _progressDebounce?.cancel();
     _localServer?.close(force: true);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _handleImmediateSave();
+    }
   }
 
   @override
@@ -16358,6 +16370,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         setState(() {
           _progress = book.progressPct;
           _lastCfi = book.currentCfi;
+          _lastSavedCfi = book.currentCfi; // Sync state to avoid over-saving initial load
+          _initialCfiOnReady = book.currentCfi; // Set initial CFI to compare against
         });
         _ensureBookDownloaded(book);
       }
@@ -16533,6 +16547,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                           final cfi = args[0] as String;
                           final pct = (args[1] as num).toDouble();
 
+                          logger.info(
+                            'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, canSave: $_canSaveToBackend',
+                          );
+
                           // Detect Page Flip (CFI changed)
                           if (_currentCfi != null && _currentCfi != cfi) {
                             // Get words that WERE visible on the page we just left
@@ -16551,28 +16569,35 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
                           if (mounted) {
                             setState(() {
-                              // Always track the current location so we don't lose our place
                               _lastCfi = cfi;
                               _currentCfi = cfi;
-
-                              // Only update visual percentage after initial load settles to prevent jitter
-                              if (_canSaveToBackend) {
-                                _progress = pct;
-                              }
+                              _progress = pct;
                             });
                           }
 
                           // Ensure we don't push progress to the backend during initial setup
                           if (!_canSaveToBackend) return;
+                           
+                          // Only save if user has moved to a different position from initial
+                          if (_initialCfiOnReady != null && cfi == _initialCfiOnReady) {
+                            logger.info(
+                              'BookReader: Skipping save - at initial position: $cfi',
+                            );
+                            return;
+                          }
 
                           _progressDebounce?.cancel();
                           _progressDebounce = Timer(
                             const Duration(milliseconds: 1500),
                             () {
-                              if (mounted) {
+                              if (mounted && _lastCfi != _lastSavedCfi) {
+                                logger.info(
+                                  'BookReader: Saving progress - CFI: $_lastCfi, Progress: $_progress%',
+                                );
                                 ref
                                     .read(bookNotifierProvider.notifier)
-                                    .updateProgress(book.id, cfi, pct);
+                                    .updateProgress(widget.bookId, _lastCfi!, _progress);
+                                _lastSavedCfi = _lastCfi;
                               }
                             },
                           );
@@ -16612,9 +16637,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                               .read(vocabularyProvider.notifier)
                               .loadVocabulary(book.targetLanguage);
 
-                          Future.delayed(const Duration(milliseconds: 1500), () {
-                            if (mounted) setState(() => _canSaveToBackend = true);
-                          });
+                          logger.info('BookReader: onReady fired, enabling save');
+                          if (mounted) {
+                            setState(() => _canSaveToBackend = true);
+                          }
 
                           _updateReaderStyles();
                         },
@@ -16707,13 +16733,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                             ? (book.signedUrl ?? '')
                             : "http://localhost:$_localPort/books/${book.id}.epub";
                         
-                        // NEW: Pass expected percentage to JS for self-healing
-                        await controller.evaluateJavascript(
-                            source: "window.expectedProgressPct = $_progress;");
-                        
                         // NEW: Pass the locations string from the DB to the JS function
                         final String locationsJson = book.locations ?? 'null';
                         
+                        logger.info(
+                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}',
+                        );
                         final jsCall =
                             "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')}, $locationsJson);";
                         await controller.evaluateJavascript(source: jsCall);
@@ -17239,7 +17264,7 @@ class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> 
                   
                   // 2. Trigger JS to update the highlight color in the reader
                   widget.webViewController?.evaluateJavascript(
-                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i]: 'known'}).replaceAll("'", "\\'")}');"
+                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'known'}).replaceAll("'", "\\'")}');"
                   );
 
                   // 3. Remove from UI list
@@ -17251,7 +17276,7 @@ class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> 
                   
                   // Update reader highlight via JS
                   widget.webViewController?.evaluateJavascript(
-                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i]: 'learning'}).replaceAll("'", "\\'")}');"
+                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'learning'}).replaceAll("'", "\\'")}');"
                   );
 
                   _removeWord(_pendingWords[i]);
@@ -17271,7 +17296,7 @@ class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> 
                         .markBatchKnown(_pendingWords, widget.targetLanguage);
                     
                     // Bulk update reader highlights
-                    final bulkHighlights = {for (var w in _pendingWords) w: 'known'};
+                    final bulkHighlights = {for (var w in _pendingWords) w.toLowerCase(): 'known'};
                     widget.webViewController?.evaluateJavascript(
                       source: "window.applyVocabStyles('${jsonEncode(bulkHighlights).replaceAll("'", "\\'")}');"
                     );

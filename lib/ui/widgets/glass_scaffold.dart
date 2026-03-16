@@ -21,6 +21,7 @@ class GlassScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 800;
     final canPop = showBackButton ?? context.canPop();
+    final topPadding = MediaQuery.of(context).padding.top + 20;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -29,7 +30,7 @@ class GlassScaffold extends StatelessWidget {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(isDesktop ? 100 : 24, 60, 24, 20),
+              padding: EdgeInsets.fromLTRB(isDesktop ? 100 : 24, topPadding, 24, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

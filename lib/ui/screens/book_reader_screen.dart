@@ -33,9 +33,8 @@ class BookReaderScreen extends ConsumerStatefulWidget {
   ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
 }
 
-class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
+class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with WidgetsBindingObserver {
   InAppWebViewController? webViewController;
-  // FIX: Initialize immediately to prevent LateInitializationError
   double _progress = 0.0;
   String? _lastCfi;
   String? _currentCfi; // Track for page flips
@@ -51,9 +50,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   int? _localPort;
 
   bool _isInitialized = false;
+  String? _lastSavedCfi;
 
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
+  
+  // Track initial CFI when book opens to only save on user navigation
+  String? _initialCfiOnReady;
 
   void _updateReaderStyles() {
     final logger = ref.read(loggerProvider);
@@ -75,6 +78,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb) {
       _startLocalServer();
     } else {
@@ -217,26 +221,36 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
   void _handleImmediateSave() {
     if (!mounted || _lastCfi == null) return;
-    // Prevent saving if the book hasn't fully settled on the correct page yet
     if (!_canSaveToBackend) return;
+    if (_lastCfi == _lastSavedCfi) return; // Prevent duplicate network calls
 
     final logger = ref.read(loggerProvider);
     _progressDebounce?.cancel();
     logger.info(
-      'BookReader: Performing immediate progress save on screen exit. CFI: $_lastCfi',
+      'BookReader: Performing immediate progress save on exit/background. CFI: $_lastCfi',
     );
     ref
         .read(bookNotifierProvider.notifier)
         .updateProgress(widget.bookId, _lastCfi!, _progress);
-    _lastCfi = null; // Prevent double saving
+    _lastSavedCfi = _lastCfi;
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _handleImmediateSave(); // Catch-all guarantee
     _progressDebounce?.cancel();
     _localServer?.close(force: true);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _handleImmediateSave();
+    }
   }
 
   @override
@@ -254,6 +268,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         setState(() {
           _progress = book.progressPct;
           _lastCfi = book.currentCfi;
+          _lastSavedCfi = book.currentCfi; // Sync state to avoid over-saving initial load
+          _initialCfiOnReady = book.currentCfi; // Set initial CFI to compare against
         });
         _ensureBookDownloaded(book);
       }
@@ -429,6 +445,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                           final cfi = args[0] as String;
                           final pct = (args[1] as num).toDouble();
 
+                          logger.info(
+                            'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, canSave: $_canSaveToBackend',
+                          );
+
                           // Detect Page Flip (CFI changed)
                           if (_currentCfi != null && _currentCfi != cfi) {
                             // Get words that WERE visible on the page we just left
@@ -447,28 +467,35 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
                           if (mounted) {
                             setState(() {
-                              // Always track the current location so we don't lose our place
                               _lastCfi = cfi;
                               _currentCfi = cfi;
-
-                              // Only update visual percentage after initial load settles to prevent jitter
-                              if (_canSaveToBackend) {
-                                _progress = pct;
-                              }
+                              _progress = pct;
                             });
                           }
 
                           // Ensure we don't push progress to the backend during initial setup
                           if (!_canSaveToBackend) return;
+                           
+                          // Only save if user has moved to a different position from initial
+                          if (_initialCfiOnReady != null && cfi == _initialCfiOnReady) {
+                            logger.info(
+                              'BookReader: Skipping save - at initial position: $cfi',
+                            );
+                            return;
+                          }
 
                           _progressDebounce?.cancel();
                           _progressDebounce = Timer(
                             const Duration(milliseconds: 1500),
                             () {
-                              if (mounted) {
+                              if (mounted && _lastCfi != _lastSavedCfi) {
+                                logger.info(
+                                  'BookReader: Saving progress - CFI: $_lastCfi, Progress: $_progress%',
+                                );
                                 ref
                                     .read(bookNotifierProvider.notifier)
-                                    .updateProgress(book.id, cfi, pct);
+                                    .updateProgress(widget.bookId, _lastCfi!, _progress);
+                                _lastSavedCfi = _lastCfi;
                               }
                             },
                           );
@@ -508,9 +535,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                               .read(vocabularyProvider.notifier)
                               .loadVocabulary(book.targetLanguage);
 
-                          Future.delayed(const Duration(milliseconds: 1500), () {
-                            if (mounted) setState(() => _canSaveToBackend = true);
-                          });
+                          logger.info('BookReader: onReady fired, enabling save');
+                          if (mounted) {
+                            setState(() => _canSaveToBackend = true);
+                          }
 
                           _updateReaderStyles();
                         },
@@ -603,13 +631,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
                             ? (book.signedUrl ?? '')
                             : "http://localhost:$_localPort/books/${book.id}.epub";
                         
-                        // NEW: Pass expected percentage to JS for self-healing
-                        await controller.evaluateJavascript(
-                            source: "window.expectedProgressPct = $_progress;");
-                        
                         // NEW: Pass the locations string from the DB to the JS function
                         final String locationsJson = book.locations ?? 'null';
                         
+                        logger.info(
+                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}',
+                        );
                         final jsCall =
                             "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')}, $locationsJson);";
                         await controller.evaluateJavascript(source: jsCall);

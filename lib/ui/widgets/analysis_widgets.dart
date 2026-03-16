@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/journal_entry.dart';
 import 'liquid_components.dart';
+import '../../theme/liquid_theme.dart';
 
 class AnalysisScoreCard extends StatelessWidget {
   final Analysis analysis;
@@ -9,37 +10,49 @@ class AnalysisScoreCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      padding: 16,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _ScoreItem(label: "Grammar", score: analysis.grammarScore),
-          _ScoreItem(label: "Phrasing", score: analysis.phrasingScore),
-          _ScoreItem(label: "Vocabulary", score: analysis.vocabScore),
-        ],
-      ),
+    return Row(
+      children: [
+        Expanded(child: _ScoreBox(label: "Grammar", score: analysis.grammarScore)),
+        const SizedBox(width: 12),
+        Expanded(child: _ScoreBox(label: "Phrasing", score: analysis.phrasingScore)),
+        const SizedBox(width: 12),
+        Expanded(child: _ScoreBox(label: "Vocabulary", score: analysis.vocabScore)),
+      ],
     );
   }
 }
 
-class _ScoreItem extends StatelessWidget {
+class _ScoreBox extends StatelessWidget {
   final String label;
   final int score;
 
-  const _ScoreItem({required this.label, required this.score});
+  const _ScoreBox({required this.label, required this.score});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          "$score",
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54)),
-      ],
+    return GlassCard(
+      padding: 12,
+      child: Column(
+        children: [
+          Text(
+            "$score%",
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: LiquidTheme.primaryAccent,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.white54,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -100,13 +100,14 @@ class LiquidNavigation extends StatelessWidget {
 
   BoxDecoration _glassDecoration() {
     return BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.2),
+      color: const Color(0xFF111111).withValues(alpha: 0.8),
       borderRadius: BorderRadius.circular(40),
       border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.3),
-          blurRadius: 30,
+          color: Colors.black.withValues(alpha: 0.4),
+          blurRadius: 40,
+          spreadRadius: 2,
           offset: const Offset(0, 10),
         ),
       ],
