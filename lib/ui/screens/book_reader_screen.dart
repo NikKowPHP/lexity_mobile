@@ -61,7 +61,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
   void _updateReaderStyles() {
     final logger = ref.read(loggerProvider);
     logger.debug(
-      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%)',
+      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%, lastCfi: $_lastCfi, currentCfi: $_currentCfi, lastSavedCfi: $_lastSavedCfi, initialCfiOnReady: $_initialCfiOnReady)',
     );
 
     final colors = {
@@ -437,6 +437,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                     ),
                     onWebViewCreated: (controller) {
                       webViewController = controller;
+                      logger.info('BookReader: WebView created');
                       controller.addJavaScriptHandler(
                         handlerName: 'onProgress',
                         callback: (args) {
@@ -446,11 +447,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                           final pct = (args[1] as num).toDouble();
 
                           logger.info(
-                            'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, canSave: $_canSaveToBackend',
+                            'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, canSave: $_canSaveToBackend, initialCfiOnReady: $_initialCfiOnReady, lastSavedCfi: $_lastSavedCfi',
                           );
 
                           // Detect Page Flip (CFI changed)
                           if (_currentCfi != null && _currentCfi != cfi) {
+                            logger.info(
+                              'BookReader: Page flip detected from $_currentCfi to $cfi, requesting visible words',
+                            );
                             // Get words that WERE visible on the page we just left
                             webViewController
                                 ?.evaluateJavascript(
@@ -460,7 +464,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                               if (wordsObj != null && wordsObj is List) {
                                 final words =
                                     wordsObj.map((e) => e.toString()).toList();
+                                logger.info(
+                                  'BookReader: Visible unknown words returned: ${words.length}',
+                                );
                                 if (words.isNotEmpty) _triggerVocabReview(words);
+                              } else {
+                                logger.info(
+                                  'BookReader: Visible unknown words returned: none/invalid',
+                                );
                               }
                             });
                           }
@@ -635,7 +646,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                         final String locationsJson = book.locations ?? 'null';
                         
                         logger.info(
-                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}',
+                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}, locations: ${book.locations != null ? "present" : "null"}',
                         );
                         final jsCall =
                             "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')}, $locationsJson);";

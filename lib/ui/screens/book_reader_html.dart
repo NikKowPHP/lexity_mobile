@@ -67,27 +67,33 @@ const String bookReaderHtmlTemplate = """
       const location = rendition.currentLocation && rendition.currentLocation();
       const startCfi = location && location.start ? location.start.cfi : null;
       const endCfi = location && location.end ? location.end.cfi : null;
+      console.log("[Lexity][VisibleWords] currentLocation:", location);
+      console.log("[Lexity][VisibleWords] startCfi:", startCfi, "endCfi:", endCfi);
 
       const compareCfi = (() => {
         try {
           if (window.ePub && window.ePub.CFI) {
             if (typeof window.ePub.CFI.compare === 'function') {
+              console.log("[Lexity][VisibleWords] Using window.ePub.CFI.compare");
               return (a, b) => window.ePub.CFI.compare(a, b);
             }
             const cfi = new window.ePub.CFI();
             if (cfi && typeof cfi.compare === 'function') {
+              console.log("[Lexity][VisibleWords] Using new window.ePub.CFI().compare");
               return (a, b) => cfi.compare(a, b);
             }
           }
           if (window.EPUBJS && window.EPUBJS.EpubCFI) {
             const cfi = new window.EPUBJS.EpubCFI();
             if (cfi && typeof cfi.compare === 'function') {
+              console.log("[Lexity][VisibleWords] Using new window.EPUBJS.EpubCFI().compare");
               return (a, b) => cfi.compare(a, b);
             }
           }
         } catch (e) {
           console.warn("CFI compare unavailable:", e);
         }
+        console.warn("[Lexity][VisibleWords] No CFI compare available. Falling back to viewport.");
         return null;
       })();
 
@@ -97,15 +103,23 @@ const String bookReaderHtmlTemplate = """
       rendition.getContents().forEach(content => {
         const doc = content.document;
         const spans = doc.querySelectorAll('.lexity-word.unknown');
+        let processed = 0;
         spans.forEach(span => {
           const dataWord = span.getAttribute('data-word');
           if (!dataWord) return;
+          processed += 1;
 
           if (compareCfi && startCfi && endCfi && typeof content.cfiFromNode === 'function') {
             const nodeCfi = content.cfiFromNode(span);
-            if (!nodeCfi) return;
-            if (compareCfi(nodeCfi, startCfi) < 0) return;
-            if (compareCfi(nodeCfi, endCfi) > 0) return;
+            if (!nodeCfi) {
+              console.warn("[Lexity][VisibleWords] Missing nodeCfi for word:", dataWord);
+              return;
+            }
+            const cmpStart = compareCfi(nodeCfi, startCfi);
+            const cmpEnd = compareCfi(nodeCfi, endCfi);
+            if (cmpStart < 0 || cmpEnd > 0) {
+              return;
+            }
           } else {
             const win = content.window;
             const viewportWidth = win && win.innerWidth ? win.innerWidth : doc.documentElement.clientWidth;
@@ -123,8 +137,16 @@ const String bookReaderHtmlTemplate = """
           seen.add(word);
           visible.push(word);
         });
+        console.log("[Lexity][VisibleWords] content processed:", {
+          totalUnknownSpans: spans.length,
+          processed,
+          collected: visible.length,
+          hasCfiFromNode: typeof content.cfiFromNode === 'function',
+          compareCfiAvailable: !!compareCfi
+        });
       });
 
+      console.log("[Lexity][VisibleWords] unique visible words:", visible.length);
       return visible;
     };
 
@@ -166,7 +188,15 @@ const String bookReaderHtmlTemplate = """
             const pct = (location.end && location.end.percentage)
               ? Math.round(location.end.percentage * 100)
               : (location.start.percentage ? Math.round(location.start.percentage * 100) : 0);
+            console.log("[Lexity][Relocated]", {
+              startCfi,
+              endCfi,
+              chosenCfi: cfi,
+              pct
+            });
             callFlutter('onProgress', cfi, pct);
+          } else {
+            console.warn("[Lexity][Relocated] Missing location/start", location);
           }
         });
 
