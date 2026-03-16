@@ -51,6 +51,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
 
   bool _isInitialized = false;
   String? _lastSavedCfi;
+  bool _hasLocationsFromBackend = false;
 
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
@@ -270,8 +271,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
           _lastCfi = book.currentCfi;
           _lastSavedCfi = book.currentCfi; // Sync state to avoid over-saving initial load
           _initialCfiOnReady = book.currentCfi; // Set initial CFI to compare against
+          _hasLocationsFromBackend = book.locations != null;
         });
         _ensureBookDownloaded(book);
+      } else if (!_hasLocationsFromBackend && book.locations != null) {
+        setState(() => _hasLocationsFromBackend = true);
       }
     });
 
@@ -445,9 +449,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
 
                           final cfi = args[0] as String;
                           final pct = (args[1] as num).toDouble();
+                          final acceptProgress = _hasLocationsFromBackend ||
+                              (pct >= 0 && pct < 100) ||
+                              (_progress >= 95 && pct >= 100);
 
                           logger.info(
-                            'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, canSave: $_canSaveToBackend, initialCfiOnReady: $_initialCfiOnReady, lastSavedCfi: $_lastSavedCfi',
+                            'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, acceptProgress: $acceptProgress, hasLocations: $_hasLocationsFromBackend, canSave: $_canSaveToBackend, initialCfiOnReady: $_initialCfiOnReady, lastSavedCfi: $_lastSavedCfi',
                           );
 
                           // Detect Page Flip (CFI changed)
@@ -480,7 +487,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                             setState(() {
                               _lastCfi = cfi;
                               _currentCfi = cfi;
-                              _progress = pct;
+                              if (acceptProgress) {
+                                _progress = pct;
+                              }
                             });
                           }
 
@@ -500,12 +509,18 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                             const Duration(milliseconds: 1500),
                             () {
                               if (mounted && _lastCfi != _lastSavedCfi) {
+                                final progressToSave =
+                                    acceptProgress ? _progress : _progress;
                                 logger.info(
-                                  'BookReader: Saving progress - CFI: $_lastCfi, Progress: $_progress%',
+                                  'BookReader: Saving progress - CFI: $_lastCfi, Progress: $progressToSave% (acceptProgress: $acceptProgress)',
                                 );
                                 ref
                                     .read(bookNotifierProvider.notifier)
-                                    .updateProgress(widget.bookId, _lastCfi!, _progress);
+                                    .updateProgress(
+                                      widget.bookId,
+                                      _lastCfi!,
+                                      progressToSave,
+                                    );
                                 _lastSavedCfi = _lastCfi;
                               }
                             },
@@ -646,7 +661,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                         final String locationsJson = book.locations ?? 'null';
                         
                         logger.info(
-                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}, locations: ${book.locations != null ? "present" : "null"}',
+                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}, locations: ${book.locations != null ? "present (${book.locations!.length})" : "null"}',
                         );
                         final jsCall =
                             "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')}, $locationsJson);";
