@@ -25,12 +25,18 @@ class GlassScaffold extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: false,
       floatingActionButton: floatingActionButton,
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.fromLTRB(isDesktop ? 100 : 24, topPadding, 24, 20),
+              padding: EdgeInsets.fromLTRB(
+                isDesktop ? 100 : 24,
+                topPadding,
+                24,
+                20,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

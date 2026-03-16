@@ -63,24 +63,69 @@ const String bookReaderHtmlTemplate = """
 
     window.getVisibleUnknownWords = function() {
       if (!rendition) return [];
+
+      const location = rendition.currentLocation && rendition.currentLocation();
+      const startCfi = location && location.start ? location.start.cfi : null;
+      const endCfi = location && location.end ? location.end.cfi : null;
+
+      const compareCfi = (() => {
+        try {
+          if (window.ePub && window.ePub.CFI) {
+            if (typeof window.ePub.CFI.compare === 'function') {
+              return (a, b) => window.ePub.CFI.compare(a, b);
+            }
+            const cfi = new window.ePub.CFI();
+            if (cfi && typeof cfi.compare === 'function') {
+              return (a, b) => cfi.compare(a, b);
+            }
+          }
+          if (window.EPUBJS && window.EPUBJS.EpubCFI) {
+            const cfi = new window.EPUBJS.EpubCFI();
+            if (cfi && typeof cfi.compare === 'function') {
+              return (a, b) => cfi.compare(a, b);
+            }
+          }
+        } catch (e) {
+          console.warn("CFI compare unavailable:", e);
+        }
+        return null;
+      })();
+
       const visible = [];
+      const seen = new Set();
+
       rendition.getContents().forEach(content => {
-          const win = content.window;
-          const doc = content.document;
-          const clientWidth = doc.documentElement.clientWidth;
-          const clientHeight = doc.documentElement.clientHeight;
-          const spans = doc.querySelectorAll('.lexity-word.unknown');
-          spans.forEach(span => {
-              const rect = span.getBoundingClientRect();
-              // Enforce strict bounding box to isolate the current page column
-              if (rect.width > 0 && rect.height > 0 && 
-                  rect.left >= -20 && rect.right <= clientWidth + 20 && 
-                  rect.top >= -20 && rect.bottom <= clientHeight + 20) {
-                  visible.push(span.getAttribute('data-word').toLowerCase());
-              }
-          });
+        const doc = content.document;
+        const spans = doc.querySelectorAll('.lexity-word.unknown');
+        spans.forEach(span => {
+          const dataWord = span.getAttribute('data-word');
+          if (!dataWord) return;
+
+          if (compareCfi && startCfi && endCfi && typeof content.cfiFromNode === 'function') {
+            const nodeCfi = content.cfiFromNode(span);
+            if (!nodeCfi) return;
+            if (compareCfi(nodeCfi, startCfi) < 0) return;
+            if (compareCfi(nodeCfi, endCfi) > 0) return;
+          } else {
+            const win = content.window;
+            const viewportWidth = win && win.innerWidth ? win.innerWidth : doc.documentElement.clientWidth;
+            const viewportHeight = win && win.innerHeight ? win.innerHeight : doc.documentElement.clientHeight;
+            const rect = span.getBoundingClientRect();
+            if (!(rect.width > 0 && rect.height > 0 &&
+                  rect.right > 0 && rect.left < viewportWidth &&
+                  rect.bottom > 0 && rect.top < viewportHeight)) {
+              return;
+            }
+          }
+
+          const word = dataWord.toLowerCase();
+          if (seen.has(word)) return;
+          seen.add(word);
+          visible.push(word);
+        });
       });
-      return Array.from(new Set(visible));
+
+      return visible;
     };
 
     async function loadBook(url, initialCfi, precomputedLocations) {

@@ -4,75 +4,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme/liquid_theme.dart';
 
-// 1. The Moving "Liquid" Background
+// 1. The Static "Liquid" Background
 class LiquidBackground extends StatelessWidget {
   final Widget child;
   const LiquidBackground({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // Deep background
-        Container(color: LiquidTheme.background),
-
-        // Floating Orb 1 (Indigo)
-        Positioned(
-              top: -100,
-              left: -100,
-              child: _buildOrb(LiquidTheme.primaryAccent),
-            )
-            .animate(onPlay: (c) => c.repeat(reverse: true))
-            .move(
-              duration: 4.seconds,
-              begin: const Offset(0, 0),
-              end: const Offset(50, 100),
-            )
-            .scale(
-              duration: 4.seconds,
-              begin: const Offset(1, 1),
-              end: const Offset(1.5, 1.5),
-            ),
-
-        // Floating Orb 2 (Pink)
-        Positioned(
-              bottom: -50,
-              right: -50,
-              child: _buildOrb(LiquidTheme.secondaryAccent),
-            )
-            .animate(onPlay: (c) => c.repeat(reverse: true))
-            .move(
-              duration: 5.seconds,
-              begin: const Offset(0, 0),
-              end: const Offset(-60, -80),
-            )
-            .scale(
-              duration: 5.seconds,
-              begin: const Offset(1.2, 1.2),
-              end: const Offset(0.8, 0.8),
-            ),
-
-        // Content on top
-        child,
-      ],
-    );
-  }
-
-  Widget _buildOrb(Color color) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      width: 400,
-      height: 400,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: 0.4),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.4),
-            blurRadius: 100,
-            spreadRadius: 50,
-          ),
-        ],
+        color: isDark ? const Color(0xFF000000) : const Color(0xFFF3F3F3),
+        gradient: RadialGradient(
+          center: const Alignment(-0.7, -0.6),
+          radius: 1.2,
+          colors: isDark
+              ? [const Color(0xFF0D0D0D), const Color(0xFF000000)]
+              : [const Color(0xFFFFFFFF), const Color(0xFFF3F3F3)],
+        ),
       ),
+      child: child,
     );
   }
 }
@@ -92,6 +43,7 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
@@ -101,16 +53,23 @@ class GlassCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.12),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: 0.05),
               width: 1.0,
             ),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.02),
-              ],
+              colors: isDark
+                  ? [
+                      Colors.white.withValues(alpha: 0.08),
+                      Colors.white.withValues(alpha: 0.02),
+                    ]
+                  : [
+                      Colors.white.withValues(alpha: 0.8),
+                      Colors.white.withValues(alpha: 0.4),
+                    ],
             ),
           ),
           child: child,
@@ -219,6 +178,7 @@ class LiquidButton extends StatelessWidget {
     ).animate(target: isLoading ? 0 : 1).shimmer(duration: 2.seconds);
   }
 }
+
 // 5. Liquid Dropdown Selection
 class LiquidDropdown<T> extends StatelessWidget {
   final String label;

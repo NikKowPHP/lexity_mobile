@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'providers/auth_provider.dart';
 import 'providers/user_provider.dart';
+import 'providers/theme_provider.dart';
 import 'router/router.dart';
 import 'theme/liquid_theme.dart';
 import 'ui/widgets/liquid_components.dart';
@@ -18,7 +19,9 @@ void main() async {
     if (Platform.isWindows) {
       try {
         await WebViewEnvironment.create(
-          settings: WebViewEnvironmentSettings(userDataFolder: 'inappwebviewdata')
+          settings: WebViewEnvironmentSettings(
+            userDataFolder: 'inappwebviewdata',
+          ),
         );
       } catch (e) {
         debugPrint("Error initializing WebView2: $e");
@@ -72,7 +75,7 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     if (!authState.isInitialized) {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: LiquidTheme.theme,
+        theme: LiquidTheme.darkTheme,
         home: const Scaffold(
           body: LiquidBackground(
             child: Center(
@@ -86,7 +89,9 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
     return MaterialApp.router(
       title: 'Lexity Mobile',
       debugShowCheckedModeBanner: false,
-      theme: LiquidTheme.theme,
+      theme: LiquidTheme.lightTheme,
+      darkTheme: LiquidTheme.darkTheme,
+      themeMode: ref.watch(themeProvider),
       routerConfig: router,
     );
   }
