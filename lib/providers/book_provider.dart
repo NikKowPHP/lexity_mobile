@@ -73,6 +73,15 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
+  Future<void> updateLocations(String id, String locations) async {
+    try {
+      await _service.updateLocations(id, locations);
+      _logger.info('BookNotifier: Locations updated successfully for $id');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Failed to update locations', e, st);
+    }
+  }
+
   Future<void> refreshBooks() async {
     _logger.info('BookNotifier: Starting book refresh');
     state = const AsyncValue.loading();

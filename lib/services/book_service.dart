@@ -262,8 +262,43 @@ class BookService {
 
     await _syncRepo.enqueueBookProgress(id, cfi, progressPct);
 
-    _logger.info('BookService: Progress queued for sync for $id');
+    _logger.info('BookService: Progress queued sync for $id');
     await _ref.read(syncServiceProvider).syncPendingMutations();
+  }
+
+  Future<void> updateLocations(String id, String locations) async {
+    final isOnline = _ref.read(connectivityProvider);
+    if (!isOnline) {
+      _logger.warning(
+        'BookService: Cannot update locations, device is offline',
+      );
+      return;
+    }
+
+    try {
+      final response = await http.patch(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+        headers: await _getHeaders(),
+        body: jsonEncode({'locations': locations}),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to save locations to server');
+      }
+
+      _logger.info(
+        'BookService: Locations updated successfully on server for $id',
+      );
+
+      // Also update local database so we don't generate again next time
+      final existingBook = await _db.getBookById(id);
+      if (existingBook != null) {
+        await _db.insertBook({...existingBook, 'locations': locations});
+        _logger.info('BookService: Locations updated locally for $id');
+      }
+    } catch (e, st) {
+      _logger.error('BookService: updateLocations error', e, st);
+    }
   }
 
   Future<void> deleteBook(String id) async {

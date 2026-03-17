@@ -667,6 +667,28 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                           );
                         },
                       );
+
+                      controller.addJavaScriptHandler(
+                        handlerName: 'onLocationsGenerated',
+                        callback: (args) {
+                          final String locationsJson = args[0] as String;
+                          
+                          // NEW CODE START: Prevent syncing empty arrays
+                          if (locationsJson == "[]" || locationsJson.isEmpty) {
+                            logger.warning('BookReader: Received empty locations from JS, skipping sync.');
+                            return;
+                          }
+                          // NEW CODE END
+                          
+                          logger.info('BookReader: Received generated locations from JS. Size: ${locationsJson.length}');
+                          
+                          // Call the notifier to save this to the backend
+                          ref.read(bookNotifierProvider.notifier).updateLocations(
+                            widget.bookId,
+                            locationsJson
+                          );
+                        },
+                      );
                     },
                     onLoadStop: (controller, _) async {
                       if (kIsWeb || _localPort != null) {
