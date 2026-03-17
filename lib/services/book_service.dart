@@ -11,6 +11,7 @@ import '../providers/connectivity_provider.dart';
 import '../providers/auth_provider.dart';
 import 'token_service.dart';
 import 'logger_service.dart';
+import 'sync_service.dart';
 
 class BookService {
   final TokenService _authTokenService;
@@ -262,6 +263,7 @@ class BookService {
     await _syncRepo.enqueueBookProgress(id, cfi, progressPct);
 
     _logger.info('BookService: Progress queued for sync for $id');
+    await _ref.read(syncServiceProvider).syncPendingMutations();
   }
 
   Future<void> deleteBook(String id) async {

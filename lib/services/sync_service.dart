@@ -68,10 +68,13 @@ class SyncService {
             'SyncService: Successfully synced mutation ${mutation['id']}',
           );
         } else {
+          // CRITICAL FIX: If a mutation fails, increment retry and STOP the loop.
+          // Do not attempt the rest of the queue in this cycle.
           await _syncRepo.incrementRetryCount(mutation['id'] as int);
           _logger.warning(
-            'SyncService: Failed to sync mutation ${mutation['id']}, will retry',
+            'SyncService: Mutation ${mutation['id']} failed. Stopping queue processing to prevent infinite hammering.',
           );
+          break;
         }
       }
 

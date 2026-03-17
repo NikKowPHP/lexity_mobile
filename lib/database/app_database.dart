@@ -431,6 +431,18 @@ class AppDatabase {
   // Sync Queue
   Future<int> enqueueMutation(Map<String, dynamic> mutation) async {
     final db = await database;
+
+    // OPTIMIZATION: If this is a book progress update, remove older pending
+    // progress updates for the same book to keep the queue slim.
+    if (mutation['entity_type'] == 'book' &&
+        mutation['action'] == 'update_progress') {
+      await db.delete(
+        'sync_queue',
+        where: 'entity_type = ? AND action = ? AND entity_id = ?',
+        whereArgs: ['book', 'update_progress', mutation['entity_id']],
+      );
+    }
+
     return await db.insert('sync_queue', {
       ...mutation,
       'created_at': DateTime.now().millisecondsSinceEpoch,
