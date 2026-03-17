@@ -51,6 +51,16 @@ class SyncService {
           break;
         }
 
+        final retryCount = mutation['retry_count'] as int? ?? 0;
+
+        if (retryCount > 0) {
+          final delay = _calculateBackoff(retryCount);
+          _logger.info(
+            'SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}',
+          );
+          await Future.delayed(delay);
+        }
+
         final success = await _processMutation(mutation);
         if (success) {
           await _syncRepo.removeMutation(mutation['id'] as int);
@@ -72,6 +82,13 @@ class SyncService {
     } finally {
       _isSyncing = false;
     }
+  }
+
+  Duration _calculateBackoff(int retryCount) {
+    final baseSeconds = 5;
+    final maxSeconds = 300;
+    final seconds = (baseSeconds * (1 << retryCount)).clamp(1, maxSeconds);
+    return Duration(seconds: seconds);
   }
 
   Future<bool> _processMutation(Map<String, dynamic> mutation) async {
@@ -158,6 +175,17 @@ class SyncService {
           'moduleId': payload['moduleId'],
           'mode': payload['mode'],
         }),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
+      }
+    } else if (action == 'analyze') {
+      _logger.info('SyncService: Triggering analysis for journal $journalId');
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/analyze'),
+        headers: headers,
+        body: jsonEncode({'journalId': journalId}),
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     }

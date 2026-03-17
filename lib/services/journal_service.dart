@@ -139,7 +139,6 @@ class JournalService {
     String targetLanguage, {
     String? moduleId,
   }) async {
-    final isOnline = _ref.read(connectivityProvider);
     final tempId = _uuid.v4();
 
     await _db.insertJournal({
@@ -152,34 +151,6 @@ class JournalService {
       'analysis_json': null,
       'last_synced_at': null,
     });
-
-    if (isOnline) {
-      try {
-        final response = await http.post(
-          Uri.parse('${AppConstants.baseUrl}/api/journal'),
-          headers: await _getHeaders(),
-          body: jsonEncode({
-            'content': content,
-            'topicTitle': title,
-            'targetLanguage': targetLanguage,
-            'mode': 'free_write',
-            'moduleId': moduleId,
-          }),
-        );
-
-        if (response.statusCode == 201) {
-          final data = jsonDecode(response.body);
-          await _upsertJournalLocal(data);
-          return JournalEntry.fromJson(data);
-        }
-      } catch (e, st) {
-        _logger.warning(
-          'JournalService: Failed to create entry on backend, queued for sync',
-          e,
-          st,
-        );
-      }
-    }
 
     await _syncRepo.enqueueJournalCreate(
       tempId,
@@ -228,7 +199,7 @@ class JournalService {
     final isOnline = _ref.read(connectivityProvider);
 
     if (!isOnline) {
-      throw Exception('Cannot create audio entry while offline');
+      return await _createAudioEntryOffline(filePath, targetLanguage, moduleId);
     }
 
     _logger.info('JournalService: Starting audio journal creation');
@@ -274,6 +245,50 @@ class JournalService {
     throw Exception('Failed to create audio journal record');
   }
 
+  Future<JournalEntry> _createAudioEntryOffline(
+    String filePath,
+    String targetLanguage,
+    String? moduleId,
+  ) async {
+    _logger.info(
+      'JournalService: Saving audio journal locally for offline upload',
+    );
+
+    final tempId = _uuid.v4();
+    final localPath = filePath;
+
+    await _db.insertJournal({
+      'id': tempId,
+      'content': '',
+      'title': 'Audio Recording',
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+      'audio_url': localPath,
+      'is_pending_analysis': 1,
+      'analysis_json': null,
+      'last_synced_at': null,
+    });
+
+    await _syncRepo.enqueueMutation(
+      entityType: 'journal',
+      action: 'upload_audio',
+      entityId: tempId,
+      payload: {
+        'localFilePath': localPath,
+        'targetLanguage': targetLanguage,
+        'moduleId': moduleId,
+      },
+    );
+
+    return JournalEntry(
+      id: tempId,
+      content: '',
+      title: 'Audio Recording',
+      createdAt: DateTime.now(),
+      audioUrl: localPath,
+      isPending: true,
+    );
+  }
+
   Future<void> deleteEntry(String id) async {
     _logger.info('JournalService: Deleting entry $id locally');
     // Delete locally first, then sync
@@ -285,7 +300,13 @@ class JournalService {
 
     if (!isOnline) {
       _logger.warning(
-        'JournalService: Cannot analyze entry while offline. Analysis will be queued.',
+        'JournalService: Cannot analyze entry while offline. Queuing analysis.',
+      );
+      await _syncRepo.enqueueMutation(
+        entityType: 'journal',
+        action: 'analyze',
+        entityId: id,
+        payload: {},
       );
       return;
     }

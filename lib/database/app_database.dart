@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class AppDatabase {
   static Database? _database;
   static const String _dbName = 'lexity.db';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -18,7 +18,43 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, _dbName);
 
-    return await openDatabase(path, version: _dbVersion, onCreate: _onCreate);
+    return await openDatabase(
+      path,
+      version: _dbVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS analytics_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_language TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS learning_modules (
+            id TEXT PRIMARY KEY,
+            language TEXT NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL,
+            target_concept_tag TEXT,
+            micro_lesson TEXT,
+            activities_json TEXT,
+            completed_at INTEGER,
+            last_synced_at INTEGER
+          )
+        ''');
+      } catch (e) {
+        // Table might already exist
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -399,55 +435,74 @@ class AppDatabase {
     String language,
     List<Map<String, dynamic>> modules,
   ) async {
-    final db = await database;
-    await db.delete(
-      'learning_modules',
-      where: 'language = ?',
-      whereArgs: [language],
-    );
-    for (final module in modules) {
-      await db.insert('learning_modules', {
-        'id': module['id'],
-        'language': language,
-        'title': module['title'] ?? '',
-        'status': module['status'] ?? 'PENDING',
-        'target_concept_tag': module['targetConceptTag'] ?? '',
-        'micro_lesson': module['microLesson'] ?? '',
-        'activities_json': jsonEncode(module['activities'] ?? {}),
-        'completed_at': module['completedAt'] != null
-            ? DateTime.parse(module['completedAt']).millisecondsSinceEpoch
-            : null,
-        'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-      });
+    try {
+      final db = await database;
+      await db.delete(
+        'learning_modules',
+        where: 'language = ?',
+        whereArgs: [language],
+      );
+      for (final module in modules) {
+        await db.insert('learning_modules', {
+          'id': module['id'],
+          'language': language,
+          'title': module['title'] ?? '',
+          'status': module['status'] ?? 'PENDING',
+          'target_concept_tag': module['targetConceptTag'] ?? '',
+          'micro_lesson': module['microLesson'] ?? '',
+          'activities_json': jsonEncode(module['activities'] ?? {}),
+          'completed_at': module['completedAt'] != null
+              ? DateTime.parse(module['completedAt']).millisecondsSinceEpoch
+              : null,
+          'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+        });
+      }
+    } catch (e) {
+      // Table doesn't exist yet, ignore
     }
+  }
+
+  Future<void> insertLearningModule(Map<String, dynamic> module) async {
+    final db = await database;
+    await db.insert(
+      'learning_modules',
+      module,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getCachedLearningModules(
     String language,
   ) async {
-    final db = await database;
-    final results = await db.query(
-      'learning_modules',
-      where: 'language = ?',
-      whereArgs: [language],
-    );
-    return results
-        .map(
-          (row) => {
-            'id': row['id'],
-            'title': row['title'],
-            'status': row['status'],
-            'targetConceptTag': row['target_concept_tag'],
-            'microLesson': row['micro_lesson'],
-            'activities': jsonDecode(row['activities_json'] as String? ?? '{}'),
-            'completedAt': row['completed_at'] != null
-                ? DateTime.fromMillisecondsSinceEpoch(
-                    row['completed_at'] as int,
-                  ).toIso8601String()
-                : null,
-          },
-        )
-        .toList();
+    try {
+      final db = await database;
+      final results = await db.query(
+        'learning_modules',
+        where: 'language = ?',
+        whereArgs: [language],
+      );
+      return results
+          .map(
+            (row) => {
+              'id': row['id'],
+              'title': row['title'],
+              'status': row['status'],
+              'targetConceptTag': row['target_concept_tag'],
+              'microLesson': row['micro_lesson'],
+              'activities': jsonDecode(
+                row['activities_json'] as String? ?? '{}',
+              ),
+              'completedAt': row['completed_at'] != null
+                  ? DateTime.fromMillisecondsSinceEpoch(
+                      row['completed_at'] as int,
+                    ).toIso8601String()
+                  : null,
+            },
+          )
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> close() async {

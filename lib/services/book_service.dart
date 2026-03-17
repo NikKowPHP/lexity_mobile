@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../models/book.dart';
 import '../utils/constants.dart';
 import '../database/app_database.dart';
@@ -16,6 +17,7 @@ class BookService {
   final SyncRepository _syncRepo;
   final Ref _ref;
   late final LoggerService _logger;
+  final Uuid _uuid = const Uuid();
 
   BookService(
     this._authTokenService,
@@ -163,6 +165,13 @@ class BookService {
     String title,
   ) async {
     _logger.info('BookService: Starting EPUB upload sequence for "$title"');
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (!isOnline) {
+      await _uploadBookOffline(file, targetLanguage, title);
+      return;
+    }
+
     try {
       final filename = file.path.split('/').last;
 
@@ -234,6 +243,46 @@ class BookService {
       _logger.error('BookService: Exception in uploadBook', e, st);
       rethrow;
     }
+  }
+
+  Future<void> _uploadBookOffline(
+    File file,
+    String targetLanguage,
+    String title,
+  ) async {
+    _logger.info('BookService: Saving book locally for offline upload');
+
+    final tempId = _uuid.v4();
+    final localPath = file.path;
+
+    await _db.insertBook({
+      'id': tempId,
+      'title': title,
+      'author': 'Unknown',
+      'target_language': targetLanguage,
+      'storage_path': localPath,
+      'cover_image_url': null,
+      'current_cfi': null,
+      'progress_pct': 0.0,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+      'signed_url': null,
+      'locations': null,
+      'last_synced_at': null,
+    });
+
+    await _syncRepo.enqueueMutation(
+      entityType: 'book',
+      action: 'upload_binary',
+      entityId: tempId,
+      payload: {
+        'title': title,
+        'author': 'Unknown',
+        'targetLanguage': targetLanguage,
+        'localFilePath': localPath,
+      },
+    );
+
+    _logger.info('BookService: Book saved locally, queued for upload');
   }
 
   Stream<List<UserBook>> watchBooks() {

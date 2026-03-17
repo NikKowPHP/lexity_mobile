@@ -11,6 +11,8 @@ import 'ui/widgets/liquid_components.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'dart:io';
+import 'services/sync_service.dart';
+import 'services/hydration_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,9 +62,11 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // REPLICA: Web's auto-refresh logic when returning from Stripe
     if (state == AppLifecycleState.resumed) {
       ref.read(userProfileProvider.notifier).refresh();
+
+      ref.read(syncServiceProvider).syncPendingMutations();
+      ref.read(hydrationServiceProvider).performFullSync();
     }
   }
 

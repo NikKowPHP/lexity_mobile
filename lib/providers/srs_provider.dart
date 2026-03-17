@@ -36,6 +36,10 @@ class SrsNotifier extends StateNotifier<SrsState> {
   final SrsService _service;
   SrsNotifier(this._service) : super(SrsState());
 
+  Stream<List<SrsItem>> watchDeck() {
+    return _service.watchDueSrsItems();
+  }
+
   Future<void> loadDeck(String language) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -49,10 +53,7 @@ class SrsNotifier extends StateNotifier<SrsState> {
   Future<void> loadAllItems(String language) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // Use the existing fetchDeck but might need a backend param for all items
-      // Assuming fetchDeck handles targetLanguage and returns deck items
-      // In a real app we might have a specific endpoint for all items
-      final items = await _service.fetchDeck(language); 
+      final items = await _service.fetchAllItems(language);
       state = state.copyWith(allItems: items, isLoading: false);
     } catch (e) {
       state = state.copyWith(error: e.toString(), isLoading: false);
@@ -62,8 +63,7 @@ class SrsNotifier extends StateNotifier<SrsState> {
   Future<void> deleteItem(String id, String language) async {
     try {
       await _service.deleteItem(id);
-      loadAllItems(language); // Refresh
-      // Also remove from deck if present
+      loadDeck(language);
       final updatedDeck = state.deck.where((item) => item.id != id).toList();
       state = state.copyWith(deck: updatedDeck);
     } catch (e) {
@@ -75,15 +75,13 @@ class SrsNotifier extends StateNotifier<SrsState> {
     final card = state.currentCard;
     if (card == null) return;
 
-    // 1. Optimistic UI: Remove card from list immediately
     final updatedDeck = List<SrsItem>.from(state.deck)..removeAt(0);
     state = state.copyWith(deck: updatedDeck);
 
-    // 2. Background Sync
     try {
       await _service.reviewItem(card.id, quality);
     } catch (e) {
-      // Handle error (optionally re-add card to deck)
+      // Handle error
     }
   }
 
@@ -100,7 +98,6 @@ class SrsNotifier extends StateNotifier<SrsState> {
         language: language,
         explanation: explanation,
       );
-      // Refresh deck to include the new item
       loadDeck(language);
       return true;
     } catch (e) {
@@ -121,4 +118,9 @@ class SrsNotifier extends StateNotifier<SrsState> {
 
 final srsProvider = StateNotifierProvider<SrsNotifier, SrsState>((ref) {
   return SrsNotifier(ref.watch(srsServiceProvider));
+});
+
+final srsDeckStreamProvider = StreamProvider<List<SrsItem>>((ref) {
+  final service = ref.watch(srsServiceProvider);
+  return service.watchDueSrsItems();
 });

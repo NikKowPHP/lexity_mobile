@@ -54,6 +54,9 @@ class LearningPathService {
           language,
           data.cast<Map<String, dynamic>>(),
         );
+
+        _prefetchNextModules(language);
+
         return data.map((e) => LearningModule.fromJson(e)).toList();
       }
       throw Exception('Failed to load learning path');
@@ -64,6 +67,43 @@ class LearningPathService {
         return cached.map((e) => LearningModule.fromJson(e)).toList();
       }
       rethrow;
+    }
+  }
+
+  Future<void> _prefetchNextModules(String language) async {
+    try {
+      _logger.info('LearningPathService: Pre-fetching next modules');
+      final response = await http.get(
+        Uri.parse(
+          '${AppConstants.baseUrl}/api/learning-path/prefetch?targetLanguage=$language&count=3',
+        ),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        final cached = await _db.getCachedLearningModules(language);
+        final existingIds = cached.map((e) => e['id'] as String).toSet();
+
+        for (final module in data) {
+          if (!existingIds.contains(module['id'])) {
+            await _db.insertLearningModule({
+              'id': module['id'],
+              'language': language,
+              'title': module['title'] ?? '',
+              'status': module['status'] ?? 'PENDING',
+              'target_concept_tag': module['targetConceptTag'] ?? '',
+              'micro_lesson': module['microLesson'] ?? '',
+              'activities_json': jsonEncode(module['activities'] ?? {}),
+              'completed_at': null,
+              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+            });
+          }
+        }
+        _logger.info('LearningPathService: Pre-fetched ${data.length} modules');
+      }
+    } catch (e) {
+      _logger.warning('LearningPathService: Prefetch failed: $e');
     }
   }
 

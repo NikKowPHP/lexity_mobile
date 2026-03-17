@@ -40,7 +40,7 @@ class AIService {
       _logger.warning(
         'AIService: Offline, returning offline translation fallback',
       );
-      return _getOfflineTranslation(text, sourceLang, targetLang);
+      return await _getOfflineTranslation(text, sourceLang, targetLang);
     }
 
     try {
@@ -74,36 +74,47 @@ class AIService {
       if (_isOnline) {
         rethrow;
       }
-      return _getOfflineTranslation(text, sourceLang, targetLang);
+      return await _getOfflineTranslation(text, sourceLang, targetLang);
     }
   }
 
-  String _getOfflineTranslation(
+  Future<String> _getOfflineTranslation(
     String text,
     String sourceLang,
     String targetLang,
-  ) {
+  ) async {
     final sourceCode = _mapToMlKitCode(sourceLang);
     final targetCode = _mapToMlKitCode(targetLang);
 
     try {
-      final translator = OnDeviceTranslator(
-        sourceLanguage: _getTranslateLanguage(sourceCode),
-        targetLanguage: _getTranslateLanguage(targetCode),
+      final source = _getTranslateLanguage(sourceCode);
+      final target = _getTranslateLanguage(targetCode);
+
+      final modelManager = OnDeviceTranslatorModelManager();
+
+      final bool sourceDownloaded = await modelManager.isModelDownloaded(
+        source.bcpCode,
+      );
+      final bool targetDownloaded = await modelManager.isModelDownloaded(
+        target.bcpCode,
       );
 
-      translator
-          .translateText(text)
-          .then((result) {
-            _logger.info(
-              'AIService: Offline ML translation successful: $result',
-            );
-          })
-          .catchError((e) {
-            _logger.warning('AIService: Offline ML translation failed: $e');
-          });
+      if (!sourceDownloaded || !targetDownloaded) {
+        _logger.warning('AIService: ML Models not downloaded for offline use.');
+        return '[$targetLang translation unavailable (Models not downloaded)]';
+      }
 
-      return '[$targetLang offline: $text]';
+      final translator = OnDeviceTranslator(
+        sourceLanguage: source,
+        targetLanguage: target,
+      );
+
+      final result = await translator.translateText(text);
+      _logger.info('AIService: Offline ML translation successful.');
+
+      await translator.close();
+
+      return result;
     } catch (e) {
       _logger.warning('AIService: Offline ML translation setup failed: $e');
       return '[$targetLang translation unavailable offline: "$text"]';

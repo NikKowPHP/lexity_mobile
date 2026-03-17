@@ -55,8 +55,13 @@ class HydrationService {
   Future<void> _syncBooks() async {
     _logger.info('HydrationService: Syncing books...');
     try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/books?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/books';
+
       final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books'),
+        Uri.parse(url),
         headers: await _getHeaders(),
       );
 
@@ -93,8 +98,13 @@ class HydrationService {
   Future<void> _syncJournals() async {
     _logger.info('HydrationService: Syncing journals...');
     try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/journal?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/journal';
+
       final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/journal'),
+        Uri.parse(url),
         headers: await _getHeaders(),
       );
 
@@ -126,8 +136,13 @@ class HydrationService {
   Future<void> _syncSrsItems() async {
     _logger.info('HydrationService: Syncing SRS items...');
     try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/srs/all?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/srs/all';
+
       final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/srs/all'),
+        Uri.parse(url),
         headers: await _getHeaders(),
       );
 
@@ -161,8 +176,13 @@ class HydrationService {
   Future<void> _syncVocabulary() async {
     _logger.info('HydrationService: Syncing vocabulary...');
     try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/vocabulary/all?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/vocabulary/all';
+
       final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/vocabulary/all'),
+        Uri.parse(url),
         headers: await _getHeaders(),
       );
 

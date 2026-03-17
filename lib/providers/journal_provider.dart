@@ -1,20 +1,47 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/journal_entry.dart';
 import '../services/journal_service.dart';
+import '../database/app_database.dart';
 import 'user_provider.dart';
 
-final journalHistoryProvider = FutureProvider.autoDispose<List<JournalEntry>>((ref) async {
-  final service = ref.watch(journalServiceProvider);
-  final activeLang = ref.watch(activeLanguageProvider);
-  return service.getHistory(activeLang);
-});
+JournalEntry _journalFromDb(Map<String, dynamic> map) {
+  return JournalEntry(
+    id: map['id'] as String,
+    content: map['content'] as String? ?? '',
+    title: map['title'] as String? ?? 'Free Write',
+    createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+    audioUrl: map['audio_url'] as String?,
+    isPending: (map['is_pending_analysis'] as int?) == 1,
+    analysis: map['analysis_json'] != null
+        ? Analysis.fromJson(jsonDecode(map['analysis_json'] as String))
+        : null,
+  );
+}
 
-final journalDetailProvider = FutureProvider.autoDispose.family<JournalEntry, String>((ref, id) async {
-  final service = ref.watch(journalServiceProvider);
-  return service.getEntry(id);
-});
+final journalHistoryStreamProvider =
+    StreamProvider.autoDispose<List<JournalEntry>>((ref) {
+      final db = ref.watch(databaseProvider);
+      return db.watchAllJournals().map(
+        (journals) => journals.map((map) => _journalFromDb(map)).toList(),
+      );
+    });
 
-final suggestedTopicsProvider = FutureProvider.autoDispose<List<String>>((ref) async {
+final journalHistoryProvider = journalHistoryStreamProvider;
+
+final journalDetailProvider = FutureProvider.autoDispose
+    .family<JournalEntry, String>((ref, id) async {
+      final db = ref.watch(databaseProvider);
+      final journal = await db.getJournalById(id);
+      if (journal == null) {
+        throw Exception('Journal not found');
+      }
+      return _journalFromDb(journal);
+    });
+
+final suggestedTopicsProvider = FutureProvider.autoDispose<List<String>>((
+  ref,
+) async {
   final service = ref.watch(journalServiceProvider);
   final activeLang = ref.watch(activeLanguageProvider);
   return service.getSuggestedTopics(activeLang);
@@ -22,12 +49,9 @@ final suggestedTopicsProvider = FutureProvider.autoDispose<List<String>>((ref) a
 
 class JournalNotifier extends StateNotifier<AsyncValue<void>> {
   final JournalService _service;
-  final Ref _ref;
 
-  JournalNotifier(this._service, this._ref) : super(const AsyncValue.data(null));
+  JournalNotifier(this._service) : super(const AsyncValue.data(null));
 
-  // Update signature to accept optional moduleId
-  // CHANGE: Return Future<String?> instead of Future<void>
   Future<String?> createEntry(
     String title,
     String content,
@@ -36,22 +60,13 @@ class JournalNotifier extends StateNotifier<AsyncValue<void>> {
   }) async {
     state = const AsyncValue.loading();
     try {
-      // 1. Create the entry
       final entry = await _service.createEntry(
         content,
         title,
         language,
         moduleId: moduleId,
       );
-      
-      // 2. Trigger Analysis
-      await _service.analyzeEntry(entry.id);
-      
-      // 3. Refresh lists
-      _ref.invalidate(journalHistoryProvider);
       state = const AsyncValue.data(null);
-      
-      // 4. Return the ID
       return entry.id;
     } catch (e, st) {
       state = AsyncValue.error(e, st);
@@ -71,9 +86,6 @@ class JournalNotifier extends StateNotifier<AsyncValue<void>> {
         language,
         moduleId: moduleId,
       );
-      // Auto-analyze
-      await _service.analyzeEntry(entry.id);
-      _ref.invalidate(journalHistoryProvider);
       state = const AsyncValue.data(null);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
@@ -83,18 +95,17 @@ class JournalNotifier extends StateNotifier<AsyncValue<void>> {
   Future<void> deleteEntry(String id) async {
     try {
       await _service.deleteEntry(id);
-      _ref.invalidate(journalHistoryProvider);
     } catch (e) {
       // handle error
     }
   }
-  
+
   Future<void> refreshTopics(String language) async {
-     await _service.generateTopics(language);
-     _ref.invalidate(suggestedTopicsProvider);
+    await _service.generateTopics(language);
   }
 }
 
-final journalNotifierProvider = StateNotifierProvider<JournalNotifier, AsyncValue<void>>((ref) {
-  return JournalNotifier(ref.watch(journalServiceProvider), ref);
-});
+final journalNotifierProvider =
+    StateNotifierProvider<JournalNotifier, AsyncValue<void>>((ref) {
+      return JournalNotifier(ref.watch(journalServiceProvider));
+    });

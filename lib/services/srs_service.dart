@@ -216,6 +216,42 @@ class SrsService {
       (items) => items.map((map) => _srsItemFromDb(map)).toList(),
     );
   }
+
+  Future<List<SrsItem>> fetchAllItems(String language) async {
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (isOnline) {
+      try {
+        final response = await http.get(
+          Uri.parse(
+            '${AppConstants.baseUrl}/api/srs/all?targetLanguage=$language',
+          ),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final List data = jsonDecode(response.body);
+          for (final item in data) {
+            await _upsertSrsItemLocal(item);
+          }
+          return data.map((item) => SrsItem.fromJson(item)).toList();
+        }
+      } catch (e, st) {
+        _logger.warning(
+          'SrsService: Failed to fetch all items from backend',
+          e,
+          st,
+        );
+      }
+    }
+
+    return _getLocalAllItems();
+  }
+
+  Future<List<SrsItem>> _getLocalAllItems() async {
+    final items = await _db.getAllSrsItems();
+    return items.map((map) => _srsItemFromDb(map)).toList();
+  }
 }
 
 final srsServiceProvider = Provider(
