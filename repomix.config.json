@@ -2,6 +2,6 @@
 
 
 "ignore": {
-    "customPatterns": [ "docs/**", "a.md", "repomix-output.xml", "TASKS.md", "apply_changes.sh"]
+    "customPatterns": [ "docs/**", "a.md", "repomix-output.xml", "TASKS.md", "apply_changes.sh", "pubspec.lock", "macos/Runner.xcodeproj/project.pbxproj" ]
   }
 }

@@ -11,17 +11,26 @@ const String bookReaderHtmlTemplate = """
       margin: 0; padding: 0; width: 100%; height: 100%; 
       background-color: #121212;
     }
-    #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+    body.loading #viewer { opacity: 0; }
+    #viewer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; opacity: 1; transition: opacity 0.15s ease; }
     mark.known-word { background-color: rgba(99, 102, 241, 0.3) !important; border-bottom: 2px dotted #6366F1 !important; color: inherit !important; }
   </style>
 </head>
-<body>
+<body class="loading">
   <div id="viewer"></div>
   <script>
     let book;
     let rendition;
     window.vocabMap = {}; // NEW: Global cache in JS
     window.lastReportedText = "";
+    window.currentTheme = null;
+    window.currentThemeName = 'light';
+    window.currentFontSize = 100;
+
+    window.setReaderVisible = function(isVisible) {
+      if (isVisible) document.body.classList.remove('loading');
+      else document.body.classList.add('loading');
+    };
 
     // NEW: Safe wrapper for calling the Dart side
     function callFlutter(handlerName, ...args) {
@@ -150,8 +159,114 @@ const String bookReaderHtmlTemplate = """
       return visible;
     };
 
-    async function loadBook(url, initialCfi, precomputedLocations) {
+    function applyThemeToContents(contents) {
+      if (!contents || !contents.document || !window.currentTheme) return;
+      const c = window.currentTheme;
+      const t = window.currentThemeName || 'light';
+      const f = window.currentFontSize || 100;
+      contents.addStylesheetRules({
+          "body": {
+              "background-color": c.bg + " !important",
+              "color": c.fg + " !important",
+              "font-size": f + "% !important"
+          },
+          "p": {
+              "position": "relative !important",
+              "padding-right": "40px !important", // Reduced padding for better text balance
+              "margin-bottom": "1.5em !important",
+              "color": c.fg + " !important",
+              "line-height": "1.6 !important"
+          },
+          "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
+              "color": c.fg + " !important",
+              "background": "transparent !important"
+          },
+          ".lexity-word": { 
+              "cursor": "pointer", 
+              "transition": "background-color 0.3s, border-bottom 0.3s" 
+          },
+          ".lexity-word.unknown": { 
+              "background-color": "rgba(99, 102, 241, 0.15) !important",
+              "border-bottom": "1px dashed " + (t === 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)') + " !important" 
+          },
+          ".lexity-word.learning": { 
+              "background-color": "rgba(236, 72, 153, 0.2) !important", 
+              "border-bottom": "2px solid #EC4899 !important" 
+          },
+          ".lexity-word.known": { 
+              "background-color": "transparent !important",
+              "border-bottom": "none !important",
+              "color": "inherit !important"
+          },
+          ".para-translate-btn": {
+              "position": "absolute !important",
+              "right": "0px !important", // Move to the extreme edge of the padded paragraph
+              "top": "0px !important",
+              "width": "32px !important", // Fixed width
+              "height": "32px !important", // Fixed height
+              "border-radius": "8px !important",
+              "background": (t === 'light' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.15)') + " !important",
+              "border": "1px solid " + (t === 'light' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.25)') + " !important",
+              "color": "#6366F1 !important", 
+              "display": "flex !important", // Use flex for perfect centering
+              "align-items": "center !important",
+              "justify-content": "center !important",
+              "cursor": "pointer !important",
+              "font-size": "14px !important", // Slightly smaller font
+              "font-weight": "bold !important",
+              "user-select": "none !important",
+              "-webkit-user-select": "none !important",
+              "transition": "all 0.15s ease-in-out !important",
+              "z-index": "10 !important"
+          },
+          ".para-translate-btn span": {
+              "display": "block !important",
+              "line-height": "1 !important"
+          },
+          ".para-translate-btn:active": {
+              "background": "#6366F1 !important",
+              "color": "#ffffff !important",
+              "transform": "scale(0.9) !important"
+          },
+          "::selection": {
+              "background-color": "rgba(99, 102, 241, 0.3) !important",
+              "text-decoration": "underline !important",
+              "text-decoration-color": "#6366F1 !important",
+              "color": "inherit !important"
+          }
+      });
+    }
+
+    async function loadBook(config) {
       try {
+        const cfg = config || {};
+        const url = cfg.url;
+        const initialCfi = cfg.initialCfi || "";
+        const precomputedLocations = cfg.precomputedLocations ?? null;
+        const themeColors = cfg.theme || null;
+        const themeName = cfg.themeName || 'light';
+        const fontSize = typeof cfg.fontSize === 'number' ? cfg.fontSize : 100;
+        const initialVocab = cfg.vocabMap ?? null;
+
+        window.setReaderVisible(false);
+
+        if (themeColors && themeColors.bg) {
+          document.body.style.backgroundColor = themeColors.bg;
+          document.documentElement.style.backgroundColor = themeColors.bg;
+        }
+
+        if (initialVocab) {
+          if (typeof initialVocab === "string") {
+            try {
+              window.vocabMap = JSON.parse(initialVocab);
+            } catch (e) {
+              console.warn("BookReader JS: Failed to parse initial vocab, using empty map", e);
+              window.vocabMap = {};
+            }
+          } else {
+            window.vocabMap = initialVocab;
+          }
+        }
         console.log("BookReader JS: Attempting to load EPUB from: " + url);
         console.log("BookReader JS: Received initialCfi: " + initialCfi);
         
@@ -304,11 +419,18 @@ const String bookReaderHtmlTemplate = """
           doc.addEventListener('touchend', () => {
               setTimeout(() => checkAndReportSelection(win), 150);
           });
+
+          if (window.currentTheme) {
+            applyThemeToContents(contents);
+          }
         });
 
         window.applyTheme = function(c, f, t) {
             if (!rendition) return;
             try {
+                window.currentTheme = c;
+                window.currentThemeName = t;
+                window.currentFontSize = f;
                 rendition.themes.fontSize(f + "%");
                 rendition.themes.register(t, {
                     "body": { 
@@ -321,79 +443,7 @@ const String bookReaderHtmlTemplate = """
                 rendition.themes.select(t);
                 
                 rendition.getContents().forEach(contents => {
-                    if (contents && contents.document) {
-                        contents.addStylesheetRules({
-                            "body": {
-                                "background-color": c.bg + " !important",
-                                "color": c.fg + " !important",
-                                "font-size": f + "% !important"
-                            },
-                            "p": {
-                                "position": "relative !important",
-                                "padding-right": "40px !important", // Reduced padding for better text balance
-                                "margin-bottom": "1.5em !important",
-                                "color": c.fg + " !important",
-                                "line-height": "1.6 !important"
-                            },
-                            "p, span, div, h1, h2, h3, h4, h5, h6, a, li, ul, ol, td, th": {
-                                "color": c.fg + " !important",
-                                "background": "transparent !important"
-                            },
-                            ".lexity-word": { 
-                                "cursor": "pointer", 
-                                "transition": "background-color 0.3s, border-bottom 0.3s" 
-                            },
-                            ".lexity-word.unknown": { 
-                                "background-color": "rgba(99, 102, 241, 0.15) !important",
-                                "border-bottom": "1px dashed " + (t === 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)') + " !important" 
-                            },
-                            ".lexity-word.learning": { 
-                                "background-color": "rgba(236, 72, 153, 0.2) !important", 
-                                "border-bottom": "2px solid #EC4899 !important" 
-                            },
-                            ".lexity-word.known": { 
-                                "background-color": "transparent !important",
-                                "border-bottom": "none !important",
-                                "color": "inherit !important"
-                            },
-                            ".para-translate-btn": {
-                                "position": "absolute !important",
-                                "right": "0px !important", // Move to the extreme edge of the padded paragraph
-                                "top": "0px !important",
-                                "width": "32px !important", // Fixed width
-                                "height": "32px !important", // Fixed height
-                                "border-radius": "8px !important",
-                                "background": (t === 'light' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.15)') + " !important",
-                                "border": "1px solid " + (t === 'light' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.25)') + " !important",
-                                "color": "#6366F1 !important", 
-                                "display": "flex !important", // Use flex for perfect centering
-                                "align-items": "center !important",
-                                "justify-content": "center !important",
-                                "cursor": "pointer !important",
-                                "font-size": "14px !important", // Slightly smaller font
-                                "font-weight": "bold !important",
-                                "user-select": "none !important",
-                                "-webkit-user-select": "none !important",
-                                "transition": "all 0.15s ease-in-out !important",
-                                "z-index": "10 !important"
-                            },
-                            ".para-translate-btn span": {
-                                "display": "block !important",
-                                "line-height": "1 !important"
-                            },
-                            ".para-translate-btn:active": {
-                                "background": "#6366F1 !important",
-                                "color": "#ffffff !important",
-                                "transform": "scale(0.9) !important"
-                            },
-                            "::selection": {
-                                "background-color": "rgba(99, 102, 241, 0.3) !important",
-                                "text-decoration": "underline !important",
-                                "text-decoration-color": "#6366F1 !important",
-                                "color": "inherit !important"
-                            }
-                        });
-                    }
+                    if (contents && contents.document) applyThemeToContents(contents);
                 });
             } catch (e) {
                 console.error("Style update error:", e);
@@ -413,9 +463,6 @@ const String bookReaderHtmlTemplate = """
           } 
         });
 
-
-        console.log("BookReader JS: Loading locations first, then displaying CFI: " + initialCfi);
-
         if (precomputedLocations) {
           // INSTANT: Load the locations generated by Next.js
           let locPayload = precomputedLocations;
@@ -431,25 +478,34 @@ const String bookReaderHtmlTemplate = """
           console.log("BookReader JS: Locations loaded from server. Count:", book.locations.length);
         } else {
           // FALLBACK: Generate them if server failed
-          await book.locations.generate(1600);
-          console.log("BookReader JS: Locations generated locally (slow). Count:", book.locations.length);
+          book.locations.generate(1600).then(() => {
+            console.log("BookReader JS: Locations generated locally (slow). Count:", book.locations.length);
+          }).catch((e) => {
+            console.warn("BookReader JS: Locations generation failed", e);
+          });
         }
 
         // Wait for book to be fully ready BEFORE attempting to display
         await book.ready;
         console.log("BookReader JS: Book ready, now displaying at CFI: " + initialCfi);
+
+        if (themeColors) {
+          window.applyTheme(themeColors, fontSize, themeName);
+        }
         
         // Use promise-based display to ensure it completes
         await new Promise((resolve) => {
-          rendition.display(initialCfi || undefined).then(() => {
+          const target = initialCfi && initialCfi.length > 0 ? initialCfi : undefined;
+          rendition.display(target).then(() => {
             console.log("BookReader JS: rendition.display() promise resolved");
             resolve();
           });
         });
         
         // Wait for the display to fully settle before notifying Flutter
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 120));
         
+        window.setReaderVisible(true);
         console.log("BookReader JS: Display completed, calling onReady");
         callFlutter('onReady');
 

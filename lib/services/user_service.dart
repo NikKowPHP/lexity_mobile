@@ -6,6 +6,7 @@ import '../models/user_profile.dart';
 import 'logger_service.dart';
 import '../utils/constants.dart';
 import '../providers/connectivity_provider.dart';
+import '../providers/auth_provider.dart';
 import '../database/app_database.dart';
 
 class UserService {
@@ -15,6 +16,24 @@ class UserService {
 
   UserService(this._ref, this._authTokenService) {
     _logger = _ref.read(loggerProvider);
+  }
+
+  /// Handles 401 errors by attempting to refresh the token and retrying the request.
+  Future<bool> _handleUnauthorizedAndRetry(
+    Future<http.Response> Function() requestFn,
+  ) async {
+    _logger.warning('UserService: 401 detected, attempting token refresh');
+
+    final newToken = await _ref.read(authProvider.notifier).forceRefreshToken();
+
+    if (newToken != null) {
+      _logger.info('UserService: Token refreshed, retrying request');
+      final retryResponse = await requestFn();
+      return retryResponse.statusCode == 200;
+    }
+
+    _logger.warning('UserService: Token refresh failed');
+    return false;
   }
 
   Future<UserProfile> fetchProfile() async {
@@ -56,11 +75,47 @@ class UserService {
         'UserService: fetchProfile response status: ${response.statusCode}',
       );
 
+      // Handle 401 - try to refresh token and retry once
       if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          final newToken = await _authTokenService.getToken();
+          return await http.get(
+            Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+            headers: {
+              'Authorization': 'Bearer $newToken',
+              'Content-Type': 'application/json',
+            },
+          );
+        });
+
+        if (success) {
+          // Re-fetch the profile with the new token
+          final retryResponse = await http.get(
+            Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+            headers: {
+              'Authorization': 'Bearer ${await _authTokenService.getToken()}',
+              'Content-Type': 'application/json',
+            },
+          );
+
+          if (retryResponse.statusCode == 200) {
+            final data = jsonDecode(retryResponse.body);
+            await db.insertUser(data);
+            _logger.info(
+              'UserService: Profile fetched and cached after token refresh',
+            );
+            return UserProfile.fromJson(data);
+          }
+        }
+
         _logger.warning(
-          'UserService: Backend rejected token. Check Supabase JWT secrets match.',
+          'UserService: Token refresh failed, falling back to cache',
         );
-        throw Exception('Unauthorized');
+        final localUsers = await db.getAllUsers();
+        if (localUsers.isNotEmpty) {
+          return UserProfile.fromJson(localUsers.first);
+        }
+        throw Exception('Unauthorized - please log in again');
       }
 
       if (response.statusCode == 200) {
@@ -114,6 +169,38 @@ class UserService {
         'UserService: updateProfile response status: ${response.statusCode}',
       );
 
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          final newToken = await _authTokenService.getToken();
+          return await http.put(
+            Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $newToken',
+            },
+            body: jsonEncode(body),
+          );
+        });
+
+        if (success) {
+          final retryResponse = await http.put(
+            Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${await _authTokenService.getToken()}',
+            },
+            body: jsonEncode(body),
+          );
+
+          if (retryResponse.statusCode == 200) {
+            final data = jsonDecode(retryResponse.body);
+            return UserProfile.fromJson(data);
+          }
+        }
+        throw Exception('Unauthorized - please log in again');
+      }
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return UserProfile.fromJson(data);
@@ -140,6 +227,38 @@ class UserService {
         body: jsonEncode({'newTargetLanguage': newLanguage}),
       );
 
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          final newToken = await _authTokenService.getToken();
+          return await http.put(
+            Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $newToken',
+            },
+            body: jsonEncode({'newTargetLanguage': newLanguage}),
+          );
+        });
+
+        if (success) {
+          final retryResponse = await http.put(
+            Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${await _authTokenService.getToken()}',
+            },
+            body: jsonEncode({'newTargetLanguage': newLanguage}),
+          );
+
+          if (retryResponse.statusCode == 200) {
+            final data = jsonDecode(retryResponse.body);
+            return UserProfile.fromJson(data);
+          }
+        }
+        throw Exception('Unauthorized - please log in again');
+      }
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return UserProfile.fromJson(data);
@@ -164,6 +283,26 @@ class UserService {
         body: jsonEncode(goals.toJson()),
       );
 
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          final newToken = await _authTokenService.getToken();
+          return await http.put(
+            Uri.parse('${AppConstants.baseUrl}/api/user/goals'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $newToken',
+            },
+            body: jsonEncode(goals.toJson()),
+          );
+        });
+
+        if (!success) {
+          throw Exception('Unauthorized - please log in again');
+        }
+        return;
+      }
+
       if (response.statusCode != 200) {
         throw Exception('Failed to update goals');
       }
@@ -185,6 +324,36 @@ class UserService {
         },
       );
 
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          final newToken = await _authTokenService.getToken();
+          return await http.post(
+            Uri.parse('${AppConstants.baseUrl}/api/billing/portal'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $newToken',
+            },
+          );
+        });
+
+        if (success) {
+          final retryResponse = await http.post(
+            Uri.parse('${AppConstants.baseUrl}/api/billing/portal'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${await _authTokenService.getToken()}',
+            },
+          );
+
+          if (retryResponse.statusCode == 200) {
+            final data = jsonDecode(retryResponse.body);
+            return data['url'];
+          }
+        }
+        throw Exception('Unauthorized - please log in again');
+      }
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['url'];
@@ -200,10 +369,26 @@ class UserService {
     _logger.info('UserService: Resetting onboarding');
     try {
       final token = await _authTokenService.getToken();
-      await http.post(
+      final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/user/reset-onboarding'),
         headers: {'Authorization': 'Bearer $token'},
       );
+
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          final newToken = await _authTokenService.getToken();
+          return await http.post(
+            Uri.parse('${AppConstants.baseUrl}/api/user/reset-onboarding'),
+            headers: {'Authorization': 'Bearer $newToken'},
+          );
+        });
+
+        if (!success) {
+          throw Exception('Unauthorized - please log in again');
+        }
+        return;
+      }
     } catch (e) {
       throw Exception('Failed to reset onboarding');
     }
@@ -217,7 +402,7 @@ class UserService {
   }) async {
     try {
       final token = await _authTokenService.getToken();
-      await http.post(
+      final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/user/activity-log'),
         headers: {
           'Content-Type': 'application/json',
@@ -230,6 +415,33 @@ class UserService {
           'targetLanguage': targetLanguage,
         }),
       );
+
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          final newToken = await _authTokenService.getToken();
+          return await http.post(
+            Uri.parse('${AppConstants.baseUrl}/api/user/activity-log'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $newToken',
+            },
+            body: jsonEncode({
+              'startTime': startTime.toIso8601String(),
+              'durationInSeconds': durationInSeconds,
+              'activityType': activityType,
+              'targetLanguage': targetLanguage,
+            }),
+          );
+        });
+
+        if (!success) {
+          _logger.warning(
+            'UserService: Activity logging failed after token refresh',
+          );
+          return;
+        }
+      }
     } catch (e) {
       _logger.warning('Failed to log activity: $e');
     }

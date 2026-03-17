@@ -18,8 +18,8 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, _dbName);
 
-    // Delete existing database to recreate with new schema
-    await deleteDatabase(path);
+    // NOTE: Database migrations are handled in _onUpgrade
+    // Do NOT delete the database here - it would wipe all cached data
 
     return await openDatabase(
       path,

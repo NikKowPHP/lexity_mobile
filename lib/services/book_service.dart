@@ -8,6 +8,7 @@ import '../utils/constants.dart';
 import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
+import '../providers/auth_provider.dart';
 import 'token_service.dart';
 import 'logger_service.dart';
 
@@ -35,6 +36,24 @@ class BookService {
     };
   }
 
+  /// Handles 401 errors by attempting to refresh the token and retrying the request.
+  Future<bool> _handleUnauthorizedAndRetry(
+    Future<http.Response> Function() requestFn,
+  ) async {
+    _logger.warning('BookService: 401 detected, attempting token refresh');
+
+    final newToken = await _ref.read(authProvider.notifier).forceRefreshToken();
+
+    if (newToken != null) {
+      _logger.info('BookService: Token refreshed, retrying request');
+      final retryResponse = await requestFn();
+      return retryResponse.statusCode == 200;
+    }
+
+    _logger.warning('BookService: Token refresh failed');
+    return false;
+  }
+
   Future<List<UserBook>> getBooks() async {
     final isOnline = _ref.read(connectivityProvider);
 
@@ -44,6 +63,35 @@ class BookService {
           Uri.parse('${AppConstants.baseUrl}/api/books'),
           headers: await _getHeaders(),
         );
+
+        // Handle 401 - try to refresh token and retry once
+        if (response.statusCode == 401) {
+          final success = await _handleUnauthorizedAndRetry(() async {
+            return await http.get(
+              Uri.parse('${AppConstants.baseUrl}/api/books'),
+              headers: await _getHeaders(),
+            );
+          });
+
+          if (success) {
+            final retryResponse = await http.get(
+              Uri.parse('${AppConstants.baseUrl}/api/books'),
+              headers: await _getHeaders(),
+            );
+
+            if (retryResponse.statusCode == 200) {
+              final List data = jsonDecode(retryResponse.body);
+              _logger.info(
+                'BookService: Successfully fetched ${data.length} books after token refresh',
+              );
+              for (final item in data) {
+                await _upsertBookLocal(item);
+              }
+              return data.map((e) => UserBook.fromJson(e)).toList();
+            }
+          }
+          return _getLocalBooks();
+        }
 
         if (response.statusCode == 200) {
           final List data = jsonDecode(response.body);
@@ -67,6 +115,73 @@ class BookService {
     }
 
     return _getLocalBooks();
+  }
+
+  Future<List<UserBook>> syncBooks() async {
+    _logger.info('BookService: Starting book sync from backend');
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (!isOnline) {
+      _logger.warning('BookService: Cannot sync, device is offline');
+      return _getLocalBooks();
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/api/books'),
+        headers: await _getHeaders(),
+      );
+
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          return await http.get(
+            Uri.parse('${AppConstants.baseUrl}/api/books'),
+            headers: await _getHeaders(),
+          );
+        });
+
+        if (success) {
+          final retryResponse = await http.get(
+            Uri.parse('${AppConstants.baseUrl}/api/books'),
+            headers: await _getHeaders(),
+          );
+
+          if (retryResponse.statusCode == 200) {
+            final List data = jsonDecode(retryResponse.body);
+            _logger.info(
+              'BookService: Successfully fetched ${data.length} books from backend for sync',
+            );
+            for (final item in data) {
+              await _upsertBookLocal(item);
+            }
+            return data.map((e) => UserBook.fromJson(e)).toList();
+          }
+        }
+        return _getLocalBooks();
+      }
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info(
+          'BookService: Successfully fetched ${data.length} books from backend for sync',
+        );
+
+        for (final item in data) {
+          await _upsertBookLocal(item);
+        }
+
+        return data.map((e) => UserBook.fromJson(e)).toList();
+      } else {
+        _logger.error(
+          'BookService: Failed to sync books. Status: ${response.statusCode}',
+        );
+        return _getLocalBooks();
+      }
+    } catch (e, st) {
+      _logger.error('BookService: Exception during book sync', e, st);
+      return _getLocalBooks();
+    }
   }
 
   Future<List<UserBook>> _getLocalBooks() async {

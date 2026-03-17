@@ -52,6 +52,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
   bool _isInitialized = false;
   String? _lastSavedCfi;
   bool _hasLocationsFromBackend = false;
+  bool _readerReady = false;
+  bool _vocabPrefetched = false;
+  String? _appliedTheme;
+  double? _appliedFontSize;
 
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
@@ -59,17 +63,26 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
   // Track initial CFI when book opens to only save on user navigation
   String? _initialCfiOnReady;
 
-  void _updateReaderStyles() {
-    final logger = ref.read(loggerProvider);
-    logger.debug(
-      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%, lastCfi: $_lastCfi, currentCfi: $_currentCfi, lastSavedCfi: $_lastSavedCfi, initialCfiOnReady: $_initialCfiOnReady)',
-    );
-
-    final colors = {
+  Map<String, String> _themeColors() {
+    return {
       'light': {'bg': '#ffffff', 'fg': '#000000'},
       'dark': {'bg': '#121212', 'fg': '#e4e4e4'},
       'sepia': {'bg': '#f4ecd8', 'fg': '#5b4636'},
     }[_theme]!;
+  }
+
+  void _updateReaderStyles({bool force = false}) {
+    final logger = ref.read(loggerProvider);
+    if (!force && _appliedTheme == _theme && _appliedFontSize == _fontSize) {
+      return;
+    }
+    _appliedTheme = _theme;
+    _appliedFontSize = _fontSize;
+    logger.debug(
+      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%, lastCfi: $_lastCfi, currentCfi: $_currentCfi, lastSavedCfi: $_lastSavedCfi, initialCfiOnReady: $_initialCfiOnReady)',
+    );
+
+    final colors = _themeColors();
 
     webViewController?.evaluateJavascript(
       source: "if (window.applyTheme) window.applyTheme(${jsonEncode(colors)}, $_fontSize, '$_theme');",
@@ -274,6 +287,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
           _hasLocationsFromBackend = book.locations != null;
         });
         _ensureBookDownloaded(book);
+        if (!_vocabPrefetched) {
+          _vocabPrefetched = true;
+          ref
+              .read(vocabularyProvider.notifier)
+              .loadVocabulary(book.targetLanguage);
+        }
       } else if (!_hasLocationsFromBackend && book.locations != null) {
         setState(() => _hasLocationsFromBackend = true);
       }
@@ -556,17 +575,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                       controller.addJavaScriptHandler(
                         handlerName: 'onReady',
                         callback: (_) {
-                          // 1. Trigger the load from backend
-                          ref
-                              .read(vocabularyProvider.notifier)
-                              .loadVocabulary(book.targetLanguage);
-
                           logger.info('BookReader: onReady fired, enabling save');
                           if (mounted) {
-                            setState(() => _canSaveToBackend = true);
+                            setState(() {
+                              _canSaveToBackend = true;
+                              _readerReady = true;
+                            });
                           }
 
-                          _updateReaderStyles();
+                          _updateReaderStyles(force: true);
                         },
                       );
 
@@ -653,24 +670,55 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                     },
                     onLoadStop: (controller, _) async {
                       if (kIsWeb || _localPort != null) {
+                        if (mounted) {
+                          setState(() => _readerReady = false);
+                        }
                         final String bookUrl = kIsWeb
                             ? (book.signedUrl ?? '')
                             : "http://localhost:$_localPort/books/${book.id}.epub";
                         
                         // NEW: Pass the locations string from the DB to the JS function
                         final String locationsJson = book.locations ?? 'null';
+                        final vocabData = ref.read(vocabularyProvider).value;
+                        final String vocabJson =
+                            vocabData != null ? jsonEncode(vocabData) : 'null';
+                        final colors = _themeColors();
                         
                         logger.info(
                           'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}, locations: ${book.locations != null ? "present (${book.locations!.length})" : "null"}',
                         );
-                        final jsCall =
-                            "loadBook(${jsonEncode(bookUrl)}, ${jsonEncode(_lastCfi ?? '')}, $locationsJson);";
+                        final jsCall = """
+                          loadBook({
+                            url: ${jsonEncode(bookUrl)},
+                            initialCfi: ${jsonEncode(_lastCfi ?? '')},
+                            precomputedLocations: $locationsJson,
+                            theme: ${jsonEncode(colors)},
+                            themeName: ${jsonEncode(_theme)},
+                            fontSize: $_fontSize,
+                            vocabMap: $vocabJson
+                          });
+                        """;
                         await controller.evaluateJavascript(source: jsCall);
                       }
                     },
                   );
                 },
               ),
+              if (!_readerReady)
+                Positioned.fill(
+                  child: Container(
+                    color: _theme == 'dark'
+                        ? const Color(0xFF121212)
+                        : (_theme == 'sepia'
+                              ? const Color(0xFFf4ecd8)
+                              : Colors.white),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: LiquidTheme.primaryAccent,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

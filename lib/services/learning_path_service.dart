@@ -6,6 +6,7 @@ import '../utils/constants.dart';
 import 'token_service.dart';
 import 'logger_service.dart';
 import '../providers/connectivity_provider.dart';
+import '../providers/auth_provider.dart';
 import '../database/app_database.dart';
 
 class LearningPathService {
@@ -28,6 +29,27 @@ class LearningPathService {
     };
   }
 
+  /// Handles 401 errors by attempting to refresh the token and retrying the request.
+  /// Returns true if the request was successful after refresh, false otherwise.
+  Future<bool> _handleUnauthorizedAndRetry(
+    Future<http.Response> Function() requestFn,
+  ) async {
+    _logger.warning(
+      'LearningPathService: 401 detected, attempting token refresh',
+    );
+
+    final newToken = await _ref.read(authProvider.notifier).forceRefreshToken();
+
+    if (newToken != null) {
+      _logger.info('LearningPathService: Token refreshed, retrying request');
+      final retryResponse = await requestFn();
+      return retryResponse.statusCode == 200;
+    }
+
+    _logger.warning('LearningPathService: Token refresh failed');
+    return false;
+  }
+
   Future<List<LearningModule>> getPath(String language) async {
     _logger.info('LearningPathService: Fetching path for $language');
 
@@ -47,6 +69,45 @@ class LearningPathService {
         ),
         headers: await _getHeaders(),
       );
+
+      // Handle 401 - try to refresh token and retry once
+      if (response.statusCode == 401) {
+        final success = await _handleUnauthorizedAndRetry(() async {
+          return await http.get(
+            Uri.parse(
+              '${AppConstants.baseUrl}/api/learning-path?targetLanguage=$language',
+            ),
+            headers: await _getHeaders(),
+          );
+        });
+
+        if (success) {
+          // Re-fetch the data with the new token
+          final retryResponse = await http.get(
+            Uri.parse(
+              '${AppConstants.baseUrl}/api/learning-path?targetLanguage=$language',
+            ),
+            headers: await _getHeaders(),
+          );
+
+          if (retryResponse.statusCode == 200) {
+            final List data = jsonDecode(retryResponse.body);
+            await _db.cacheLearningModules(
+              language,
+              data.cast<Map<String, dynamic>>(),
+            );
+            _prefetchNextModules(language);
+            return data.map((e) => LearningModule.fromJson(e)).toList();
+          }
+        }
+
+        // If refresh failed or retry still failed, try cached data
+        final cached = await _db.getCachedLearningModules(language);
+        if (cached.isNotEmpty) {
+          return cached.map((e) => LearningModule.fromJson(e)).toList();
+        }
+        throw Exception('Unauthorized - please log in again');
+      }
 
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);

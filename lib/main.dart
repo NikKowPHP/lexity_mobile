@@ -63,10 +63,14 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      ref.read(userProfileProvider.notifier).refresh();
+      // Check auth status first to validate/refresh token before other providers fetch data
+      ref.read(authProvider.notifier).checkAuthStatus();
 
-      ref.read(syncServiceProvider).syncPendingMutations();
-      ref.read(hydrationServiceProvider).performFullSync();
+      // Delay other sync operations to allow auth check to complete first
+      Future.delayed(const Duration(milliseconds: 100), () {
+        ref.read(syncServiceProvider).syncPendingMutations();
+        ref.read(hydrationServiceProvider).performFullSync();
+      });
     }
   }
 

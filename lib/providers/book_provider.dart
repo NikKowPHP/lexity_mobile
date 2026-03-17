@@ -72,6 +72,20 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
       _logger.error('BookNotifier: Progress update failed for $id', e, st);
     }
   }
+
+  Future<void> refreshBooks() async {
+    _logger.info('BookNotifier: Starting book refresh');
+    state = const AsyncValue.loading();
+    try {
+      await _service.syncBooks();
+      state = const AsyncValue.data(null);
+      _logger.info('BookNotifier: Book refresh successful');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Book refresh failed', e, st);
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
 }
 
 final bookNotifierProvider =

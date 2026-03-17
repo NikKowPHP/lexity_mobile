@@ -43,6 +43,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
   late final TokenService _authTokenService;
   late final TokenService _refreshTokenService;
 
+  // Lock to prevent multiple simultaneous refresh calls
+  Future<List<String>?>? _refreshOngoing;
+
   AuthNotifier(
     this._ref,
     this._authService,
@@ -52,6 +55,31 @@ class AuthNotifier extends StateNotifier<AuthState> {
     this._refreshTokenService,
   ) : super(AuthState()) {
     checkAuthStatus();
+  }
+
+  /// Returns a valid token, refreshing if necessary.
+  /// This method can be called by services before making API requests.
+  Future<String?> getValidToken() async {
+    final token = await _authTokenService.getToken();
+    if (token == null) {
+      return null;
+    }
+    // Note: For additional safety, you could add JWT decoding here to check expiry locally
+    // before sending the request. For now, we rely on 401 responses to trigger refresh.
+    return token;
+  }
+
+  /// Force refresh the token. Returns the new access token if successful, null otherwise.
+  /// Uses a lock to prevent multiple simultaneous refresh calls.
+  Future<String?> forceRefreshToken() async {
+    final refreshedTokens = await refreshToken();
+    if (refreshedTokens != null && refreshedTokens.length >= 2) {
+      await _authTokenService.saveToken(refreshedTokens[0]);
+      await _refreshTokenService.saveToken(refreshedTokens[1]);
+      _logger.info('AuthNotifier: Token force refreshed successfully');
+      return refreshedTokens[0];
+    }
+    return null;
   }
 
   Future<void> checkAuthStatus() async {
@@ -116,8 +144,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Refresh token with lock to prevent multiple simultaneous refresh calls.
+  /// Returns the new tokens if successful, null otherwise.
   Future<List<String>?> refreshToken() async {
-    _logger.info('AuthNotifier: refreshing token, retrieving from storage');
+    // If a refresh is already ongoing, wait for it to complete
+    if (_refreshOngoing != null) {
+      _logger.info(
+        'AuthNotifier: Refresh already in progress, waiting for it...',
+      );
+      return await _refreshOngoing;
+    }
+
+    // Start a new refresh
+    _refreshOngoing = _performRefresh();
+    final result = await _refreshOngoing;
+    _refreshOngoing = null;
+    return result;
+  }
+
+  Future<List<String>?> _performRefresh() async {
+    _logger.info(
+      'AuthNotifier: performing token refresh, retrieving from storage',
+    );
     final token = await _refreshTokenService.getToken();
     if (token == null) {
       _logger.info('AuthNotifier: no refresh token found in storage');
@@ -126,6 +174,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     try {
       final refreshedAuthToken = await _authService.refreshToken(token);
+      _logger.info('AuthNotifier: refresh token request successful');
       return refreshedAuthToken;
     } catch (e) {
       _logger.error('AuthNotifier: refresh token request failed', e);
