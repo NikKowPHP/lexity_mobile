@@ -1,19 +1,23 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'package:lexity_mobile/services/token_service.dart';
 import '../models/translation_result.dart';
 import 'logger_service.dart';
 import '../utils/constants.dart';
+import '../providers/connectivity_provider.dart';
 
 class AIService {
   final Ref _ref;
-
   late final LoggerService _logger;
   final TokenService _authTokenService;
+
   AIService(this._ref, this._authTokenService) {
     _logger = _ref.read(loggerProvider);
   }
+
+  bool get _isOnline => _ref.read(connectivityProvider);
 
   Future<Map<String, String>> _getHeaders() async {
     final token = await _authTokenService.getToken();
@@ -23,7 +27,6 @@ class AIService {
     };
   }
 
-  // Call 1: Fast Full Translation
   Future<String> translate(
     String text,
     String sourceLang,
@@ -32,6 +35,14 @@ class AIService {
     _logger.info(
       'AIService: Requesting translation from $sourceLang to $targetLang',
     );
+
+    if (!_isOnline) {
+      _logger.warning(
+        'AIService: Offline, returning offline translation fallback',
+      );
+      return _getOfflineTranslation(text, sourceLang, targetLang);
+    }
+
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/ai/translate'),
@@ -59,11 +70,92 @@ class AIService {
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
       _logger.error('AIService: Error during translate', e, stackTrace);
-      rethrow;
+
+      if (_isOnline) {
+        rethrow;
+      }
+      return _getOfflineTranslation(text, sourceLang, targetLang);
     }
   }
 
-  // Call 2: Detailed Breakdown
+  String _getOfflineTranslation(
+    String text,
+    String sourceLang,
+    String targetLang,
+  ) {
+    final sourceCode = _mapToMlKitCode(sourceLang);
+    final targetCode = _mapToMlKitCode(targetLang);
+
+    try {
+      final translator = OnDeviceTranslator(
+        sourceLanguage: _getTranslateLanguage(sourceCode),
+        targetLanguage: _getTranslateLanguage(targetCode),
+      );
+
+      translator
+          .translateText(text)
+          .then((result) {
+            _logger.info(
+              'AIService: Offline ML translation successful: $result',
+            );
+          })
+          .catchError((e) {
+            _logger.warning('AIService: Offline ML translation failed: $e');
+          });
+
+      return '[$targetLang offline: $text]';
+    } catch (e) {
+      _logger.warning('AIService: Offline ML translation setup failed: $e');
+      return '[$targetLang translation unavailable offline: "$text"]';
+    }
+  }
+
+  TranslateLanguage _getTranslateLanguage(String code) {
+    switch (code) {
+      case 'es':
+        return TranslateLanguage.spanish;
+      case 'fr':
+        return TranslateLanguage.french;
+      case 'de':
+        return TranslateLanguage.german;
+      case 'it':
+        return TranslateLanguage.italian;
+      case 'pt':
+        return TranslateLanguage.portuguese;
+      case 'zh':
+        return TranslateLanguage.chinese;
+      case 'ja':
+        return TranslateLanguage.japanese;
+      case 'ko':
+        return TranslateLanguage.korean;
+      case 'ru':
+        return TranslateLanguage.russian;
+      case 'ar':
+        return TranslateLanguage.arabic;
+      case 'en':
+        return TranslateLanguage.english;
+      default:
+        return TranslateLanguage.english;
+    }
+  }
+
+  String _mapToMlKitCode(String language) {
+    const Map<String, String> languageMapping = {
+      'spanish': 'es',
+      'french': 'fr',
+      'german': 'de',
+      'italian': 'it',
+      'portuguese': 'pt',
+      'chinese': 'zh',
+      'japanese': 'ja',
+      'korean': 'ko',
+      'russian': 'ru',
+      'arabic': 'ar',
+      'english': 'en',
+    };
+    return languageMapping[language.toLowerCase()] ?? language.toLowerCase();
+  }
+
   Future<List<TranslationSegment>> translateBreakdown(
     String text,
     String sourceLang,
@@ -72,6 +164,12 @@ class AIService {
     _logger.info(
       'AIService: Requesting breakdown from $sourceLang to $targetLang',
     );
+
+    if (!_isOnline) {
+      _logger.warning('AIService: Offline, breakdown requires internet');
+      throw Exception('Breakdown requires internet connection');
+    }
+
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/ai/translate-breakdown'),
@@ -109,7 +207,6 @@ class AIService {
     }
   }
 
-  // Call 3: Contextual Translation (for reading tooltips)
   Future<Map<String, dynamic>> contextualTranslate({
     required String selectedText,
     required String context,
@@ -118,6 +215,18 @@ class AIService {
     required String nativeLanguage,
   }) async {
     _logger.info('AIService: Requesting contextual translation');
+
+    if (!_isOnline) {
+      _logger.warning('AIService: Offline, returning offline fallback');
+      return _getOfflineContextualTranslation(
+        selectedText,
+        context,
+        sourceLanguage,
+        targetLanguage,
+        nativeLanguage,
+      );
+    }
+
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/ai/contextual-translate'),
@@ -141,8 +250,33 @@ class AIService {
         e,
         stackTrace,
       );
-      rethrow;
+
+      if (_isOnline) {
+        rethrow;
+      }
+      return _getOfflineContextualTranslation(
+        selectedText,
+        context,
+        sourceLanguage,
+        targetLanguage,
+        nativeLanguage,
+      );
     }
+  }
+
+  Map<String, dynamic> _getOfflineContextualTranslation(
+    String selectedText,
+    String context,
+    String sourceLanguage,
+    String targetLanguage,
+    String nativeLanguage,
+  ) {
+    return {
+      'translation': '[$targetLanguage translation unavailable offline]',
+      'explanation':
+          'Offline mode: Context-aware translation requires internet connection.',
+      'isOffline': true,
+    };
   }
 
   Future<String> getTutorResponse({
@@ -150,14 +284,16 @@ class AIService {
     required Map<String, dynamic> context,
     required List<Map<String, String>> chatHistory,
   }) async {
+    if (!_isOnline) {
+      _logger.warning('AIService: Offline, Tutor requires internet');
+      throw Exception('Tutor requires internet connection');
+    }
+
     _logger.info('AIService: Requesting tutor response from $endpoint');
     final response = await http.post(
       Uri.parse('${AppConstants.baseUrl}$endpoint'),
       headers: await _getHeaders(),
-      body: jsonEncode({
-        ...context,
-        'chatHistory': chatHistory,
-      }),
+      body: jsonEncode({...context, 'chatHistory': chatHistory}),
     );
 
     if (response.statusCode == 200) {
@@ -171,6 +307,11 @@ class AIService {
     String content,
     String language,
   ) async {
+    if (!_isOnline) {
+      _logger.warning('AIService: Offline, returning offline suggestions');
+      return _getOfflineSuggestions();
+    }
+
     _logger.info('AIService: Requesting stuck writer suggestions');
     final response = await http.post(
       Uri.parse('${AppConstants.baseUrl}/api/ai/stuck-writer'),
@@ -186,16 +327,31 @@ class AIService {
       final List suggestions = jsonDecode(response.body)['suggestions'] ?? [];
       return suggestions.map((s) => s.toString()).toList();
     }
-    return ["Try writing about how you feel today.", "What did you eat for breakfast?"];
+    return _getOfflineSuggestions();
+  }
+
+  List<String> _getOfflineSuggestions() {
+    return [
+      'Try writing about how you feel today.',
+      'What did you eat for breakfast?',
+      'Describe your surroundings.',
+      'Write about a recent memory.',
+    ];
   }
 
   Future<List<String>> getStuckSpeakerSuggestions(
     List<int> audioBytes,
     String language,
   ) async {
+    if (!_isOnline) {
+      _logger.warning('AIService: Offline, returning offline suggestions');
+      return [
+        "Try saying: 'I am practicing my speaking.'",
+        "Describe your day.",
+      ];
+    }
+
     _logger.info('AIService: Requesting stuck speaker suggestions');
-    // Simplified for now: just sending bytes. 
-    // In a real app, we might use multipart/form-data for files.
     final response = await http.post(
       Uri.parse('${AppConstants.baseUrl}/api/ai/stuck-speaker'),
       headers: await _getHeaders(),

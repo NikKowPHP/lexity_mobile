@@ -7,6 +7,7 @@ import 'package:lexity_mobile/services/token_service.dart';
 
 import 'logger_service.dart';
 import '../utils/constants.dart';
+import 'hydration_service.dart';
 
 class AuthService {
   final Ref ref;
@@ -21,7 +22,9 @@ class AuthService {
   }
 
   Future<bool> login(String email, String password) async {
-    _logger.info('AuthService: Attempting login for user: $email and ${AppConstants.baseUrl}');
+    _logger.info(
+      'AuthService: Attempting login for user: $email and ${AppConstants.baseUrl}',
+    );
     try {
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/auth/login'),
@@ -44,9 +47,12 @@ class AuthService {
           );
 
           _logger.info('DATA FROM LOGIN RESPONSE: $data');
-          
+
           // NEW: Sync user immediately after login to ensure DB profile exists
           await _syncUser(data['access_token']);
+
+          // Hydrate local DB with data from server
+          await ref.read(hydrationServiceProvider).performFullSync();
         }
         if (data['refresh_token'] != null) {
           await _refreshTokenService.saveToken(data['refresh_token']);

@@ -1,0 +1,118 @@
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../app_database.dart';
+
+class SyncRepository {
+  final AppDatabase _db;
+
+  SyncRepository(this._db);
+
+  Future<void> enqueueMutation({
+    required String entityType,
+    required String action,
+    required String entityId,
+    required Map<String, dynamic> payload,
+  }) async {
+    await _db.enqueueMutation({
+      'entity_type': entityType,
+      'action': action,
+      'entity_id': entityId,
+      'payload_json': jsonEncode(payload),
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingMutations() async {
+    return await _db.getPendingMutations();
+  }
+
+  Stream<List<Map<String, dynamic>>> watchPendingMutations() {
+    return _db.watchPendingMutations();
+  }
+
+  Future<int> getPendingCount() async {
+    return await _db.getPendingMutationsCount();
+  }
+
+  Future<void> removeMutation(int id) async {
+    await _db.removeMutation(id);
+  }
+
+  Future<void> incrementRetryCount(int id) async {
+    await _db.incrementRetryCount(id);
+  }
+
+  Future<void> clearQueue() async {
+    await _db.clearSyncQueue();
+  }
+
+  // Book mutations
+  Future<void> enqueueBookProgress(
+    String bookId,
+    String cfi,
+    double progressPct,
+  ) async {
+    await enqueueMutation(
+      entityType: 'book',
+      action: 'update_progress',
+      entityId: bookId,
+      payload: {'currentCfi': cfi, 'progressPct': progressPct},
+    );
+  }
+
+  Future<void> enqueueBookDelete(String bookId) async {
+    await enqueueMutation(
+      entityType: 'book',
+      action: 'delete',
+      entityId: bookId,
+      payload: {},
+    );
+  }
+
+  // Journal mutations
+  Future<void> enqueueJournalCreate(
+    String journalId,
+    String title,
+    String content,
+    String targetLanguage,
+    String? moduleId,
+    String mode,
+  ) async {
+    await enqueueMutation(
+      entityType: 'journal',
+      action: 'create',
+      entityId: journalId,
+      payload: {
+        'title': title,
+        'content': content,
+        'targetLanguage': targetLanguage,
+        'moduleId': moduleId,
+        'mode': mode,
+      },
+    );
+  }
+
+  // SRS mutations
+  Future<void> enqueueSrsReview(String itemId, DateTime nextReviewDate) async {
+    await enqueueMutation(
+      entityType: 'srs',
+      action: 'review',
+      entityId: itemId,
+      payload: {'nextReviewDate': nextReviewDate.toIso8601String()},
+    );
+  }
+
+  // Vocabulary mutations
+  Future<void> enqueueVocabUpdate(String word, String status) async {
+    await enqueueMutation(
+      entityType: 'vocabulary',
+      action: 'update',
+      entityId: word,
+      payload: {'status': status},
+    );
+  }
+}
+
+final syncRepositoryProvider = Provider<SyncRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  return SyncRepository(db);
+});

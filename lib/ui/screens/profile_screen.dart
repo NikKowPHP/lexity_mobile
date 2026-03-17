@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/connectivity_provider.dart';
+import '../../services/sync_service.dart';
 import '../../models/user_profile.dart';
 import '../../theme/liquid_theme.dart';
 import '../../utils/constants.dart';
@@ -64,6 +67,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 onExport: () =>
                     _launchURL('${AppConstants.baseUrl}/api/user/export'),
               ),
+
+              const SizedBox(height: 24),
+              const _SectionHeader(title: "Sync Status"),
+              const _SyncStatusSection(),
 
               const SizedBox(height: 24),
               const _SectionHeader(title: "Account"),
@@ -594,6 +601,95 @@ class _AddLanguageDialogState extends ConsumerState<_AddLanguageDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SyncStatusSection extends ConsumerWidget {
+  const _SyncStatusSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isOnline = ref.watch(connectivityProvider);
+    final syncQueueCount = ref.watch(syncQueueCountProvider);
+    final lastSyncTime = ref.watch(lastSyncTimeProvider);
+
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: isOnline ? Colors.greenAccent : Colors.orange,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                isOnline ? "Online" : "Offline",
+                style: TextStyle(
+                  color: isOnline ? Colors.greenAccent : Colors.orange,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          syncQueueCount.when(
+            data: (count) => Row(
+              children: [
+                const Icon(Icons.sync, color: Colors.white54, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  "Pending changes: $count",
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+            loading: () => const Text(
+              "Checking sync queue...",
+              style: TextStyle(color: Colors.white38),
+            ),
+            error: (_, _) => const Text(
+              "Unable to check sync status",
+              style: TextStyle(color: Colors.white38),
+            ),
+          ),
+          const SizedBox(height: 8),
+          lastSyncTime != null
+              ? Row(
+                  children: [
+                    const Icon(
+                      Icons.access_time,
+                      color: Colors.white38,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Last synced: ${DateFormat.yMd().add_jm().format(lastSyncTime)}",
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                )
+              : const Text(
+                  "Never synced",
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+          if (isOnline)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: LiquidButton(
+                text: "Sync Now",
+                onTap: () =>
+                    ref.read(syncServiceProvider).syncPendingMutations(),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -9,9 +9,21 @@ final booksProvider = FutureProvider.autoDispose<List<UserBook>>((ref) async {
   return service.getBooks();
 });
 
-final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((ref, id) async {
+final booksStreamProvider = StreamProvider.autoDispose<List<UserBook>>((ref) {
   final service = ref.watch(bookServiceProvider);
-  return service.getBook(id);
+  return service.watchBooks();
+});
+
+final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((
+  ref,
+  id,
+) async {
+  final service = ref.watch(bookServiceProvider);
+  final book = await service.getBook(id);
+  if (book == null) {
+    throw Exception('Book not found');
+  }
+  return book;
 });
 
 class BookNotifier extends StateNotifier<AsyncValue<void>> {
@@ -19,10 +31,17 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
   final LoggerService _logger;
   final Ref _ref;
 
-  BookNotifier(this._service, this._logger, this._ref) : super(const AsyncValue.data(null));
+  BookNotifier(this._service, this._logger, this._ref)
+    : super(const AsyncValue.data(null));
 
-  Future<void> uploadBook(File file, String targetLanguage, String title) async {
-    _logger.info('BookNotifier: Starting upload process for "$title" ($targetLanguage)');
+  Future<void> uploadBook(
+    File file,
+    String targetLanguage,
+    String title,
+  ) async {
+    _logger.info(
+      'BookNotifier: Starting upload process for "$title" ($targetLanguage)',
+    );
     state = const AsyncValue.loading();
     try {
       await _service.uploadBook(file, targetLanguage, title);
@@ -52,23 +71,26 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
     _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
     try {
       await _service.updateProgress(id, cfi, progressPct);
-      
+
       Future.microtask(() {
         _ref.invalidate(bookDetailProvider(id));
         _ref.invalidate(booksProvider);
       });
 
-      _logger.info('BookNotifier: Progress update successful for $id $cfi $progressPct');
+      _logger.info(
+        'BookNotifier: Progress update successful for $id $cfi $progressPct',
+      );
     } catch (e, st) {
       _logger.error('BookNotifier: Progress update failed for $id', e, st);
     }
   }
 }
 
-final bookNotifierProvider = StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
-  return BookNotifier(
-    ref.watch(bookServiceProvider), 
-    ref.read(loggerProvider),
-    ref
-  );
-});
+final bookNotifierProvider =
+    StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
+      return BookNotifier(
+        ref.watch(bookServiceProvider),
+        ref.read(loggerProvider),
+        ref,
+      );
+    });

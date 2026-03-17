@@ -4,14 +4,26 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/book.dart';
 import '../utils/constants.dart';
+import '../database/app_database.dart';
+import '../database/repositories/sync_repository.dart';
+import '../providers/connectivity_provider.dart';
 import 'token_service.dart';
 import 'logger_service.dart';
 
 class BookService {
   final TokenService _authTokenService;
+  final AppDatabase _db;
+  final SyncRepository _syncRepo;
+  final Ref _ref;
   late final LoggerService _logger;
 
-  BookService(this._authTokenService, this._logger);
+  BookService(
+    this._authTokenService,
+    this._db,
+    this._syncRepo,
+    this._ref,
+    this._logger,
+  );
 
   Future<Map<String, String>> _getHeaders() async {
     final token = await _authTokenService.getToken();
@@ -22,106 +34,153 @@ class BookService {
   }
 
   Future<List<UserBook>> getBooks() async {
-    _logger.info('BookService: Fetching books list from backend');
-    try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books'),
-        headers: await _getHeaders(),
-      );
+    final isOnline = _ref.read(connectivityProvider);
 
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info('BookService: Successfully fetched ${data.length} books');
-        return data.map((e) => UserBook.fromJson(e)).toList();
+    if (isOnline) {
+      try {
+        final response = await http.get(
+          Uri.parse('${AppConstants.baseUrl}/api/books'),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final List data = jsonDecode(response.body);
+          _logger.info(
+            'BookService: Successfully fetched ${data.length} books from backend',
+          );
+
+          for (final item in data) {
+            await _upsertBookLocal(item);
+          }
+
+          return data.map((e) => UserBook.fromJson(e)).toList();
+        }
+      } catch (e, st) {
+        _logger.warning(
+          'BookService: Failed to fetch from backend, falling back to local',
+          e,
+          st,
+        );
       }
-      _logger.error('BookService: Failed to fetch books. Status: ${response.statusCode}');
-      throw Exception('Failed to load books');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in getBooks', e, st);
-      rethrow;
     }
+
+    return _getLocalBooks();
   }
 
-  Future<UserBook> getBook(String id) async {
-    _logger.info('BookService: Fetching book details for ID: $id');
-    try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-        headers: await _getHeaders(),
-      );
+  Future<List<UserBook>> _getLocalBooks() async {
+    final books = await _db.getAllBooks();
+    return books.map((map) => _userBookFromDb(map)).toList();
+  }
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _logger.info('BookService: Successfully fetched details for "${data['title']}"');
-        return UserBook.fromJson(data);
+  Future<UserBook?> getBook(String id) async {
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (isOnline) {
+      try {
+        final response = await http.get(
+          Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          await _upsertBookLocal(data);
+          return UserBook.fromJson(data);
+        }
+      } catch (e, st) {
+        _logger.warning(
+          'BookService: Failed to fetch book $id from backend',
+          e,
+          st,
+        );
       }
-      _logger.error('BookService: Failed to fetch book $id. Status: ${response.statusCode}');
-      throw Exception('Failed to load book');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in getBook $id', e, st);
-      rethrow;
     }
+
+    final localBook = await _db.getBookById(id);
+    return localBook != null ? _userBookFromDb(localBook) : null;
+  }
+
+  Future<void> _upsertBookLocal(Map<String, dynamic> data) async {
+    await _db.insertBook({
+      'id': data['id'],
+      'title': data['title'] ?? 'Unknown Title',
+      'author': data['author'],
+      'target_language': data['targetLanguage'] ?? 'spanish',
+      'storage_path': data['storagePath'] ?? '',
+      'cover_image_url': data['coverImageUrl'],
+      'current_cfi': data['currentCfi'],
+      'progress_pct': (data['progressPct'] ?? 0).toDouble(),
+      'created_at': DateTime.parse(data['createdAt']).millisecondsSinceEpoch,
+      'signed_url': data['signedUrl']?.startsWith('/') == true
+          ? '${AppConstants.baseUrl}${data['signedUrl']}'
+          : data['signedUrl'],
+      'locations': data['locations'],
+      'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  UserBook _userBookFromDb(Map<String, dynamic> map) {
+    return UserBook(
+      id: map['id'] as String,
+      title: map['title'] as String,
+      author: map['author'] as String?,
+      targetLanguage: map['target_language'] as String,
+      storagePath: map['storage_path'] as String,
+      coverImageUrl: map['cover_image_url'] as String?,
+      currentCfi: map['current_cfi'] as String?,
+      progressPct: (map['progress_pct'] as num?)?.toDouble() ?? 0.0,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+      signedUrl: map['signed_url'] as String?,
+      locations: map['locations'] as String?,
+    );
   }
 
   Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    _logger.info('BookService: Requesting progress update for $id to $progressPct% ($cfi)');
-    try {
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$id/progress'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
-          'currentCfi': cfi, 
-          'progressPct': progressPct,
-        }),
-      );
-      
-      if (response.statusCode == 200) {
-        _logger.info('BookService: Progress update confirmed by server for $id');
-        return;
-      }
-      _logger.warning('BookService: Server rejected progress update for $id. Status: ${response.statusCode}');
-      throw Exception('Failed to update progress on server');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in updateProgress for $id', e, st);
-      rethrow;
-    }
+    _logger.info(
+      'BookService: Updating progress for $id to $progressPct% locally',
+    );
+
+    await _db.updateBookProgress(id, cfi, progressPct);
+
+    await _syncRepo.enqueueBookProgress(id, cfi, progressPct);
+
+    _logger.info('BookService: Progress queued for sync for $id');
   }
 
   Future<void> deleteBook(String id) async {
-    _logger.info('BookService: Requesting deletion of book $id');
-    try {
-      final response = await http.delete(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-        headers: await _getHeaders(),
-      );
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        _logger.info('BookService: Deletion successful for $id');
-        return;
-      }
-      _logger.error('BookService: Failed to delete book $id. Status: ${response.statusCode}');
-      throw Exception('Failed to delete book');
-    } catch (e, st) {
-      _logger.error('BookService: Exception in deleteBook $id', e, st);
-      rethrow;
-    }
+    _logger.info('BookService: Deleting book $id locally');
+
+    await _db.deleteBook(id);
+
+    await _syncRepo.enqueueBookDelete(id);
+
+    _logger.info('BookService: Deletion queued for sync for $id');
   }
 
-  Future<void> uploadBook(File file, String targetLanguage, String title) async {
+  Future<void> uploadBook(
+    File file,
+    String targetLanguage,
+    String title,
+  ) async {
     _logger.info('BookService: Starting EPUB upload sequence for "$title"');
     try {
       final filename = file.path.split('/').last;
-      
+
       _logger.info('BookService: Requesting signed upload URL for $filename');
       final uploadUrlResponse = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename'),
+        Uri.parse(
+          '${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename',
+        ),
         headers: await _getHeaders(),
       );
-      
+
       if (uploadUrlResponse.statusCode != 200) {
-        _logger.error('BookService: Failed to get upload URL. Status: ${uploadUrlResponse.statusCode}');
+        _logger.error(
+          'BookService: Failed to get upload URL. Status: ${uploadUrlResponse.statusCode}',
+        );
         throw Exception('Failed to get upload URL');
       }
-      
+
       final uploadData = jsonDecode(uploadUrlResponse.body);
       var signedUrl = uploadData['signedUrl'] as String;
       final storagePath = uploadData['path'];
@@ -130,7 +189,9 @@ class BookService {
         signedUrl = '${AppConstants.baseUrl}$signedUrl';
       }
 
-      _logger.info('BookService: Uploading binary to storage path: $storagePath');
+      _logger.info(
+        'BookService: Uploading binary to storage path: $storagePath',
+      );
       final bytes = await file.readAsBytes();
       final uploadRes = await http.put(
         Uri.parse(signedUrl),
@@ -139,7 +200,9 @@ class BookService {
       );
 
       if (uploadRes.statusCode != 200) {
-        _logger.error('BookService: Storage upload failed. Status: ${uploadRes.statusCode}');
+        _logger.error(
+          'BookService: Storage upload failed. Status: ${uploadRes.statusCode}',
+        );
         throw Exception('Failed to upload file to storage');
       }
 
@@ -156,18 +219,36 @@ class BookService {
       );
 
       if (dbRes.statusCode == 200 || dbRes.statusCode == 201) {
-        _logger.info('BookService: Upload and registration complete for "$title"');
+        final data = jsonDecode(dbRes.body);
+        await _upsertBookLocal(data);
+        _logger.info(
+          'BookService: Upload and registration complete for "$title"',
+        );
         return;
       }
-      _logger.error('BookService: Database registration failed. Status: ${dbRes.statusCode}');
+      _logger.error(
+        'BookService: Database registration failed. Status: ${dbRes.statusCode}',
+      );
       throw Exception('Failed to save book to database');
     } catch (e, st) {
       _logger.error('BookService: Exception in uploadBook', e, st);
       rethrow;
     }
   }
+
+  Stream<List<UserBook>> watchBooks() {
+    return _db.watchAllBooks().map(
+      (books) => books.map((map) => _userBookFromDb(map)).toList(),
+    );
+  }
 }
 
-final bookServiceProvider = Provider((ref) => 
-  BookService(ref.watch(tokenServiceProvider(TokenType.auth)), ref.read(loggerProvider))
+final bookServiceProvider = Provider(
+  (ref) => BookService(
+    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(databaseProvider),
+    ref.watch(syncRepositoryProvider),
+    ref,
+    ref.read(loggerProvider),
+  ),
 );

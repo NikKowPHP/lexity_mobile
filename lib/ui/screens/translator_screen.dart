@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../providers/translator_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/srs_provider.dart';
+import '../../providers/connectivity_provider.dart';
 import '../../models/translation_result.dart';
 import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
@@ -30,13 +31,13 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
   @override
   void initState() {
     super.initState();
-      Future.microtask(() {
-        final profile = ref.read(userProfileProvider).value;
-        setState(() {
-          _sourceLang = profile?.nativeLanguage ?? "English";
-          _targetLang = profile?.defaultTargetLanguage ?? "Spanish";
-        });
+    Future.microtask(() {
+      final profile = ref.read(userProfileProvider).value;
+      setState(() {
+        _sourceLang = profile?.nativeLanguage ?? "English";
+        _targetLang = profile?.defaultTargetLanguage ?? "Spanish";
       });
+    });
   }
 
   void _swapLanguages() {
@@ -71,7 +72,10 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("Notifications are needed for Bubble mode", style: TextStyle(color: Colors.white)),
+              content: Text(
+                "Notifications are needed for Bubble mode",
+                style: TextStyle(color: Colors.white),
+              ),
               backgroundColor: Colors.redAccent,
               behavior: SnackBarBehavior.floating,
             ),
@@ -96,15 +100,24 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
 
     final List<String> availableLanguages = profileAsync.maybeWhen(
       data: (p) => {
-        if (p.nativeLanguage != null && p.nativeLanguage!.isNotEmpty) p.nativeLanguage!,
-        ...p.languageProfiles.map((lp) => lp.language).where((l) => l.isNotEmpty),
+        if (p.nativeLanguage != null && p.nativeLanguage!.isNotEmpty)
+          p.nativeLanguage!,
+        ...p.languageProfiles
+            .map((lp) => lp.language)
+            .where((l) => l.isNotEmpty),
         if (p.defaultTargetLanguage.isNotEmpty) p.defaultTargetLanguage,
       }.toList(),
       orElse: () => ["English", "Spanish", "French", "German"],
     );
 
-    final effectiveSource = availableLanguages.contains(_sourceLang) ? _sourceLang! : availableLanguages.first;
-    final effectiveTarget = availableLanguages.contains(_targetLang) ? _targetLang! : (availableLanguages.length > 1 ? availableLanguages[1] : availableLanguages.first);
+    final effectiveSource = availableLanguages.contains(_sourceLang)
+        ? _sourceLang!
+        : availableLanguages.first;
+    final effectiveTarget = availableLanguages.contains(_targetLang)
+        ? _targetLang!
+        : (availableLanguages.length > 1
+              ? availableLanguages[1]
+              : availableLanguages.first);
 
     Widget buildMainContent() {
       return Column(
@@ -112,9 +125,29 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
         children: [
           Row(
             children: [
-              Expanded(child: LiquidDropdown<String>(label: "From", value: effectiveSource, items: availableLanguages, onChanged: (val) => setState(() => _sourceLang = val))),
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 8.0), child: IconButton(onPressed: _swapLanguages, icon: const Icon(Icons.swap_horiz, color: Colors.white54))),
-              Expanded(child: LiquidDropdown<String>(label: "To", value: effectiveTarget, items: availableLanguages, onChanged: (val) => setState(() => _targetLang = val))),
+              Expanded(
+                child: LiquidDropdown<String>(
+                  label: "From",
+                  value: effectiveSource,
+                  items: availableLanguages,
+                  onChanged: (val) => setState(() => _sourceLang = val),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: IconButton(
+                  onPressed: _swapLanguages,
+                  icon: const Icon(Icons.swap_horiz, color: Colors.white54),
+                ),
+              ),
+              Expanded(
+                child: LiquidDropdown<String>(
+                  label: "To",
+                  value: effectiveTarget,
+                  items: availableLanguages,
+                  onChanged: (val) => setState(() => _targetLang = val),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -125,14 +158,35 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
                 child: TextField(
                   controller: _inputController,
                   maxLines: 6,
-                  style: const TextStyle(fontSize: 18, color: Colors.white, height: 1.5),
-                  decoration: const InputDecoration(hintText: "Enter text...", hintStyle: TextStyle(color: Colors.white24), border: InputBorder.none),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    color: Colors.white,
+                    height: 1.5,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: "Enter text...",
+                    hintStyle: TextStyle(color: Colors.white24),
+                    border: InputBorder.none,
+                  ),
                   onChanged: (_) => setState(() {}),
                 ),
               ),
-              Positioned(top: 12, right: 12, child: _inputController.text.isNotEmpty 
-                ? IconButton(icon: const Icon(Icons.close, color: Colors.white38), onPressed: _discardText)
-                : IconButton(icon: const Icon(Icons.content_paste, color: Colors.white38), onPressed: _pasteFromClipboard)),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: _inputController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white38),
+                        onPressed: _discardText,
+                      )
+                    : IconButton(
+                        icon: const Icon(
+                          Icons.content_paste,
+                          color: Colors.white38,
+                        ),
+                        onPressed: _pasteFromClipboard,
+                      ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -141,36 +195,86 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
             isLoading: state.isTranslating,
             onTap: () {
               if (_inputController.text.isNotEmpty) {
-                ref.read(translatorProvider.notifier).runTranslation(_inputController.text, effectiveSource, effectiveTarget);
+                ref
+                    .read(translatorProvider.notifier)
+                    .runTranslation(
+                      _inputController.text,
+                      effectiveSource,
+                      effectiveTarget,
+                    );
               }
             },
           ),
           if (state.fullTranslation.isNotEmpty) ...[
             const SizedBox(height: 32),
-            const Text("TRANSLATION", style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+            const Text(
+              "TRANSLATION",
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
             const SizedBox(height: 12),
             GlassCard(
               padding: 20,
-              child: Text(state.fullTranslation, style: const TextStyle(fontSize: 18, color: Colors.white, height: 1.5)),
-            ),
-            const SizedBox(height: 12),
-            LiquidButton(
-              text: "Explain Nuances with Lexi",
-              onTap: () => showDialog(
-                context: context,
-                builder: (c) => TutorChatDialog(
-                  title: "Translation Analysis",
-                  onSendMessage: (msg, history) => ref.read(aiServiceProvider).getTutorResponse(
-                    endpoint: '/api/ai/translator-tutor-chat',
-                    context: {
-                      'sourceText': _inputController.text,
-                      'fullTranslation': state.fullTranslation,
-                      'targetLanguage': effectiveTarget,
-                    },
-                    chatHistory: history,
-                  ),
+              child: Text(
+                state.fullTranslation,
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: Colors.white,
+                  height: 1.5,
                 ),
               ),
+            ),
+            const SizedBox(height: 12),
+            Consumer(
+              builder: (context, ref, _) {
+                final isOnline = ref.watch(connectivityProvider);
+                return Opacity(
+                  opacity: isOnline ? 1.0 : 0.5,
+                  child: Column(
+                    children: [
+                      LiquidButton(
+                        text: "Explain Nuances with Lexi",
+                        onTap: isOnline
+                            ? () => showDialog(
+                                context: context,
+                                builder: (c) => TutorChatDialog(
+                                  title: "Translation Analysis",
+                                  onSendMessage: (msg, history) => ref
+                                      .read(aiServiceProvider)
+                                      .getTutorResponse(
+                                        endpoint:
+                                            '/api/ai/translator-tutor-chat',
+                                        context: {
+                                          'sourceText': _inputController.text,
+                                          'fullTranslation':
+                                              state.fullTranslation,
+                                          'targetLanguage': effectiveTarget,
+                                        },
+                                        chatHistory: history,
+                                      ),
+                                ),
+                              )
+                            : () {},
+                      ),
+                      if (!isOnline)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            "Requires internet connection",
+                            style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
             ),
           ],
         ],
@@ -179,7 +283,12 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
 
     Widget buildBreakdownContent() {
       if (state.isBreakingDown) {
-        return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white24)));
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(40),
+            child: CircularProgressIndicator(color: Colors.white24),
+          ),
+        );
       }
       if (state.segments.isEmpty) {
         return Center(
@@ -190,7 +299,10 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
               children: [
                 const Icon(Icons.auto_awesome, size: 48, color: Colors.white),
                 const SizedBox(height: 16),
-                const Text("Analysis will appear here", style: TextStyle(color: Colors.white)),
+                const Text(
+                  "Analysis will appear here",
+                  style: TextStyle(color: Colors.white),
+                ),
               ],
             ),
           ),
@@ -199,9 +311,20 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("SENTENCE BREAKDOWN", style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+          const Text(
+            "SENTENCE BREAKDOWN",
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
           const SizedBox(height: 16),
-          ...state.segments.map((seg) => _SegmentCard(segment: seg, targetLanguage: effectiveTarget)),
+          ...state.segments.map(
+            (seg) =>
+                _SegmentCard(segment: seg, targetLanguage: effectiveTarget),
+          ),
         ],
       );
     }
@@ -211,14 +334,34 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
       subtitle: 'Real-time AI analysis',
       showBackButton: false,
       floatingActionButton: (Platform.isAndroid && !widget.isBubbleMode)
-        ? Padding(padding: const EdgeInsets.only(bottom: 80), child: FloatingActionButton(backgroundColor: LiquidTheme.primaryAccent, onPressed: _enableBubbleMode, child: const Icon(Icons.open_in_new, color: Colors.white)))
-        : null,
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 80),
+              child: FloatingActionButton(
+                backgroundColor: LiquidTheme.primaryAccent,
+                onPressed: _enableBubbleMode,
+                child: const Icon(Icons.open_in_new, color: Colors.white),
+              ),
+            )
+          : null,
       body: SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.only(top: 20),
-          child: isDesktop 
-            ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 5, child: buildMainContent()), const SizedBox(width: 40), Expanded(flex: 4, child: buildBreakdownContent())])
-            : Column(children: [buildMainContent(), const SizedBox(height: 40), buildBreakdownContent()]),
+          child: isDesktop
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 5, child: buildMainContent()),
+                    const SizedBox(width: 40),
+                    Expanded(flex: 4, child: buildBreakdownContent()),
+                  ],
+                )
+              : Column(
+                  children: [
+                    buildMainContent(),
+                    const SizedBox(height: 40),
+                    buildBreakdownContent(),
+                  ],
+                ),
         ),
       ),
     );
@@ -240,7 +383,9 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
 
   Future<void> _handleAddToDeck() async {
     setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+    final success = await ref
+        .read(srsProvider.notifier)
+        .addToDeckFromTranslation(
           front: widget.segment.source,
           back: widget.segment.translation,
           language: widget.targetLanguage.toLowerCase(),
@@ -253,7 +398,20 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
         if (success) _isAdded = true;
       });
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Added to Study Deck", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)), backgroundColor: LiquidTheme.primaryAccent, behavior: SnackBarBehavior.floating, duration: Duration(seconds: 2)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Added to Study Deck",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            backgroundColor: LiquidTheme.primaryAccent,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     }
   }
@@ -270,27 +428,68 @@ class _SegmentCardState extends ConsumerState<_SegmentCard> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(child: Text(widget.segment.source, style: const TextStyle(color: Colors.white38, fontSize: 14))),
+                Expanded(
+                  child: Text(
+                    widget.segment.source,
+                    style: const TextStyle(color: Colors.white38, fontSize: 14),
+                  ),
+                ),
                 IconButton(
                   onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
                   icon: _isAdding
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24))
-                      : Icon(_isAdded ? Icons.check_circle : Icons.add_circle, color: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent, size: 24),
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white24,
+                          ),
+                        )
+                      : Icon(
+                          _isAdded ? Icons.check_circle : Icons.add_circle,
+                          color: _isAdded
+                              ? Colors.greenAccent
+                              : LiquidTheme.primaryAccent,
+                          size: 24,
+                        ),
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            Text(widget.segment.translation, style: const TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.bold, fontSize: 18)),
+            Text(
+              widget.segment.translation,
+              style: const TextStyle(
+                color: Color(0xFF6366F1),
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.lightbulb_outline, size: 14, color: Colors.amber),
+                  const Icon(
+                    Icons.lightbulb_outline,
+                    size: 14,
+                    color: Colors.amber,
+                  ),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(widget.segment.explanation, style: const TextStyle(fontSize: 12, color: Colors.white54, height: 1.4))),
+                  Expanded(
+                    child: Text(
+                      widget.segment.explanation,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white54,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
