@@ -71,36 +71,68 @@ class LearningPathService {
   }
 
   Future<void> _prefetchNextModules(String language) async {
+    if (!_isOnline) {
+      _logger.info('LearningPathService: Offline, skipping prefetch');
+      return;
+    }
+
     try {
       _logger.info('LearningPathService: Pre-fetching next modules');
-      final response = await http.get(
+      final response = await http.put(
         Uri.parse(
-          '${AppConstants.baseUrl}/api/learning-path/prefetch?targetLanguage=$language&count=3',
+          '${AppConstants.baseUrl}/api/learning-path/prefetch?targetLanguage=$language',
         ),
         headers: await _getHeaders(),
       );
 
       if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
+        final data = jsonDecode(response.body);
+        _logger.info(
+          'LearningPathService: Pre-fetched ${data['cachedModules'] ?? 0} modules on server',
+        );
+
+        // Also update local DB to stay in sync
+        await _db.cacheLearningModules(language, []);
         final cached = await _db.getCachedLearningModules(language);
         final existingIds = cached.map((e) => e['id'] as String).toSet();
 
-        for (final module in data) {
-          if (!existingIds.contains(module['id'])) {
-            await _db.insertLearningModule({
-              'id': module['id'],
-              'language': language,
-              'title': module['title'] ?? '',
-              'status': module['status'] ?? 'PENDING',
-              'target_concept_tag': module['targetConceptTag'] ?? '',
-              'micro_lesson': module['microLesson'] ?? '',
-              'activities_json': jsonEncode(module['activities'] ?? {}),
-              'completed_at': null,
-              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-            });
+        // Fetch fresh data from main endpoint to update local cache
+        final refreshResponse = await http.get(
+          Uri.parse(
+            '${AppConstants.baseUrl}/api/learning-path?targetLanguage=$language',
+          ),
+          headers: await _getHeaders(),
+        );
+
+        if (refreshResponse.statusCode == 200) {
+          final List modulesData = jsonDecode(refreshResponse.body);
+          for (final module in modulesData) {
+            if (!existingIds.contains(module['id'])) {
+              await _db.insertLearningModule({
+                'id': module['id'],
+                'language': language,
+                'title': module['title'] ?? '',
+                'status': module['status'] ?? 'PENDING',
+                'target_concept_tag': module['targetConceptTag'] ?? '',
+                'micro_lesson': module['microLesson'] ?? '',
+                'activities_json': jsonEncode(module['activities'] ?? {}),
+                'completed_at': module['completedAt'] != null
+                    ? DateTime.parse(
+                        module['completedAt'],
+                      ).millisecondsSinceEpoch
+                    : null,
+                'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+              });
+            }
           }
+          _logger.info(
+            'LearningPathService: Local DB synced with ${modulesData.length} modules',
+          );
         }
-        _logger.info('LearningPathService: Pre-fetched ${data.length} modules');
+      } else {
+        _logger.warning(
+          'LearningPathService: Prefetch failed with status ${response.statusCode}',
+        );
       }
     } catch (e) {
       _logger.warning('LearningPathService: Prefetch failed: $e');

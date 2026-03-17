@@ -7,6 +7,7 @@ class GlassScaffold extends StatelessWidget {
   final Widget body;
   final Widget? floatingActionButton;
   final bool? showBackButton;
+  final VoidCallback? onBackPressed;
 
   const GlassScaffold({
     super.key,
@@ -15,6 +16,7 @@ class GlassScaffold extends StatelessWidget {
     required this.body,
     this.floatingActionButton,
     this.showBackButton,
+    this.onBackPressed,
   });
 
   @override
@@ -45,7 +47,9 @@ class GlassScaffold extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: GestureDetector(
                         onTap: () {
-                          if (context.canPop()) {
+                          if (onBackPressed != null) {
+                            onBackPressed!();
+                          } else if (context.canPop()) {
                             context.pop();
                           }
                         },

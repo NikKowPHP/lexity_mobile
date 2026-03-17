@@ -2,7 +2,25 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../theme/liquid_theme.dart';
+
+// Logo Widget
+class AppLogo extends StatelessWidget {
+  final bool small;
+  final double? width;
+
+  const AppLogo({super.key, this.small = false, this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    return SvgPicture.asset(
+      small ? 'app_logo_small.svg' : 'app_logo.svg',
+      width: width ?? (small ? 40 : 120),
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    );
+  }
+}
 
 // 1. The Static "Liquid" Background
 class LiquidBackground extends StatelessWidget {

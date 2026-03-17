@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class AppDatabase {
   static Database? _database;
   static const String _dbName = 'lexity.db';
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -18,6 +18,9 @@ class AppDatabase {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, _dbName);
 
+    // Delete existing database to recreate with new schema
+    await deleteDatabase(path);
+
     return await openDatabase(
       path,
       version: _dbVersion,
@@ -27,8 +30,8 @@ class AppDatabase {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      try {
+    try {
+      if (oldVersion < 2) {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS analytics_cache (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,9 +54,23 @@ class AppDatabase {
             last_synced_at INTEGER
           )
         ''');
-      } catch (e) {
-        // Table might already exist
       }
+
+      if (oldVersion < 3) {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS sync_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            action TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            retry_count INTEGER DEFAULT 0
+          )
+        ''');
+      }
+    } catch (e) {
+      // Ignore errors
     }
   }
 
@@ -170,9 +187,35 @@ class AppDatabase {
   // Users
   Future<int> insertUser(Map<String, dynamic> user) async {
     final db = await database;
+
+    // Map API field names to SQLite column names
+    final mappedUser = {
+      'id': user['id'],
+      'email': user['email'],
+      'native_language': user['nativeLanguage'],
+      'default_target_language': user['defaultTargetLanguage'],
+      'writing_style': user['writingStyle'],
+      'writing_purpose': user['writingPurpose'],
+      'self_assessed_level': user['selfAssessedLevel'],
+      'subscription_tier': user['subscriptionTier'],
+      'subscription_status': user['subscriptionStatus'],
+      'subscription_period_end': user['subscriptionPeriodEnd'] != null
+          ? DateTime.parse(user['subscriptionPeriodEnd']).millisecondsSinceEpoch
+          : null,
+      'language_profiles_json': user['languageProfiles'] != null
+          ? jsonEncode(user['languageProfiles'])
+          : '[]',
+      'goals_json': user['goals'] != null ? jsonEncode(user['goals']) : null,
+      'current_streak': user['currentStreak'] ?? 0,
+      'longest_streak': user['longestStreak'] ?? 0,
+      'onboarding_completed': user['onboardingCompleted'] == true ? 1 : 0,
+      'srs_count': user['srsCount'] ?? 0,
+      'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+    };
+
     return await db.insert(
       'users',
-      user,
+      mappedUser,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -185,7 +228,37 @@ class AppDatabase {
 
   Future<List<Map<String, dynamic>>> getAllUsers() async {
     final db = await database;
-    return await db.query('users');
+    final results = await db.query('users');
+
+    // Convert back to API format for UserProfile.fromJson
+    return results.map((row) {
+      return {
+        'id': row['id'],
+        'email': row['email'],
+        'nativeLanguage': row['native_language'],
+        'defaultTargetLanguage': row['default_target_language'],
+        'writingStyle': row['writing_style'],
+        'writingPurpose': row['writing_purpose'],
+        'selfAssessedLevel': row['self_assessed_level'],
+        'subscriptionTier': row['subscription_tier'],
+        'subscriptionStatus': row['subscription_status'],
+        'subscriptionPeriodEnd': row['subscription_period_end'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(
+                row['subscription_period_end'] as int,
+              ).toIso8601String()
+            : null,
+        'languageProfiles': row['language_profiles_json'] != null
+            ? jsonDecode(row['language_profiles_json'] as String)
+            : [],
+        'goals': row['goals_json'] != null
+            ? jsonDecode(row['goals_json'] as String)
+            : null,
+        'currentStreak': row['current_streak'],
+        'longestStreak': row['longest_streak'],
+        'onboardingCompleted': row['onboarding_completed'] == 1,
+        'srsCount': row['srs_count'],
+      };
+    }).toList();
   }
 
   Stream<List<Map<String, dynamic>>> watchAllUsers() async* {
@@ -407,27 +480,35 @@ class AppDatabase {
     String targetLanguage,
     Map<String, dynamic> data,
   ) async {
-    final db = await database;
-    await db.insert('analytics_cache', {
-      'target_language': targetLanguage,
-      'data_json': jsonEncode(data),
-      'fetched_at': DateTime.now().millisecondsSinceEpoch,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    try {
+      final db = await database;
+      await db.insert('analytics_cache', {
+        'target_language': targetLanguage,
+        'data_json': jsonEncode(data),
+        'fetched_at': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    } catch (e) {
+      // Table doesn't exist yet
+    }
   }
 
   Future<Map<String, dynamic>?> getCachedAnalytics(
     String targetLanguage,
   ) async {
-    final db = await database;
-    final results = await db.query(
-      'analytics_cache',
-      where: 'target_language = ?',
-      whereArgs: [targetLanguage],
-      orderBy: 'fetched_at DESC',
-      limit: 1,
-    );
-    if (results.isEmpty) return null;
-    return jsonDecode(results.first['data_json'] as String);
+    try {
+      final db = await database;
+      final results = await db.query(
+        'analytics_cache',
+        where: 'target_language = ?',
+        whereArgs: [targetLanguage],
+        orderBy: 'fetched_at DESC',
+        limit: 1,
+      );
+      if (results.isEmpty) return null;
+      return jsonDecode(results.first['data_json'] as String);
+    } catch (e) {
+      return null;
+    }
   }
 
   // Learning Modules Cache

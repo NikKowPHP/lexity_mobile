@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 
 import '../services/user_service.dart';
 import '../services/logger_service.dart';
+import '../providers/connectivity_provider.dart';
 
 class AuthState {
   final bool isInitialized;
@@ -37,11 +38,13 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
   final UserService _userService;
+  final Ref _ref;
   late final LoggerService _logger;
   late final TokenService _authTokenService;
   late final TokenService _refreshTokenService;
 
   AuthNotifier(
+    this._ref,
     this._authService,
     this._userService,
     this._logger,
@@ -52,34 +55,63 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> checkAuthStatus() async {
-    _logger.info('AuthNotifier: checking auth status (Deep Auth Check)');
+    _logger.info('AuthNotifier: checking auth status');
     final token = await _authTokenService.getToken();
 
     if (token == null) {
-      _logger.info('AuthNotifier: no token found');
+      _logger.info('AuthNotifier: no token found on disk');
       state = state.copyWith(isAuthenticated: false, isInitialized: true);
       return;
     }
 
-    try {
-      await _userService.fetchProfile();
+    // Token exists - optimistically authenticate
+    _logger.info('AuthNotifier: Token found. Optimistically authenticating.');
+    state = state.copyWith(isAuthenticated: true, isInitialized: false);
 
-      _logger.info('AuthNotifier: token valid, authenticating');
-      state = state.copyWith(isAuthenticated: true, isInitialized: true);
-    } catch (e) {
-      _logger.warning("AuthNotifier: Deep Auth Check failed: $e");
-      final refreshedAuthTokens = await refreshToken();
-      if (refreshedAuthTokens != null && refreshedAuthTokens.length >= 2) {
-        await _authTokenService.saveToken(refreshedAuthTokens[0]);
-        await _refreshTokenService.saveToken(refreshedAuthTokens[1]);
-        state = state.copyWith(isAuthenticated: true, isInitialized: true);
+    try {
+      final isOnline = _ref.read(connectivityProvider);
+
+      if (isOnline) {
+        await _userService.fetchProfile();
+        _logger.info('AuthNotifier: Profile synced successfully');
       } else {
-        _logger.warning(
-          "AuthNotifier: Token refresh failed or returned invalid data, clearing tokens",
-        );
-        await _authTokenService.clearToken();
-        await _refreshTokenService.clearToken();
-        state = state.copyWith(isAuthenticated: false, isInitialized: true);
+        _logger.info('AuthNotifier: Offline, relying on local session');
+      }
+
+      state = state.copyWith(isInitialized: true);
+    } catch (e) {
+      _logger.warning("AuthNotifier: Background sync failed: $e");
+
+      // Only logout if it's a 401 Unauthorized - try to refresh token first
+      if (e.toString().contains('401') ||
+          e.toString().contains('Unauthorized')) {
+        _logger.info("AuthNotifier: Token expired, trying to refresh...");
+
+        final refreshedTokens = await refreshToken();
+        if (refreshedTokens != null && refreshedTokens.length >= 2) {
+          await _authTokenService.saveToken(refreshedTokens[0]);
+          await _refreshTokenService.saveToken(refreshedTokens[1]);
+          _logger.info(
+            "AuthNotifier: Token refreshed, retrying profile fetch...",
+          );
+
+          try {
+            await _userService.fetchProfile();
+            _logger.info("AuthNotifier: Profile fetched after token refresh");
+            state = state.copyWith(isInitialized: true);
+          } catch (retryError) {
+            _logger.warning(
+              "AuthNotifier: Profile fetch failed after refresh: $retryError",
+            );
+            await logout();
+          }
+        } else {
+          _logger.warning("AuthNotifier: Token refresh failed, logging out.");
+          await logout();
+        }
+      } else {
+        // Network error - keep user logged in but mark initialized
+        state = state.copyWith(isInitialized: true);
       }
     }
   }
@@ -91,7 +123,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       _logger.info('AuthNotifier: no refresh token found in storage');
       return null;
     }
-    
+
     try {
       final refreshedAuthToken = await _authService.refreshToken(token);
       return refreshedAuthToken;
@@ -155,6 +187,7 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final userService = ref.watch(userServiceProvider);
   final logger = ref.watch(loggerProvider);
   return AuthNotifier(
+    ref,
     authService,
     userService,
     logger,

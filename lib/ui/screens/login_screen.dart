@@ -6,7 +6,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../providers/auth_provider.dart';
 import '../widgets/liquid_components.dart';
 
-
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -36,8 +35,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
 
-
-
     return Scaffold(
       body: LiquidBackground(
         child: Center(
@@ -46,15 +43,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo or Title
-                Text(
-                  "LEXITY",
-                  style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -1.5,
-                    color: Colors.white,
-                  ),
-                ).animate().fadeIn(duration: 800.ms).moveY(begin: 20, end: 0),
+                // Logo
+                const AppLogo()
+                    .animate()
+                    .fadeIn(duration: 800.ms)
+                    .moveY(begin: 20, end: 0),
 
                 const SizedBox(height: 40),
 

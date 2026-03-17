@@ -80,10 +80,17 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: LiquidTheme.darkTheme,
-        home: const Scaffold(
+        home: Scaffold(
           body: LiquidBackground(
             child: Center(
-              child: CircularProgressIndicator(color: Colors.white),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const AppLogo(),
+                  const SizedBox(height: 24),
+                  const CircularProgressIndicator(color: Colors.white),
+                ],
+              ),
             ),
           ),
         ),

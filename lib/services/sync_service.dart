@@ -231,9 +231,13 @@ class SyncService {
 
     if (action == 'update') {
       final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/vocabulary/$word'),
+        Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
         headers: headers,
-        body: jsonEncode({'status': payload['status']}),
+        body: jsonEncode({
+          'word': word,
+          'targetLanguage': payload['targetLanguage'],
+          'status': payload['status'],
+        }),
       );
       return response.statusCode >= 200 && response.statusCode < 300;
     }

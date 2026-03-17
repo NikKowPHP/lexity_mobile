@@ -46,7 +46,9 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
               child: DashboardSummaryCard(
                 label: "DUE TODAY",
                 value: "$dueCount",
-                onTap: dueCount > 0 ? () => setState(() => isSessionActive = true) : null,
+                onTap: dueCount > 0
+                    ? () => setState(() => isSessionActive = true)
+                    : null,
               ),
             ),
             const SizedBox(width: 12),
@@ -70,7 +72,9 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         const SizedBox(height: 32),
         LiquidButton(
           text: "Start Session",
-          onTap: dueCount > 0 ? () => setState(() => isSessionActive = true) : () {},
+          onTap: dueCount > 0
+              ? () => setState(() => isSessionActive = true)
+              : () {},
         ),
       ],
     );
@@ -89,18 +93,25 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
         }
       },
       child: GlassScaffold(
+        onBackPressed: isSessionActive
+            ? () => setState(() => isSessionActive = false)
+            : null,
         title: isSessionActive ? 'Study Session' : 'Study',
-        subtitle: isSessionActive ? '${state.deck.length} remaining' : 'SRS Overview',
+        subtitle: isSessionActive
+            ? '${state.deck.length} remaining'
+            : 'SRS Overview',
         showBackButton: isSessionActive,
         body: SliverFillRemaining(
           hasScrollBody: false,
-          child: state.isLoading 
-            ? const Center(child: CircularProgressIndicator(color: Colors.white))
-            : !isSessionActive 
+          child: state.isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
+              : !isSessionActive
               ? buildDashboard(state.deck.length)
-              : state.currentCard == null 
-                ? _buildEmptyState(activeLang)
-                : _buildFlashcard(state.currentCard!),
+              : state.currentCard == null
+              ? _buildEmptyState(activeLang)
+              : _buildFlashcard(state.currentCard!),
         ),
       ),
     );
@@ -112,9 +123,19 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
       children: [
         const Icon(Icons.auto_awesome, size: 80, color: Colors.white24),
         const SizedBox(height: 16),
-        const Text("All caught up!", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+        const Text(
+          "All caught up!",
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
         const SizedBox(height: 8),
-        const Text("Come back later for more reviews", style: TextStyle(color: Colors.white38)),
+        const Text(
+          "Come back later for more reviews",
+          style: TextStyle(color: Colors.white38),
+        ),
         const SizedBox(height: 24),
         LiquidButton(
           text: "Refresh",
@@ -141,32 +162,59 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 transform: Matrix4.identity()
                   ..setEntry(3, 2, 0.001) // Perspective
                   ..rotateY(val * pi / 180),
-                child: val < 90 
-                  ? _CardContent(text: card.front, isFront: true)
-                  : Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.identity()..rotateY(pi),
-                      child: _CardContent(text: card.back, isFront: false, contextInfo: card.context),
-                    ),
+                child: val < 90
+                    ? _CardContent(text: card.front, isFront: true)
+                    : Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.identity()..rotateY(pi),
+                        child: _CardContent(
+                          text: card.back,
+                          isFront: false,
+                          contextInfo: card.context,
+                        ),
+                      ),
               );
             },
           ),
         ),
         const SizedBox(height: 40),
-        
+
         // Quality Grading Buttons (Only shown when flipped)
-        if (isFlipped) 
+        if (isFlipped)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _GradeButton(label: "Again", color: Colors.red, val: 0, onTap: _handleReview),
-              _GradeButton(label: "Hard", color: Colors.orange, val: 2, onTap: _handleReview),
-              _GradeButton(label: "Good", color: Colors.green, val: 3, onTap: _handleReview),
-              _GradeButton(label: "Easy", color: Colors.blue, val: 5, onTap: _handleReview),
+              _GradeButton(
+                label: "Again",
+                color: Colors.red,
+                val: 0,
+                onTap: _handleReview,
+              ),
+              _GradeButton(
+                label: "Hard",
+                color: Colors.orange,
+                val: 2,
+                onTap: _handleReview,
+              ),
+              _GradeButton(
+                label: "Good",
+                color: Colors.green,
+                val: 3,
+                onTap: _handleReview,
+              ),
+              _GradeButton(
+                label: "Easy",
+                color: Colors.blue,
+                val: 5,
+                onTap: _handleReview,
+              ),
             ],
           ).animate().fadeIn().slideY(begin: 0.2, end: 0)
         else
-          const Text("Tap card to flip", style: TextStyle(color: Colors.white24)),
+          const Text(
+            "Tap card to flip",
+            style: TextStyle(color: Colors.white24),
+          ),
       ],
     );
   }
@@ -176,8 +224,12 @@ class _CardContent extends StatelessWidget {
   final String text;
   final bool isFront;
   final String? contextInfo;
-  
-  const _CardContent({required this.text, required this.isFront, this.contextInfo});
+
+  const _CardContent({
+    required this.text,
+    required this.isFront,
+    this.contextInfo,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -192,22 +244,35 @@ class _CardContent extends StatelessWidget {
           children: [
             Text(
               isFront ? "QUESTION" : "ANSWER",
-              style: TextStyle(color: isFront ? Colors.indigoAccent : Colors.greenAccent, letterSpacing: 2, fontSize: 12, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: isFront ? Colors.indigoAccent : Colors.greenAccent,
+                letterSpacing: 2,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 24),
             Text(
               text,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
             if (!isFront && contextInfo != null) ...[
               const SizedBox(height: 20),
               Text(
                 contextInfo!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: Colors.white38, fontStyle: FontStyle.italic),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.white38,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
-            ]
+            ],
           ],
         ),
       ),
@@ -221,7 +286,12 @@ class _GradeButton extends StatelessWidget {
   final int val;
   final Function(int) onTap;
 
-  const _GradeButton({required this.label, required this.color, required this.val, required this.onTap});
+  const _GradeButton({
+    required this.label,
+    required this.color,
+    required this.val,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -239,7 +309,14 @@ class _GradeButton extends StatelessWidget {
             child: Icon(Icons.check, color: color, size: 20),
           ),
           const SizedBox(height: 8),
-          Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );

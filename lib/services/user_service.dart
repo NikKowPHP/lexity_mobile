@@ -5,6 +5,8 @@ import 'package:lexity_mobile/services/token_service.dart';
 import '../models/user_profile.dart';
 import 'logger_service.dart';
 import '../utils/constants.dart';
+import '../providers/connectivity_provider.dart';
+import '../database/app_database.dart';
 
 class UserService {
   final Ref _ref;
@@ -17,13 +19,28 @@ class UserService {
 
   Future<UserProfile> fetchProfile() async {
     _logger.info('UserService: Fetching user profile');
+
+    final isOnline = _ref.read(connectivityProvider);
+    final db = _ref.read(databaseProvider);
+
+    // If offline, try to get from cache first
+    if (!isOnline) {
+      _logger.info('UserService: Offline, trying cache');
+      final localUsers = await db.getAllUsers();
+      if (localUsers.isNotEmpty) {
+        _logger.info('UserService: Returning cached profile from DB');
+        return UserProfile.fromJson(localUsers.first);
+      }
+      throw Exception('No cached profile available offline');
+    }
+
+    // Online - try API
     try {
       final token = await _authTokenService.getToken();
-      
-      // FIX: Use null-aware operators to prevent crash if token is null
-      final tokenPreview = token != null 
-        ? "${token.substring(0, token.length > 10 ? 10 : token.length)}..."
-        : "null";
+
+      final tokenPreview = token != null
+          ? "${token.substring(0, token.length > 10 ? 10 : token.length)}..."
+          : "null";
 
       _logger.debug("Sending Token: $tokenPreview");
 
@@ -35,7 +52,9 @@ class UserService {
         },
       );
 
-      _logger.debug('UserService: fetchProfile response status: ${response.statusCode}');
+      _logger.debug(
+        'UserService: fetchProfile response status: ${response.statusCode}',
+      );
 
       if (response.statusCode == 401) {
         _logger.warning(
@@ -46,15 +65,24 @@ class UserService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        _logger.info('UserService: Profile fetched successfully');
+
+        // Cache the profile for offline use
+        await db.insertUser(data);
+        _logger.info('UserService: Profile fetched and cached successfully');
         return UserProfile.fromJson(data);
       }
 
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Failed to load profile';
+      final errorMsg =
+          jsonDecode(response.body)['error'] ?? 'Failed to load profile';
       _logger.warning('UserService: Profile fetch failed. Reason: $errorMsg');
       throw Exception(errorMsg);
-    } catch (e, stackTrace) {
-      _logger.error('UserService: Error during fetchProfile', e, stackTrace);
+    } catch (e) {
+      // On error, try to fall back to cache
+      _logger.warning('UserService: API failed, trying cache: $e');
+      final localUsers = await db.getAllUsers();
+      if (localUsers.isNotEmpty) {
+        return UserProfile.fromJson(localUsers.first);
+      }
       rethrow;
     }
   }
@@ -66,7 +94,8 @@ class UserService {
       // We map the model fields to the API expectations
       final body = {
         'nativeLanguage': profile.nativeLanguage,
-        'targetLanguage': profile.defaultTargetLanguage, // API expects 'targetLanguage' to update default
+        'targetLanguage': profile
+            .defaultTargetLanguage, // API expects 'targetLanguage' to update default
         'writingStyle': profile.writingStyle,
         'writingPurpose': profile.writingPurpose,
         'selfAssessedLevel': profile.selfAssessedLevel,
@@ -76,12 +105,14 @@ class UserService {
         Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token'
+          'Authorization': 'Bearer $token',
         },
         body: jsonEncode(body),
       );
 
-      _logger.debug('UserService: updateProfile response status: ${response.statusCode}');
+      _logger.debug(
+        'UserService: updateProfile response status: ${response.statusCode}',
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -94,7 +125,7 @@ class UserService {
       rethrow;
     }
   }
-  
+
   // New specific call for adding a language
   Future<UserProfile> addLanguage(String newLanguage) async {
     _logger.info('UserService: Adding new language: $newLanguage');
@@ -104,13 +135,11 @@ class UserService {
         Uri.parse('${AppConstants.baseUrl}/api/user/profile'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token'
+          'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({
-          'newTargetLanguage': newLanguage,
-        }),
+        body: jsonEncode({'newTargetLanguage': newLanguage}),
       );
-      
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return UserProfile.fromJson(data);
@@ -121,6 +150,7 @@ class UserService {
       rethrow;
     }
   }
+
   Future<void> updateGoals(UserGoals goals) async {
     _logger.info('UserService: Updating user goals');
     try {
@@ -206,4 +236,6 @@ class UserService {
   }
 }
 
-final userServiceProvider = Provider((ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))));
+final userServiceProvider = Provider(
+  (ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
+);
