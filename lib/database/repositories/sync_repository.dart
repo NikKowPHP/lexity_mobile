@@ -102,12 +102,12 @@ class SyncRepository {
   }
 
   // Vocabulary mutations
-  Future<void> enqueueVocabUpdate(String word, String status) async {
+  Future<void> enqueueVocabUpdate(String word, String status, String targetLanguage) async {
     await enqueueMutation(
       entityType: 'vocabulary',
       action: 'update',
       entityId: word,
-      payload: {'status': status},
+      payload: {'status': status.toUpperCase(), 'targetLanguage': targetLanguage},
     );
   }
 }

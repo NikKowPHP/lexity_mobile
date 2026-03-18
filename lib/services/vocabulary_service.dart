@@ -96,7 +96,8 @@ class VocabularyService {
 
     await _syncRepo.enqueueVocabUpdate(
       word.toLowerCase(),
-      status.toLowerCase(),
+      status,
+      language,
     );
 
     _logger.info('VocabularyService: Status update queued for sync');
@@ -115,7 +116,7 @@ class VocabularyService {
         'last_synced_at': DateTime.now().millisecondsSinceEpoch,
       });
 
-      await _syncRepo.enqueueVocabUpdate(word.toLowerCase(), 'known');
+      await _syncRepo.enqueueVocabUpdate(word.toLowerCase(), 'known', language);
     }
 
     _logger.info('VocabularyService: Batch update queued for sync');

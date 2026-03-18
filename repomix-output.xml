@@ -6156,6 +6156,7 @@ import '../providers/connectivity_provider.dart';
 import '../services/token_service.dart';
 import '../utils/constants.dart';
 import '../services/logger_service.dart';
+import '../services/sync_service.dart';
 
 class HydrationService {
   final AppDatabase _db;
@@ -6193,6 +6194,7 @@ class HydrationService {
       ]);
 
       _lastSyncTimestamp = DateTime.now();
+      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTimestamp;
       _logger.info(
         'HydrationService: Full sync completed at $_lastSyncTimestamp',
       );
@@ -9219,22 +9221,21 @@ class SyncService {
   final SyncRepository _syncRepo;
   final Ref _ref;
   final LoggerService _logger;
-  bool _isSyncing = false;
   DateTime? _lastSyncTime;
 
   SyncService(this._syncRepo, this._ref, this._logger);
 
   void startListening() {
     _ref.listen<bool>(connectivityProvider, (previous, next) {
-      if (next && !_isSyncing) {
+      if (next && !_ref.read(isSyncingProvider)) {
         _logger.info('SyncService: Network became available, starting sync...');
         syncPendingMutations();
       }
     });
   }
 
-  Future<void> syncPendingMutations() async {
-    if (_isSyncing) {
+  Future<void> syncPendingMutations({bool force = false}) async {
+    if (_ref.read(isSyncingProvider) && !force) {
       _logger.info('SyncService: Sync already in progress, skipping...');
       return;
     }
@@ -9245,8 +9246,8 @@ class SyncService {
       return;
     }
 
-    _isSyncing = true;
-    _logger.info('SyncService: Starting sync...');
+    _ref.read(isSyncingProvider.notifier).state = true;
+    _logger.info('SyncService: Starting sync${force ? " (FORCED)" : ""}...');
 
     try {
       final mutations = await _syncRepo.getPendingMutations();
@@ -9260,12 +9261,14 @@ class SyncService {
 
         final retryCount = mutation['retry_count'] as int? ?? 0;
 
-        if (retryCount > 0) {
+        if (retryCount > 0 && !force) {
           final delay = _calculateBackoff(retryCount);
           _logger.info(
             'SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}',
           );
           await Future.delayed(delay);
+        } else if (retryCount > 0 && force) {
+          _logger.info('SyncService: Forced sync, bypassing backoff for mutation ${mutation['id']}');
         }
 
         final success = await _processMutation(mutation);
@@ -9286,11 +9289,14 @@ class SyncService {
       }
 
       _lastSyncTime = DateTime.now();
+      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTime;
       _logger.info('SyncService: Sync completed at $_lastSyncTime');
     } catch (e, st) {
       _logger.error('SyncService: Sync failed', e, st);
     } finally {
-      _isSyncing = false;
+      _ref.read(isSyncingProvider.notifier).state = false;
+      // Refresh the count provider
+      _ref.invalidate(syncQueueCountProvider);
     }
   }
 
@@ -9309,6 +9315,8 @@ class SyncService {
         jsonDecode(mutation['payload_json'] as String) as Map<String, dynamic>;
 
     try {
+      _logger.info('Syncing ${entityType}:${action} for ID: ${entityId}');
+      
       switch (entityType) {
         case 'book':
           return await _syncBookMutation(action, entityId, payload);
@@ -9472,6 +9480,8 @@ final syncQueueCountProvider = FutureProvider<int>((ref) async {
 });
 
 final lastSyncTimeProvider = StateProvider<DateTime?>((ref) => null);
+
+final isSyncingProvider = StateProvider<bool>((ref) => false);
 </file>
 
 <file path="lib/theme/liquid_theme.dart">
@@ -9480,13 +9490,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class LiquidTheme {
-  static const Color backgroundDark = Color(0xFF000000);
-  static const Color backgroundLight = Color(0xFFF9F9F9);
+  static const Color backgroundDark = Color(0xFF16181F); // Deeper slate
+  static const Color backgroundLight = Color(0xFFF2F4F7);
 
-  static const Color primaryAccent = Color(0xFF818CF8);
-  static const Color secondaryAccent = Color(0xFFF472B6);
-  static const Color glassBorder = Color(0x33FFFFFF);
-  static const Color cardGrey = Color(0xFF1A1A1A);
+  static const Color primaryAccent = Color(0xFF0055FF); // Vibrant Cobalt Blue
+  static const Color secondaryAccent = Color(0xFF242731); // Slate Grey for inactive pills
+  static const Color glassBorder = Color(0x1AFFFFFF); // Very subtle white border
+  static const Color cardGrey = Color(0xFF21242D); // Darker surface color
 
   static ThemeData get darkTheme => _buildTheme(Brightness.dark);
   static ThemeData get lightTheme => _buildTheme(Brightness.light);
@@ -12467,6 +12477,7 @@ class _SyncStatusSection extends ConsumerWidget {
     final isOnline = ref.watch(connectivityProvider);
     final syncQueueCount = ref.watch(syncQueueCountProvider);
     final lastSyncTime = ref.watch(lastSyncTimeProvider);
+    final isSyncing = ref.watch(isSyncingProvider);
 
     return GlassCard(
       child: Column(
@@ -12496,7 +12507,7 @@ class _SyncStatusSection extends ConsumerWidget {
                 const Icon(Icons.sync, color: Colors.white54, size: 16),
                 const SizedBox(width: 8),
                 Text(
-                  "Pending changes: $count",
+                  isSyncing ? "Syncing $count changes..." : "Pending changes: $count",
                   style: const TextStyle(color: Colors.white70),
                 ),
               ],
@@ -12537,9 +12548,11 @@ class _SyncStatusSection extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: LiquidButton(
-                text: "Sync Now",
-                onTap: () =>
-                    ref.read(syncServiceProvider).syncPendingMutations(),
+                text: isSyncing ? "Syncing..." : "Sync Now",
+                isLoading: isSyncing,
+                onTap: () => isSyncing
+                    ? null
+                    : ref.read(syncServiceProvider).syncPendingMutations(force: true),
               ),
             ),
         ],
@@ -14884,116 +14897,6 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
 });
 </file>
 
-<file path="lib/providers/book_provider.dart">
-import 'dart:io';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/book.dart';
-import '../services/book_service.dart';
-import '../services/logger_service.dart';
-
-final booksStreamProvider = StreamProvider.autoDispose<List<UserBook>>((ref) {
-  final service = ref.watch(bookServiceProvider);
-  return service.watchBooks();
-});
-
-final booksProvider = booksStreamProvider;
-
-final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((
-  ref,
-  id,
-) async {
-  final service = ref.watch(bookServiceProvider);
-  final book = await service.getBook(id);
-  if (book == null) {
-    throw Exception('Book not found');
-  }
-  return book;
-});
-
-class BookNotifier extends StateNotifier<AsyncValue<void>> {
-  final BookService _service;
-  final LoggerService _logger;
-  final Ref _ref;
-
-  BookNotifier(this._service, this._logger, this._ref)
-    : super(const AsyncValue.data(null));
-
-  Future<void> uploadBook(
-    File file,
-    String targetLanguage,
-    String title,
-  ) async {
-    _logger.info(
-      'BookNotifier: Starting upload process for "$title" ($targetLanguage)',
-    );
-    state = const AsyncValue.loading();
-    try {
-      await _service.uploadBook(file, targetLanguage, title);
-      state = const AsyncValue.data(null);
-      _logger.info('BookNotifier: Upload successful');
-    } catch (e, st) {
-      _logger.error('BookNotifier: Upload failed', e, st);
-      state = AsyncValue.error(e, st);
-      rethrow;
-    }
-  }
-
-  Future<void> deleteBook(String id) async {
-    _logger.info('BookNotifier: Deleting book $id');
-    try {
-      await _service.deleteBook(id);
-      _logger.info('BookNotifier: Deletion completed for $id');
-    } catch (e, st) {
-      _logger.error('BookNotifier: Deletion failed for $id', e, st);
-    }
-  }
-
-  Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
-    try {
-      await _service.updateProgress(id, cfi, progressPct);
-      _logger.info(
-        'BookNotifier: Progress update successful for $id $cfi $progressPct',
-      );
-    } catch (e, st) {
-      _logger.error('BookNotifier: Progress update failed for $id', e, st);
-    }
-  }
-
-  Future<void> updateLocations(String id, String locations) async {
-    try {
-      await _service.updateLocations(id, locations);
-      _logger.info('BookNotifier: Locations updated successfully for $id');
-    } catch (e, st) {
-      _logger.error('BookNotifier: Failed to update locations', e, st);
-    }
-  }
-
-  Future<void> refreshBooks() async {
-    _logger.info('BookNotifier: Starting book refresh');
-    state = const AsyncValue.loading();
-    try {
-      await _service.syncBooks();
-      state = const AsyncValue.data(null);
-      _logger.info('BookNotifier: Book refresh successful');
-    } catch (e, st) {
-      _logger.error('BookNotifier: Book refresh failed', e, st);
-      state = AsyncValue.error(e, st);
-      rethrow;
-    }
-  }
-}
-
-final bookNotifierProvider =
-    StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
-      return BookNotifier(
-        ref.watch(bookServiceProvider),
-        ref.read(loggerProvider),
-        ref,
-      );
-    });
-</file>
-
 <file path="lib/services/journal_service.dart">
 import 'dart:convert';
 import 'dart:io';
@@ -15687,12 +15590,12 @@ class LiquidBackground extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF000000) : const Color(0xFFF3F3F3),
+        color: isDark ? const Color(0xFF16181F) : const Color(0xFFF3F3F3),
         gradient: RadialGradient(
-          center: const Alignment(-0.7, -0.6),
-          radius: 1.2,
+          center: const Alignment(0.0, -0.5),
+          radius: 1.5,
           colors: isDark
-              ? [const Color(0xFF0D0D0D), const Color(0xFF000000)]
+              ? [const Color(0xFF21242D), const Color(0xFF16181F)]
               : [const Color(0xFFFFFFFF), const Color(0xFFF3F3F3)],
         ),
       ),
@@ -15718,32 +15621,18 @@ class GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(32.0), // More rounded pill-style
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           padding: EdgeInsets.all(padding),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(borderRadius),
+            borderRadius: BorderRadius.circular(32.0),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.12)
-                  : Colors.black.withValues(alpha: 0.05),
-              width: 1.0,
+              color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+              width: 1.5,
             ),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      Colors.white.withValues(alpha: 0.08),
-                      Colors.white.withValues(alpha: 0.02),
-                    ]
-                  : [
-                      Colors.white.withValues(alpha: 0.8),
-                      Colors.white.withValues(alpha: 0.4),
-                    ],
-            ),
+            color: isDark ? const Color(0xFF21242D).withOpacity(0.8) : Colors.white.withOpacity(0.8),
           ),
           child: child,
         ),
@@ -15769,21 +15658,22 @@ class GlassInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        color: const Color(0xFF0D0E12), // Recessed dark background
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: TextField(
         controller: controller,
         obscureText: isPassword,
         onChanged: onChanged,
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(color: isDark ? Colors.white : Colors.black87),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+          hintStyle: TextStyle(color: isDark ? Colors.white.withOpacity(0.4) : Colors.black.withOpacity(0.4)),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 20,
@@ -15812,19 +15702,18 @@ class LiquidButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: isLoading ? null : onTap,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         width: double.infinity,
         height: 54,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            colors: [LiquidTheme.primaryAccent, Color(0xFF4F46E5)],
-          ),
+          borderRadius: BorderRadius.circular(27), // Full pill
+          color: LiquidTheme.primaryAccent,
           boxShadow: [
             BoxShadow(
-              color: LiquidTheme.primaryAccent.withValues(alpha: 0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: LiquidTheme.primaryAccent.withOpacity(0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -15848,7 +15737,7 @@ class LiquidButton extends StatelessWidget {
                 ),
         ),
       ),
-    ).animate(target: isLoading ? 0 : 1).shimmer(duration: 2.seconds);
+    );
   }
 }
 
@@ -16022,14 +15911,13 @@ class LiquidNavigation extends StatelessWidget {
 
   BoxDecoration _glassDecoration() {
     return BoxDecoration(
-      color: const Color(0xFF111111).withValues(alpha: 0.8),
+      color: const Color(0xFF1A1C24).withOpacity(0.9), // Match image nav bar
       borderRadius: BorderRadius.circular(40),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+      border: Border.all(color: Colors.white.withOpacity(0.05), width: 1),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.4),
-          blurRadius: 40,
-          spreadRadius: 2,
+          color: Colors.black.withOpacity(0.5),
+          blurRadius: 30,
           offset: const Offset(0, 10),
         ),
       ],
@@ -16059,30 +15947,133 @@ class _NavItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutQuart,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: isActive
             ? BoxDecoration(
-                color: LiquidTheme.primaryAccent.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: LiquidTheme.primaryAccent.withValues(alpha: 0.4),
-                    blurRadius: 15,
-                    spreadRadius: -2,
-                  )
-                ],
+                color: const Color(0xFF0D0E12), // Dark inset pill
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: LiquidTheme.primaryAccent.withOpacity(0.5), width: 1),
               )
-            : const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
+            : const BoxDecoration(color: Colors.transparent),
         child: Icon(
           icon,
-          color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.4),
+          color: isActive ? LiquidTheme.primaryAccent : Colors.white.withOpacity(0.4),
           size: 24,
         ),
       ),
     );
   }
 }
+</file>
+
+<file path="lib/providers/book_provider.dart">
+import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/book.dart';
+import '../services/book_service.dart';
+import '../services/logger_service.dart';
+
+final booksStreamProvider = StreamProvider.autoDispose<List<UserBook>>((ref) {
+  final service = ref.watch(bookServiceProvider);
+  return service.watchBooks();
+});
+
+final booksProvider = booksStreamProvider;
+
+final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((
+  ref,
+  id,
+) async {
+  final service = ref.watch(bookServiceProvider);
+  final book = await service.getBook(id);
+  if (book == null) {
+    throw Exception('Book not found');
+  }
+  return book;
+});
+
+class BookNotifier extends StateNotifier<AsyncValue<void>> {
+  final BookService _service;
+  final LoggerService _logger;
+  final Ref _ref;
+
+  BookNotifier(this._service, this._logger, this._ref)
+    : super(const AsyncValue.data(null));
+
+  Future<void> uploadBook(
+    File file,
+    String targetLanguage,
+    String title,
+  ) async {
+    _logger.info(
+      'BookNotifier: Starting upload process for "$title" ($targetLanguage)',
+    );
+    state = const AsyncValue.loading();
+    try {
+      await _service.uploadBook(file, targetLanguage, title);
+      state = const AsyncValue.data(null);
+      _logger.info('BookNotifier: Upload successful');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Upload failed', e, st);
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> deleteBook(String id) async {
+    _logger.info('BookNotifier: Deleting book $id');
+    try {
+      await _service.deleteBook(id);
+      _logger.info('BookNotifier: Deletion completed for $id');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Deletion failed for $id', e, st);
+    }
+  }
+
+  Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
+    try {
+      await _service.updateProgress(id, cfi, progressPct);
+      _logger.info(
+        'BookNotifier: Progress update successful for $id $cfi $progressPct',
+      );
+    } catch (e, st) {
+      _logger.error('BookNotifier: Progress update failed for $id', e, st);
+    }
+  }
+
+  Future<void> updateLocations(String id, String locations) async {
+    try {
+      await _service.updateLocations(id, locations);
+      _logger.info('BookNotifier: Locations updated successfully for $id');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Failed to update locations', e, st);
+    }
+  }
+
+  Future<void> refreshBooks() async {
+    _logger.info('BookNotifier: Starting book refresh');
+    state = const AsyncValue.loading();
+    try {
+      await _service.syncBooks();
+      state = const AsyncValue.data(null);
+      _logger.info('BookNotifier: Book refresh successful');
+    } catch (e, st) {
+      _logger.error('BookNotifier: Book refresh failed', e, st);
+      state = AsyncValue.error(e, st);
+      rethrow;
+    }
+  }
+}
+
+final bookNotifierProvider =
+    StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
+      return BookNotifier(
+        ref.watch(bookServiceProvider),
+        ref.read(loggerProvider),
+        ref,
+      );
+    });
 </file>
 
 <file path="lib/services/auth_service.dart">
@@ -17686,6 +17677,10 @@ const String bookReaderHtmlTemplate = """
 
         book = ePub(url);
         
+        // NEW CODE START: Ensure book is ready before any location generation
+        await book.ready;
+        // NEW CODE END
+
         book.opened.then(() => {
           console.log("BookReader JS: EPUB opened successfully");
         }).catch(err => {
@@ -17874,7 +17869,7 @@ const String bookReaderHtmlTemplate = """
           } 
         });
 
-        if (precomputedLocations) {
+        if (precomputedLocations && precomputedLocations.length > 5) {
           // INSTANT: Load the locations generated by Next.js
           let locPayload = precomputedLocations;
           if (typeof precomputedLocations === "string") {
@@ -17892,13 +17887,17 @@ const String bookReaderHtmlTemplate = """
           // Generate locations (1600 chars per section is our standard)
           await book.locations.generate(1600);
           const serialized = book.locations.save();
-          console.log("BookReader JS: Locations generated. Sending to Flutter.");
-          // Notify Flutter that we have new locations to save
-          callFlutter('onLocationsGenerated', serialized);
+          
+          // NEW CODE START: Validate that locations were actually generated
+          if (serialized && serialized !== "[]") {
+            console.log("BookReader JS: Locations generated. Sending to Flutter.");
+            callFlutter('onLocationsGenerated', serialized);
+          } else {
+            console.warn("BookReader JS: Generation returned empty locations.");
+          }
+          // NEW CODE END
         }
 
-        // Wait for book to be fully ready BEFORE attempting to display
-        await book.ready;
         console.log("BookReader JS: Book ready, now displaying at CFI: " + initialCfi);
 
         if (themeColors) {
@@ -18893,11 +18892,19 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                         handlerName: 'onLocationsGenerated',
                         callback: (args) {
                           final String locationsJson = args[0] as String;
+                          
+                          // NEW CODE START: Prevent syncing empty arrays
+                          if (locationsJson == "[]" || locationsJson.isEmpty) {
+                            logger.warning('BookReader: Received empty locations from JS, skipping sync.');
+                            return;
+                          }
+                          // NEW CODE END
+                          
                           logger.info('BookReader: Received generated locations from JS. Size: ${locationsJson.length}');
                           
                           // Call the notifier to save this to the backend
                           ref.read(bookNotifierProvider.notifier).updateLocations(
-                            widget.bookId, 
+                            widget.bookId,
                             locationsJson
                           );
                         },

@@ -7,27 +7,27 @@ import '../providers/connectivity_provider.dart';
 import '../services/token_service.dart';
 import '../utils/constants.dart';
 import '../services/logger_service.dart';
+import '../providers/user_provider.dart';
 
 class SyncService {
   final SyncRepository _syncRepo;
   final Ref _ref;
   final LoggerService _logger;
-  bool _isSyncing = false;
   DateTime? _lastSyncTime;
 
   SyncService(this._syncRepo, this._ref, this._logger);
 
   void startListening() {
     _ref.listen<bool>(connectivityProvider, (previous, next) {
-      if (next && !_isSyncing) {
+      if (next && !_ref.read(isSyncingProvider)) {
         _logger.info('SyncService: Network became available, starting sync...');
         syncPendingMutations();
       }
     });
   }
 
-  Future<void> syncPendingMutations() async {
-    if (_isSyncing) {
+  Future<void> syncPendingMutations({bool force = false}) async {
+    if (_ref.read(isSyncingProvider) && !force) {
       _logger.info('SyncService: Sync already in progress, skipping...');
       return;
     }
@@ -38,8 +38,8 @@ class SyncService {
       return;
     }
 
-    _isSyncing = true;
-    _logger.info('SyncService: Starting sync...');
+    _ref.read(isSyncingProvider.notifier).state = true;
+    _logger.info('SyncService: Starting sync${force ? " (FORCED)" : ""}...');
 
     try {
       final mutations = await _syncRepo.getPendingMutations();
@@ -53,12 +53,14 @@ class SyncService {
 
         final retryCount = mutation['retry_count'] as int? ?? 0;
 
-        if (retryCount > 0) {
+        if (retryCount > 0 && !force) {
           final delay = _calculateBackoff(retryCount);
           _logger.info(
             'SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}',
           );
           await Future.delayed(delay);
+        } else if (retryCount > 0 && force) {
+          _logger.info('SyncService: Forced sync, bypassing backoff for mutation ${mutation['id']}');
         }
 
         final success = await _processMutation(mutation);
@@ -79,11 +81,14 @@ class SyncService {
       }
 
       _lastSyncTime = DateTime.now();
+      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTime;
       _logger.info('SyncService: Sync completed at $_lastSyncTime');
     } catch (e, st) {
       _logger.error('SyncService: Sync failed', e, st);
     } finally {
-      _isSyncing = false;
+      _ref.read(isSyncingProvider.notifier).state = false;
+      // Refresh the count provider
+      _ref.invalidate(syncQueueCountProvider);
     }
   }
 
@@ -102,6 +107,8 @@ class SyncService {
         jsonDecode(mutation['payload_json'] as String) as Map<String, dynamic>;
 
     try {
+      _logger.info('Syncing $entityType:$action for ID: $entityId');
+      
       switch (entityType) {
         case 'book':
           return await _syncBookMutation(action, entityId, payload);
@@ -233,13 +240,16 @@ class SyncService {
     };
 
     if (action == 'update') {
+      final targetLanguage = payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
+      final status = (payload['status'] as String).toUpperCase();
+
       final response = await http.put(
         Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
         headers: headers,
         body: jsonEncode({
           'word': word,
-          'targetLanguage': payload['targetLanguage'],
-          'status': payload['status'],
+          'targetLanguage': targetLanguage,
+          'status': status,
         }),
       );
       return response.statusCode >= 200 && response.statusCode < 300;
@@ -265,3 +275,5 @@ final syncQueueCountProvider = FutureProvider<int>((ref) async {
 });
 
 final lastSyncTimeProvider = StateProvider<DateTime?>((ref) => null);
+
+final isSyncingProvider = StateProvider<bool>((ref) => false);

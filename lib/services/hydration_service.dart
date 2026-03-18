@@ -6,6 +6,7 @@ import '../providers/connectivity_provider.dart';
 import '../services/token_service.dart';
 import '../utils/constants.dart';
 import '../services/logger_service.dart';
+import '../services/sync_service.dart';
 
 class HydrationService {
   final AppDatabase _db;
@@ -43,6 +44,7 @@ class HydrationService {
       ]);
 
       _lastSyncTimestamp = DateTime.now();
+      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTimestamp;
       _logger.info(
         'HydrationService: Full sync completed at $_lastSyncTimestamp',
       );

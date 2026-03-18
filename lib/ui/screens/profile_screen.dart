@@ -614,6 +614,7 @@ class _SyncStatusSection extends ConsumerWidget {
     final isOnline = ref.watch(connectivityProvider);
     final syncQueueCount = ref.watch(syncQueueCountProvider);
     final lastSyncTime = ref.watch(lastSyncTimeProvider);
+    final isSyncing = ref.watch(isSyncingProvider);
 
     return GlassCard(
       child: Column(
@@ -643,7 +644,7 @@ class _SyncStatusSection extends ConsumerWidget {
                 const Icon(Icons.sync, color: Colors.white54, size: 16),
                 const SizedBox(width: 8),
                 Text(
-                  "Pending changes: $count",
+                  isSyncing ? "Syncing $count changes..." : "Pending changes: $count",
                   style: const TextStyle(color: Colors.white70),
                 ),
               ],
@@ -684,9 +685,11 @@ class _SyncStatusSection extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: LiquidButton(
-                text: "Sync Now",
-                onTap: () =>
-                    ref.read(syncServiceProvider).syncPendingMutations(),
+                text: isSyncing ? "Syncing..." : "Sync Now",
+                isLoading: isSyncing,
+                onTap: () => isSyncing
+                    ? null
+                    : ref.read(syncServiceProvider).syncPendingMutations(force: true),
               ),
             ),
         ],

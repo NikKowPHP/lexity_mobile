@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class LiquidTheme {
-  static const Color backgroundDark = Color(0xFF000000);
-  static const Color backgroundLight = Color(0xFFF9F9F9);
+  static const Color backgroundDark = Color(0xFF16181F); // Deeper slate
+  static const Color backgroundLight = Color(0xFFF2F4F7);
 
-  static const Color primaryAccent = Color(0xFF818CF8);
-  static const Color secondaryAccent = Color(0xFFF472B6);
-  static const Color glassBorder = Color(0x33FFFFFF);
-  static const Color cardGrey = Color(0xFF1A1A1A);
+  static const Color primaryAccent = Color(0xFF0055FF); // Vibrant Cobalt Blue
+  static const Color secondaryAccent = Color(0xFF242731); // Slate Grey for inactive pills
+  static const Color glassBorder = Color(0x1AFFFFFF); // Very subtle white border
+  static const Color cardGrey = Color(0xFF21242D); // Darker surface color
 
   static ThemeData get darkTheme => _buildTheme(Brightness.dark);
   static ThemeData get lightTheme => _buildTheme(Brightness.light);
