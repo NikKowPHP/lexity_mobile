@@ -23,6 +23,7 @@ import '../ui/screens/library_screen.dart';
 import '../ui/screens/book_reader_screen.dart';
 import '../ui/screens/vocabulary_screen.dart';
 import '../ui/screens/srs_items_screen.dart';
+import '../ui/screens/more_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -213,7 +214,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 3: Progress
+          // Branch 3: Progress (hidden in nav, accessed via More)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -222,7 +223,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 4: Profile
+          // Branch 4: Profile (hidden in nav, accessed via More)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -231,7 +232,6 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-
           // Branch 5: Translator
           StatefulShellBranch(
             routes: [
@@ -242,21 +242,38 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+          // Branch 6: More
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/more',
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const MoreScreen(), state),
+              ),
+            ],
+          ),
         ],
       ),
     ],
   );
 });
 
-// Helper for sleek 2026 transitions
+// Helper for iOS-style transitions
 CustomTransitionPage _buildFadePage(Widget child, GoRouterState state) {
   return CustomTransitionPage(
     key: ValueKey(state.uri.toString()),
     child: child,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return FadeTransition(opacity: animation, child: child);
+      const begin = Offset(1.0, 0.0);
+      const end = Offset.zero;
+      const curve = Curves.easeInOut;
+      var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+      return SlideTransition(
+        position: animation.drive(tween),
+        child: child,
+      );
     },
-    transitionDuration: const Duration(milliseconds: 400),
+    transitionDuration: const Duration(milliseconds: 300),
   );
 }
 

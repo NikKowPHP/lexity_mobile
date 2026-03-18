@@ -95,7 +95,7 @@ class GlassScaffold extends StatelessWidget {
     );
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFF0D1117),
       resizeToAvoidBottomInset: false,
       floatingActionButton: floatingActionButton,
       body: onRefresh != null

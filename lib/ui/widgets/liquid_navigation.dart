@@ -7,16 +7,13 @@ import 'package:lucide_icons/lucide_icons.dart';
 class LiquidNavigation extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
-  const LiquidNavigation({super.key, required this.navigationShell});
+  LiquidNavigation({super.key, required this.navigationShell});
 
-  final List<({IconData icon, String label})> _items = const [
+  final List<({IconData icon, String label})> _mainItems = const [
     (icon: LucideIcons.map, label: 'Path'),           // Index 0
     (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
     (icon: LucideIcons.library, label: 'Library'),    // Index 2
-    (icon: LucideIcons.barChart2, label: 'Progress'), // Index 3
-    (icon: LucideIcons.user, label: 'Profile'),       // Index 4
-    (icon: LucideIcons.languages, label: 'Translator'), // Index 5
-   
+    (icon: LucideIcons.languages, label: 'Translator'), // Index 3
   ];
 
   void _onTap(BuildContext context, int index) {
@@ -25,7 +22,7 @@ class LiquidNavigation extends StatelessWidget {
         index,
         initialLocation: index == navigationShell.currentIndex,
       );
-    } 
+    }
   }
 
   @override
@@ -44,25 +41,35 @@ class LiquidNavigation extends StatelessWidget {
       alignment: Alignment.bottomCenter,
       child: Container(
         margin: const EdgeInsets.only(bottom: 30, left: 16, right: 16),
-        height: 85, // Taller to fit icon + text
+        height: 85,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(100), // Perfect stadium shape
+          borderRadius: BorderRadius.circular(100),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               decoration: _glassDecoration(),
               child: Row(
-                children: _items.asMap().entries.map((entry) {
-                  return Expanded(
+                children: [
+                  ..._mainItems.asMap().entries.map((entry) {
+                    return Expanded(
+                      child: _NavItem(
+                        icon: entry.value.icon,
+                        label: entry.value.label,
+                        isActive: currentIndex == entry.key,
+                        onTap: () => _onTap(context, entry.key),
+                      ),
+                    );
+                  }),
+                  Expanded(
                     child: _NavItem(
-                      icon: entry.value.icon,
-                      label: entry.value.label,
-                      isActive: currentIndex == entry.key,
-                      onTap: () => _onTap(context, entry.key),
+                      icon: Icons.more_horiz,
+                      label: 'More',
+                      isActive: currentIndex == 6,
+                      onTap: () => _onTap(context, 6),
                     ),
-                  );
-                }).toList(),
+                  ),
+                ],
               ),
             ),
           ),
@@ -76,7 +83,7 @@ class LiquidNavigation extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(left: 30),
-        width: 90, // Widened to accommodate text
+        width: 90,
         height: 550,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(45),
@@ -87,15 +94,24 @@ class LiquidNavigation extends StatelessWidget {
               decoration: _glassDecoration(),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: _items.asMap().entries.map((entry) {
-                  return _NavItem(
-                    icon: entry.value.icon,
-                    label: entry.value.label,
-                    isActive: currentIndex == entry.key,
-                    onTap: () => _onTap(context, entry.key),
+                children: [
+                  ..._mainItems.asMap().entries.map((entry) {
+                    return _NavItem(
+                      icon: entry.value.icon,
+                      label: entry.value.label,
+                      isActive: currentIndex == entry.key,
+                      onTap: () => _onTap(context, entry.key),
+                      isVertical: true,
+                    );
+                  }),
+                  _NavItem(
+                    icon: Icons.more_horiz,
+                    label: 'More',
+                    isActive: currentIndex == 6,
+                    onTap: () => _onTap(context, 6),
                     isVertical: true,
-                  );
-                }).toList(),
+                  ),
+                ],
               ),
             ),
           ),
@@ -134,16 +150,15 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        color: Colors.transparent, // Ensures the entire expanded area captures taps
+        color: Colors.transparent,
         child: Center(
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOutExpo,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
-              // Active state has a soft white glowing fill, matching the "Command" button from the ref
               color: isActive ? Colors.white.withOpacity(0.15) : Colors.transparent,
-              borderRadius: BorderRadius.circular(30), // Pill shape for the active state
+              borderRadius: BorderRadius.circular(30),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
