@@ -3,12 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/logger_service.dart';
+import '../../services/token_service.dart';
+import '../../services/book_service.dart';
 import '../../theme/liquid_theme.dart';
+import '../../utils/constants.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
+import '../../models/book.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -206,11 +211,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                               color: Colors.black26,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(
-                              Icons.menu_book,
-                              size: 48,
-                              color: Colors.white38,
-                            ),
+                            child: BookCoverImage(book: book),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -259,6 +260,74 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class BookCoverImage extends ConsumerWidget {
+  final UserBook book;
+  const BookCoverImage({super.key, required this.book});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // If there's no cover image path in the local DB, show the default icon
+    if (book.coverImageUrl == null) {
+      return const Center(
+        child: Icon(
+          Icons.menu_book,
+          size: 48,
+          color: Colors.white38,
+        ),
+      );
+    }
+
+    // Use the BookService to get the stable proxy URL
+    final bookService = ref.watch(bookServiceProvider);
+    final coverUrl = bookService.getCoverProxyUrl(book.id);
+
+    // Fetch the auth token to pass in the headers for CachedNetworkImage
+    return FutureBuilder<String?>(
+      future: ref.read(tokenServiceProvider(TokenType.auth)).getToken(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+
+        final token = snapshot.data!;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: coverUrl,
+            httpHeaders: {
+              'Authorization': 'Bearer $token',
+            },
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            placeholder: (context, url) => const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+            errorWidget: (context, url, error) => const Center(
+              child: Icon(
+                Icons.menu_book,
+                size: 48,
+                color: Colors.white38,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:epub_pro/epub_pro.dart';
+import 'package:image/image.dart' as img;
 import '../models/book.dart';
 import '../utils/constants.dart';
 import '../database/app_database.dart';
@@ -35,6 +37,12 @@ class BookService {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
+  }
+
+  /// Constructs the stable proxy URL for a book's cover image.
+  /// The backend handles the redirection to a temporary signed Supabase URL.
+  String getCoverProxyUrl(String bookId) {
+    return '${AppConstants.baseUrl}/api/books/$bookId/cover';
   }
 
   /// Handles 401 errors by attempting to refresh the token and retrying the request.
@@ -327,6 +335,64 @@ class BookService {
     try {
       final filename = file.path.split('/').last;
 
+      // 1. Extract Metadata and Cover Image in Flutter
+      _logger.info('BookService: Extracting metadata and cover from EPUB');
+      final bytes = await file.readAsBytes();
+      final epubBook = await EpubReader.readBook(bytes);
+      final author = epubBook.author ?? "Unknown";
+      final bookTitle = epubBook.title ?? title;
+
+      String? coverStoragePath;
+
+      // 2. Extract and Upload Cover if it exists
+      final coverImage = epubBook.coverImage;
+      if (coverImage != null) {
+        try {
+          _logger.info('BookService: Cover image found, preparing upload');
+          final coverFilename =
+              'cover-${DateTime.now().millisecondsSinceEpoch}.jpg';
+          final coverUrlRes = await http.get(
+            Uri.parse(
+              '${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$coverFilename',
+            ),
+            headers: await _getHeaders(),
+          );
+
+          if (coverUrlRes.statusCode == 200) {
+            final coverUrlData = jsonDecode(coverUrlRes.body);
+            var coverSignedUrl = coverUrlData['signedUrl'] as String;
+            coverStoragePath = coverUrlData['path'];
+
+            if (coverSignedUrl.startsWith('/')) {
+              coverSignedUrl = '${AppConstants.baseUrl}$coverSignedUrl';
+            }
+
+            // Convert the Image object from epub_pro package to JPEG bytes using the image package
+            final encodedCover = img.encodeJpg(coverImage);
+
+            final uploadRes = await http.put(
+              Uri.parse(coverSignedUrl),
+              headers: {'Content-Type': 'image/jpeg'},
+              body: encodedCover,
+            );
+
+            if (uploadRes.statusCode != 200) {
+              _logger.warning(
+                'BookService: Cover upload failed, proceeding without it',
+              );
+              coverStoragePath = null;
+            }
+          }
+        } catch (e) {
+          _logger.warning(
+            'BookService: Error during cover extraction/upload',
+            e,
+          );
+          coverStoragePath = null;
+        }
+      }
+
+      // 3. Request signed upload URL for the EPUB
       _logger.info('BookService: Requesting signed upload URL for $filename');
       final uploadUrlResponse = await http.get(
         Uri.parse(
@@ -350,10 +416,10 @@ class BookService {
         signedUrl = '${AppConstants.baseUrl}$signedUrl';
       }
 
+      // 4. Upload EPUB binary
       _logger.info(
         'BookService: Uploading binary to storage path: $storagePath',
       );
-      final bytes = await file.readAsBytes();
       final uploadRes = await http.put(
         Uri.parse(signedUrl),
         headers: {'Content-Type': 'application/epub+zip'},
@@ -367,15 +433,17 @@ class BookService {
         throw Exception('Failed to upload file to storage');
       }
 
+      // 5. Register book record in database
       _logger.info('BookService: Registering book record in database');
       final dbRes = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/books'),
         headers: await _getHeaders(),
         body: jsonEncode({
-          'title': title,
-          'author': 'Unknown',
+          'title': bookTitle,
+          'author': author,
           'targetLanguage': targetLanguage,
           'storagePath': storagePath,
+          'coverImageUrl': coverStoragePath,
         }),
       );
 
@@ -383,7 +451,7 @@ class BookService {
         final data = jsonDecode(dbRes.body);
         await _upsertBookLocal(data);
         _logger.info(
-          'BookService: Upload and registration complete for "$title"',
+          'BookService: Upload and registration complete for "$bookTitle"',
         );
         return;
       }

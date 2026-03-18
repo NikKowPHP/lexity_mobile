@@ -2935,192 +2935,6 @@ class _CardFace extends StatelessWidget {
 }
 </file>
 
-<file path="lib/ui/screens/more_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import '../widgets/glass_scaffold.dart';
-
-class MoreScreen extends StatelessWidget {
-  const MoreScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassScaffold(
-      title: 'More',
-      subtitle: 'Additional options',
-      showBackButton: false,
-      body: SliverList(
-        delegate: SliverChildListDelegate([
-          const SizedBox(height: 8),
-          _MoreItem(
-            icon: LucideIcons.user,
-            title: 'Profile',
-            subtitle: 'Manage your account settings',
-            onTap: () => context.push('/profile'),
-          ),
-          _MoreItem(
-            icon: LucideIcons.barChart2,
-            title: 'Progress',
-            subtitle: 'View your learning analytics',
-            onTap: () => context.push('/progress'),
-          ),
-          const SizedBox(height: 24),
-          const _SectionHeader(title: "ACCOUNT"),
-          _MoreItem(
-            icon: LucideIcons.settings,
-            title: 'Settings',
-            subtitle: 'App preferences and configuration',
-            onTap: () => context.go('/profile'),
-          ),
-          _MoreItem(
-            icon: LucideIcons.bell,
-            title: 'Notifications',
-            subtitle: 'Manage notification preferences',
-            onTap: () {},
-          ),
-          _MoreItem(
-            icon: LucideIcons.moon,
-            title: 'Appearance',
-            subtitle: 'Theme and display options',
-            onTap: () {},
-          ),
-          const SizedBox(height: 24),
-          const _SectionHeader(title: "DATA"),
-          _MoreItem(
-            icon: LucideIcons.database,
-            title: 'Vocabulary',
-            subtitle: 'Review and manage saved words',
-            onTap: () => context.go('/vocabulary'),
-          ),
-          _MoreItem(
-            icon: LucideIcons.history,
-            title: 'SRS Items',
-            subtitle: 'Spaced repetition review items',
-            onTap: () => context.go('/srs-items'),
-          ),
-          const SizedBox(height: 24),
-          const _SectionHeader(title: "SUPPORT"),
-          _MoreItem(
-            icon: LucideIcons.helpCircle,
-            title: 'Help & FAQ',
-            subtitle: 'Get help and answers',
-            onTap: () {},
-          ),
-          _MoreItem(
-            icon: LucideIcons.mail,
-            title: 'Contact Us',
-            subtitle: 'Send feedback or report issues',
-            onTap: () {},
-          ),
-          _MoreItem(
-            icon: LucideIcons.info,
-            title: 'About',
-            subtitle: 'App version and information',
-            onTap: () {},
-          ),
-          const SizedBox(height: 40),
-        ]),
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 12, top: 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: Colors.white.withOpacity(0.5),
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-}
-
-class _MoreItem extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _MoreItem({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: Colors.white.withOpacity(0.8),
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                LucideIcons.chevronRight,
-                color: Colors.white.withOpacity(0.3),
-                size: 20,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-</file>
-
 <file path="lib/ui/screens/srs_items_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -3204,184 +3018,6 @@ class _SrsItemsScreenState extends ConsumerState<SrsItemsScreen> {
               ),
             ),
           ),
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/screens/vocabulary_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/vocabulary_provider.dart';
-import '../../providers/user_provider.dart';
-import '../widgets/glass_scaffold.dart';
-import '../widgets/liquid_components.dart';
-
-class VocabularyScreen extends ConsumerStatefulWidget {
-  const VocabularyScreen({super.key});
-
-  @override
-  ConsumerState<VocabularyScreen> createState() => _VocabularyScreenState();
-}
-
-class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  String _search = "";
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final lang = ref.read(activeLanguageProvider);
-      ref.read(paginatedVocabularyProvider.notifier).loadVocabulary(lang);
-    });
-    
-    _scrollController.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      ref.read(paginatedVocabularyProvider.notifier).loadMore();
-    }
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  List<MapEntry<String, String>> _filterItems(Map<String, String> items, String search) {
-    if (search.isEmpty) return items.entries.toList();
-    return items.entries.where((e) => e.key.toLowerCase().contains(search.toLowerCase())).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final vocabData = ref.watch(paginatedVocabularyProvider);
-    final activeLang = ref.watch(activeLanguageProvider);
-    final filteredItems = _filterItems(vocabData.items, _search);
-
-    return GlassScaffold(
-      title: 'Vocabulary',
-      subtitle: 'Manage saved words',
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-            child: Column(
-              children: [
-                _VocabularyCountsCard(counts: vocabData.counts),
-                const SizedBox(height: 16),
-                GlassInput(
-                  hint: "Search words...",
-                  controller: _searchController,
-                  onChanged: (val) => setState(() => _search = val),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: vocabData.isLoading && vocabData.items.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : filteredItems.isEmpty
-                    ? const Center(child: Text("No words found", style: TextStyle(color: Colors.white38)))
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: filteredItems.length + (vocabData.hasMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (index >= filteredItems.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: CircularProgressIndicator()),
-                            );
-                          }
-
-                          final entry = filteredItems[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: GlassCard(
-                              padding: 12,
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-                                        Text(entry.value.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.white54)),
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                    onPressed: () => ref.read(paginatedVocabularyProvider.notifier).deleteWord(entry.key, activeLang),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VocabularyCountsCard extends StatelessWidget {
-  final VocabularyCounts counts;
-
-  const _VocabularyCountsCard({required this.counts});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: 16,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _CountItem(label: 'Total', value: counts.total, color: Colors.white),
-          _CountItem(label: 'Known', value: counts.known, color: Colors.greenAccent),
-          _CountItem(label: 'Learning', value: counts.learning, color: Colors.orangeAccent),
-          _CountItem(label: 'Unknown', value: counts.unknown, color: Colors.redAccent),
-        ],
-      ),
-    );
-  }
-}
-
-class _CountItem extends StatelessWidget {
-  final String label;
-  final int value;
-  final Color color;
-
-  const _CountItem({required this.label, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          value.toString(),
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.white.withValues(alpha: 0.6),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -6825,6 +6461,192 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
 }
 </file>
 
+<file path="lib/ui/screens/more_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import '../widgets/glass_scaffold.dart';
+
+class MoreScreen extends StatelessWidget {
+  const MoreScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassScaffold(
+      title: 'More',
+      subtitle: 'Additional options',
+      showBackButton: false,
+      body: SliverList(
+        delegate: SliverChildListDelegate([
+          const SizedBox(height: 8),
+          _MoreItem(
+            icon: LucideIcons.user,
+            title: 'Profile',
+            subtitle: 'Manage your account settings',
+            onTap: () => context.push('/profile'),
+          ),
+          _MoreItem(
+            icon: LucideIcons.barChart2,
+            title: 'Progress',
+            subtitle: 'View your learning analytics',
+            onTap: () => context.push('/progress'),
+          ),
+          const SizedBox(height: 24),
+          const _SectionHeader(title: "ACCOUNT"),
+          _MoreItem(
+            icon: LucideIcons.settings,
+            title: 'Settings',
+            subtitle: 'App preferences and configuration',
+            onTap: () => context.push('/profile'),
+          ),
+          _MoreItem(
+            icon: LucideIcons.bell,
+            title: 'Notifications',
+            subtitle: 'Manage notification preferences',
+            onTap: () {},
+          ),
+          _MoreItem(
+            icon: LucideIcons.moon,
+            title: 'Appearance',
+            subtitle: 'Theme and display options',
+            onTap: () {},
+          ),
+          const SizedBox(height: 24),
+          const _SectionHeader(title: "DATA"),
+          _MoreItem(
+            icon: LucideIcons.database,
+            title: 'Vocabulary',
+            subtitle: 'Review and manage saved words',
+            onTap: () => context.push('/vocabulary'),
+          ),
+          _MoreItem(
+            icon: LucideIcons.history,
+            title: 'SRS Items',
+            subtitle: 'Spaced repetition review items',
+            onTap: () => context.push('/srs-items'),
+          ),
+          const SizedBox(height: 24),
+          const _SectionHeader(title: "SUPPORT"),
+          _MoreItem(
+            icon: LucideIcons.helpCircle,
+            title: 'Help & FAQ',
+            subtitle: 'Get help and answers',
+            onTap: () {},
+          ),
+          _MoreItem(
+            icon: LucideIcons.mail,
+            title: 'Contact Us',
+            subtitle: 'Send feedback or report issues',
+            onTap: () {},
+          ),
+          _MoreItem(
+            icon: LucideIcons.info,
+            title: 'About',
+            subtitle: 'App version and information',
+            onTap: () {},
+          ),
+          const SizedBox(height: 40),
+        ]),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, bottom: 12, top: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.5),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _MoreItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _MoreItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: Colors.white.withOpacity(0.8),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                LucideIcons.chevronRight,
+                color: Colors.white.withOpacity(0.3),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/screens/study_material_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -6946,6 +6768,187 @@ class _StudyMaterialScreenState extends State<StudyMaterialScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/screens/vocabulary_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/vocabulary_provider.dart';
+import '../../providers/user_provider.dart';
+import '../widgets/glass_scaffold.dart';
+import '../widgets/liquid_components.dart';
+
+class VocabularyScreen extends ConsumerStatefulWidget {
+  const VocabularyScreen({super.key});
+
+  @override
+  ConsumerState<VocabularyScreen> createState() => _VocabularyScreenState();
+}
+
+class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  String _search = "";
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final lang = ref.read(activeLanguageProvider);
+      ref.read(paginatedVocabularyProvider.notifier).loadVocabulary(lang);
+    });
+    
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      ref.read(paginatedVocabularyProvider.notifier).loadMore();
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  List<MapEntry<String, String>> _filterItems(Map<String, String> items, String search) {
+    if (search.isEmpty) return items.entries.toList();
+    return items.entries.where((e) => e.key.toLowerCase().contains(search.toLowerCase())).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vocabData = ref.watch(paginatedVocabularyProvider);
+    final activeLang = ref.watch(activeLanguageProvider);
+    final filteredItems = _filterItems(vocabData.items, _search);
+
+    return GlassScaffold(
+      title: 'Vocabulary',
+      subtitle: 'Manage saved words',
+      showBackButton: true,
+      body: SliverFillRemaining(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Column(
+                children: [
+                  _VocabularyCountsCard(counts: vocabData.counts),
+                  const SizedBox(height: 16),
+                  GlassInput(
+                    hint: "Search words...",
+                    controller: _searchController,
+                    onChanged: (val) => setState(() => _search = val),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: vocabData.isLoading && vocabData.items.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : filteredItems.isEmpty
+                      ? const Center(child: Text("No words found", style: TextStyle(color: Colors.white38)))
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: filteredItems.length + (vocabData.hasMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index >= filteredItems.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(child: CircularProgressIndicator()),
+                              );
+                            }
+
+                            final entry = filteredItems[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: GlassCard(
+                                padding: 12,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                                          Text(entry.value.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                      onPressed: () => ref.read(paginatedVocabularyProvider.notifier).deleteWord(entry.key, activeLang),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VocabularyCountsCard extends StatelessWidget {
+  final VocabularyCounts counts;
+
+  const _VocabularyCountsCard({required this.counts});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _CountItem(label: 'Total', value: counts.total, color: Colors.white),
+          _CountItem(label: 'Known', value: counts.known, color: Colors.greenAccent),
+          _CountItem(label: 'Learning', value: counts.learning, color: Colors.orangeAccent),
+          _CountItem(label: 'Unknown', value: counts.unknown, color: Colors.redAccent),
+        ],
+      ),
+    );
+  }
+}
+
+class _CountItem extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+
+  const _CountItem({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          value.toString(),
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.white.withValues(alpha: 0.6),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -11207,255 +11210,6 @@ final srsDeckStreamProvider = StreamProvider<List<SrsItem>>((ref) {
 });
 </file>
 
-<file path="lib/providers/vocabulary_provider.dart">
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/vocabulary_service.dart';
-export '../services/vocabulary_service.dart' show VocabularyCounts;
-
-final vocabularyStreamProvider = StreamProvider<Map<String, String>>((ref) {
-  final service = ref.watch(vocabularyServiceProvider);
-  return service.watchVocabulary();
-});
-
-class VocabularyData {
-  final Map<String, String> items;
-  final int totalCount;
-  final int totalPages;
-  final int currentPage;
-  final VocabularyCounts counts;
-  final bool isLoading;
-  final bool hasMore;
-
-  VocabularyData({
-    required this.items,
-    required this.totalCount,
-    required this.totalPages,
-    required this.currentPage,
-    required this.counts,
-    this.isLoading = false,
-    this.hasMore = false,
-  });
-
-  VocabularyData copyWith({
-    Map<String, String>? items,
-    int? totalCount,
-    int? totalPages,
-    int? currentPage,
-    VocabularyCounts? counts,
-    bool? isLoading,
-    bool? hasMore,
-  }) {
-    return VocabularyData(
-      items: items ?? this.items,
-      totalCount: totalCount ?? this.totalCount,
-      totalPages: totalPages ?? this.totalPages,
-      currentPage: currentPage ?? this.currentPage,
-      counts: counts ?? this.counts,
-      isLoading: isLoading ?? this.isLoading,
-      hasMore: hasMore ?? this.hasMore,
-    );
-  }
-}
-
-class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> {
-  final VocabularyService _service;
-
-  VocabularyNotifier(this._service) : super(const AsyncValue.loading());
-
-  Stream<Map<String, String>> watchVocabulary() {
-    return _service.watchVocabulary();
-  }
-
-  Future<void> loadVocabulary(String language) async {
-    if (!state.hasValue) {
-      state = const AsyncValue.loading();
-    }
-    try {
-      final vocab = await _service.getVocabulary(language);
-      state = AsyncValue.data(vocab);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
-  }
-
-  Future<void> updateWordStatus(
-    String word,
-    String status,
-    String language,
-  ) async {
-    final currentMap = state.value ?? {};
-    final wordLower = word.toLowerCase();
-    final statusLower = status.toLowerCase();
-
-    final newMap = Map<String, String>.from(currentMap)
-      ..[wordLower] = statusLower;
-    state = AsyncValue.data(newMap);
-
-    try {
-      await _service.updateStatus(wordLower, statusLower, language);
-    } catch (e) {
-      state = AsyncValue.data(currentMap);
-    }
-  }
-
-  Future<void> markBatchKnown(List<String> words, String language) async {
-    final currentMap = state.value ?? {};
-    final newMap = Map<String, String>.from(currentMap);
-    final lowerWords = words.map((w) => w.toLowerCase()).toList();
-    for (var w in lowerWords) {
-      newMap[w] = 'known';
-    }
-    state = AsyncValue.data(newMap);
-
-    try {
-      await _service.markBatchKnown(lowerWords, language);
-    } catch (e) {
-      state = AsyncValue.data(currentMap);
-    }
-  }
-
-  Future<void> deleteWord(String word, String language) async {
-    final currentMap = state.value ?? {};
-    final wordLower = word.toLowerCase();
-
-    final newMap = Map<String, String>.from(currentMap)..remove(wordLower);
-    state = AsyncValue.data(newMap);
-
-    try {
-      await _service.deleteWord(wordLower, language);
-    } catch (e) {
-      state = AsyncValue.data(currentMap);
-    }
-  }
-}
-
-final vocabularyProvider =
-    StateNotifierProvider<VocabularyNotifier, AsyncValue<Map<String, String>>>((
-      ref,
-    ) {
-      return VocabularyNotifier(ref.watch(vocabularyServiceProvider));
-    });
-
-class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
-  final VocabularyService _service;
-  final Ref _ref;
-  String? _currentLanguage;
-
-  PaginatedVocabularyNotifier(this._service, this._ref) 
-      : super(VocabularyData(
-          items: {},
-          totalCount: 0,
-          totalPages: 0,
-          currentPage: 1,
-          counts: VocabularyCounts(total: 0, known: 0, learning: 0, unknown: 0),
-          isLoading: true,
-        ));
-
-  Future<void> loadVocabulary(String language) async {
-    _currentLanguage = language;
-    state = state.copyWith(isLoading: true);
-    
-    try {
-      final result = await _service.getVocabularyPage(language, page: 1);
-      state = VocabularyData(
-        items: result.items,
-        totalCount: result.totalCount,
-        totalPages: result.totalPages,
-        currentPage: result.currentPage,
-        counts: result.counts,
-        isLoading: false,
-        hasMore: result.currentPage < result.totalPages,
-      );
-    } catch (e, st) {
-      state = state.copyWith(isLoading: false);
-    }
-  }
-
-  Future<void> loadMore() async {
-    if (state.isLoading || !state.hasMore || _currentLanguage == null) return;
-
-    state = state.copyWith(isLoading: true);
-    
-    try {
-      final result = await _service.getVocabularyPage(
-        _currentLanguage!,
-        page: state.currentPage + 1,
-      );
-      
-      final newItems = Map<String, String>.from(state.items)..addAll(result.items);
-      
-      state = VocabularyData(
-        items: newItems,
-        totalCount: result.totalCount,
-        totalPages: result.totalPages,
-        currentPage: result.currentPage,
-        counts: result.counts,
-        isLoading: false,
-        hasMore: result.currentPage < result.totalPages,
-      );
-    } catch (e) {
-      state = state.copyWith(isLoading: false);
-    }
-  }
-
-  Future<void> updateWordStatus(String word, String status, String language) async {
-    final wordLower = word.toLowerCase();
-    final statusLower = status.toLowerCase();
-    
-    final newItems = Map<String, String>.from(state.items)..[wordLower] = statusLower;
-    
-    final newCounts = VocabularyCounts(
-      total: state.counts.total,
-      known: statusLower == 'known' ? state.counts.known + 1 : state.counts.known,
-      learning: statusLower == 'learning' ? state.counts.learning + 1 : state.counts.learning,
-      unknown: statusLower == 'unknown' ? state.counts.unknown + 1 : state.counts.unknown,
-    );
-    
-    state = state.copyWith(items: newItems, counts: newCounts);
-
-    try {
-      await _service.updateStatus(wordLower, statusLower, language);
-    } catch (e) {
-      // Revert on error
-      final revertedItems = Map<String, String>.from(state.items)..remove(wordLower);
-      state = state.copyWith(items: revertedItems, counts: state.counts);
-    }
-  }
-
-  Future<void> deleteWord(String word, String language) async {
-    final wordLower = word.toLowerCase();
-    final removedStatus = state.items[wordLower];
-    
-    final newItems = Map<String, String>.from(state.items)..remove(wordLower);
-    
-    final newCounts = VocabularyCounts(
-      total: state.counts.total - 1,
-      known: removedStatus == 'known' ? state.counts.known - 1 : state.counts.known,
-      learning: removedStatus == 'learning' ? state.counts.learning - 1 : state.counts.learning,
-      unknown: removedStatus == 'unknown' ? state.counts.unknown - 1 : state.counts.unknown,
-    );
-    
-    state = state.copyWith(items: newItems, counts: newCounts);
-
-    try {
-      await _service.deleteWord(wordLower, language);
-    } catch (e) {
-      // Revert on error
-      final revertedItems = Map<String, String>.from(state.items)..[wordLower] = removedStatus ?? '';
-      state = state.copyWith(items: revertedItems, counts: state.counts);
-    }
-  }
-}
-
-final paginatedVocabularyProvider =
-    StateNotifierProvider<PaginatedVocabularyNotifier, VocabularyData>((ref) {
-      return PaginatedVocabularyNotifier(
-        ref.watch(vocabularyServiceProvider),
-        ref,
-      );
-    });
-</file>
-
 <file path="lib/services/learning_path_service.dart">
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11790,234 +11544,6 @@ class LiquidTheme {
 }
 </file>
 
-<file path="lib/ui/screens/path_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../../theme/liquid_theme.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../../providers/path_provider.dart';
-import '../../models/learning_module.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/onboarding_provider.dart';
-import '../../providers/journal_provider.dart';
-import '../../models/user_profile.dart';
-import '../../models/journal_entry.dart';
-
-class PathScreen extends ConsumerWidget {
-  const PathScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pathAsync = ref.watch(learningPathProvider);
-
-    return GlassScaffold(
-      title: 'Your Path',
-      subtitle: 'Personalized Curriculum',
-      showBackButton: false,
-      body: pathAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: Colors.white)),
-        error: (e, _) => Center(
-          child: Text(
-            "Error loading path: $e",
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
-        data: (modules) {
-          final profile = ref.watch(userProfileProvider).value;
-          final onboardingStep = ref.watch(onboardingProvider);
-          
-          if (profile != null && !profile.onboardingCompleted) {
-             final journals = ref.watch(journalHistoryProvider).value ?? [];
-             return Padding(
-               padding: const EdgeInsets.all(20),
-               child: Column(
-                 children: [
-                   const Text("WELCOME TO LEXITY", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-                   const SizedBox(height: 8),
-                   const Text("Complete these steps to unlock your path", style: TextStyle(color: Colors.white70, fontSize: 13)),
-                   const SizedBox(height: 32),
-                   _buildOnboardingTimeline(profile, journals),
-                   const SizedBox(height: 32),
-                   if (onboardingStep == OnboardingStep.firstJournal)
-                      LiquidButton(text: "Start First Journal", onTap: () => context.push('/path/read')),
-                 ],
-               ),
-             );
-          }
-
-          if (modules.isEmpty) {
-            return Center(
-              child: LiquidButton(
-                text: "Generate First Module",
-                onTap: () => ref
-                    .read(pathNotifierProvider.notifier)
-                    .generateNextModule(),
-              ),
-            );
-          }
-
-          return ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: modules.length,
-            itemBuilder: (context, index) {
-              final module = modules[index];
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: GestureDetector(
-                  onTap: () {
-                    if (module.status != 'PENDING') {
-                      context.push('/path/module/${module.id}');
-                    }
-                  },
-                  child: _TimelineModuleItem(module: module, index: index),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _TimelineModuleItem extends StatelessWidget {
-  final LearningModule module;
-  final int index;
-
-  const _TimelineModuleItem({required this.module, required this.index});
-
-  @override
-  Widget build(BuildContext context) {
-    final isCompleted = module.status == 'COMPLETED';
-    final isPending = module.status == 'PENDING';
-    final isInProgress = module.status == 'IN_PROGRESS';
-
-    return GlassCard(
-      padding: 16,
-      child: Row(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: isPending
-                  ? Colors.white10
-                  : (isCompleted
-                        ? Colors.green.withValues(alpha: 0.2)
-                        : LiquidTheme.primaryAccent.withValues(alpha: 0.2)),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isPending
-                  ? Icons.lock
-                  : (isCompleted ? Icons.check : Icons.play_arrow),
-              color: isPending
-                  ? Colors.white38
-                  : (isCompleted
-                        ? Colors.greenAccent
-                        : LiquidTheme.primaryAccent),
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  module.title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: isPending ? Colors.white38 : Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  module.targetConceptTag.replaceAll('_', ' '),
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-                if (isInProgress)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      "Tap to continue...",
-                      style: TextStyle(
-                        color: LiquidTheme.primaryAccent,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (!isPending)
-            const Icon(Icons.chevron_right, color: Colors.white24),
-        ],
-      ),
-    ).animate().fadeIn().slideY(begin: 0.1, end: 0);
-  }
-}
-
-Widget _buildOnboardingTimeline(UserProfile profile, List<JournalEntry> journals) {
-  final step1Complete = profile.nativeLanguage != null && profile.nativeLanguage!.isNotEmpty;
-  final step2Complete = journals.isNotEmpty;
-  final step3Complete = journals.isNotEmpty && journals.first.analysis != null;
-  final step4Complete = profile.onboardingCompleted;
-
-  return Column(
-    children: [
-      _TimelineNode(title: "1. Language Setup", isDone: step1Complete),
-      _TimelineNode(title: "2. First Journal Entry", isDone: step2Complete, isActive: step1Complete),
-      _TimelineNode(title: "3. AI Analysis", isDone: step3Complete, isActive: step2Complete),
-      _TimelineNode(title: "4. Personalized Path", isDone: step4Complete, isActive: step3Complete),
-    ],
-  );
-}
-
-class _TimelineNode extends StatelessWidget {
-  final String title;
-  final bool isDone;
-  final bool isActive;
-
-  const _TimelineNode({required this.title, required this.isDone, this.isActive = true});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Row(
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: isDone ? Colors.greenAccent : (isActive ? LiquidTheme.primaryAccent.withValues(alpha: 0.2) : Colors.white10),
-              shape: BoxShape.circle,
-              border: isDone ? null : Border.all(color: isActive ? LiquidTheme.primaryAccent : Colors.white24),
-            ),
-            child: isDone ? const Icon(Icons.check, size: 16, color: Colors.black) : null,
-          ),
-          const SizedBox(width: 16),
-          Text(
-            title,
-            style: TextStyle(
-              color: isDone ? Colors.white : (isActive ? Colors.white70 : Colors.white24),
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-</file>
-
 <file path="lib/models/user_profile.dart">
 class UserGoals {
   final int? weeklyActivities;
@@ -12156,6 +11682,255 @@ class UserProfile {
     );
   }
 }
+</file>
+
+<file path="lib/providers/vocabulary_provider.dart">
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/vocabulary_service.dart';
+export '../services/vocabulary_service.dart' show VocabularyCounts;
+
+final vocabularyStreamProvider = StreamProvider<Map<String, String>>((ref) {
+  final service = ref.watch(vocabularyServiceProvider);
+  return service.watchVocabulary();
+});
+
+class VocabularyData {
+  final Map<String, String> items;
+  final int totalCount;
+  final int totalPages;
+  final int currentPage;
+  final VocabularyCounts counts;
+  final bool isLoading;
+  final bool hasMore;
+
+  VocabularyData({
+    required this.items,
+    required this.totalCount,
+    required this.totalPages,
+    required this.currentPage,
+    required this.counts,
+    this.isLoading = false,
+    this.hasMore = false,
+  });
+
+  VocabularyData copyWith({
+    Map<String, String>? items,
+    int? totalCount,
+    int? totalPages,
+    int? currentPage,
+    VocabularyCounts? counts,
+    bool? isLoading,
+    bool? hasMore,
+  }) {
+    return VocabularyData(
+      items: items ?? this.items,
+      totalCount: totalCount ?? this.totalCount,
+      totalPages: totalPages ?? this.totalPages,
+      currentPage: currentPage ?? this.currentPage,
+      counts: counts ?? this.counts,
+      isLoading: isLoading ?? this.isLoading,
+      hasMore: hasMore ?? this.hasMore,
+    );
+  }
+}
+
+class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> {
+  final VocabularyService _service;
+
+  VocabularyNotifier(this._service) : super(const AsyncValue.loading());
+
+  Stream<Map<String, String>> watchVocabulary() {
+    return _service.watchVocabulary();
+  }
+
+  Future<void> loadVocabulary(String language) async {
+    if (!state.hasValue) {
+      state = const AsyncValue.loading();
+    }
+    try {
+      final vocab = await _service.getVocabulary(language);
+      state = AsyncValue.data(vocab);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  Future<void> updateWordStatus(
+    String word,
+    String status,
+    String language,
+  ) async {
+    final currentMap = state.value ?? {};
+    final wordLower = word.toLowerCase();
+    final statusLower = status.toLowerCase();
+
+    final newMap = Map<String, String>.from(currentMap)
+      ..[wordLower] = statusLower;
+    state = AsyncValue.data(newMap);
+
+    try {
+      await _service.updateStatus(wordLower, statusLower, language);
+    } catch (e) {
+      state = AsyncValue.data(currentMap);
+    }
+  }
+
+  Future<void> markBatchKnown(List<String> words, String language) async {
+    final currentMap = state.value ?? {};
+    final newMap = Map<String, String>.from(currentMap);
+    final lowerWords = words.map((w) => w.toLowerCase()).toList();
+    for (var w in lowerWords) {
+      newMap[w] = 'known';
+    }
+    state = AsyncValue.data(newMap);
+
+    try {
+      await _service.markBatchKnown(lowerWords, language);
+    } catch (e) {
+      state = AsyncValue.data(currentMap);
+    }
+  }
+
+  Future<void> deleteWord(String word, String language) async {
+    final currentMap = state.value ?? {};
+    final wordLower = word.toLowerCase();
+
+    final newMap = Map<String, String>.from(currentMap)..remove(wordLower);
+    state = AsyncValue.data(newMap);
+
+    try {
+      await _service.deleteWord(wordLower, language);
+    } catch (e) {
+      state = AsyncValue.data(currentMap);
+    }
+  }
+}
+
+final vocabularyProvider =
+    StateNotifierProvider<VocabularyNotifier, AsyncValue<Map<String, String>>>((
+      ref,
+    ) {
+      return VocabularyNotifier(ref.watch(vocabularyServiceProvider));
+    });
+
+class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
+  final VocabularyService _service;
+  final Ref _ref;
+  String? _currentLanguage;
+
+  PaginatedVocabularyNotifier(this._service, this._ref) 
+      : super(VocabularyData(
+          items: {},
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: 1,
+          counts: VocabularyCounts(total: 0, known: 0, learning: 0, unknown: 0),
+          isLoading: true,
+        ));
+
+  Future<void> loadVocabulary(String language) async {
+    _currentLanguage = language;
+    state = state.copyWith(isLoading: true);
+    
+    try {
+      final result = await _service.getVocabularyPage(language, page: 1);
+      state = VocabularyData(
+        items: result.items,
+        totalCount: result.totalCount,
+        totalPages: result.totalPages,
+        currentPage: result.currentPage,
+        counts: result.counts,
+        isLoading: false,
+        hasMore: result.currentPage < result.totalPages,
+      );
+    } catch (e, st) {
+      state = state.copyWith(isLoading: false);
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (state.isLoading || !state.hasMore || _currentLanguage == null) return;
+
+    state = state.copyWith(isLoading: true);
+    
+    try {
+      final result = await _service.getVocabularyPage(
+        _currentLanguage!,
+        page: state.currentPage + 1,
+      );
+      
+      final newItems = Map<String, String>.from(state.items)..addAll(result.items);
+      
+      state = VocabularyData(
+        items: newItems,
+        totalCount: result.totalCount,
+        totalPages: result.totalPages,
+        currentPage: result.currentPage,
+        counts: result.counts,
+        isLoading: false,
+        hasMore: result.currentPage < result.totalPages,
+      );
+    } catch (e) {
+      state = state.copyWith(isLoading: false);
+    }
+  }
+
+  Future<void> updateWordStatus(String word, String status, String language) async {
+    final wordLower = word.toLowerCase();
+    final statusLower = status.toLowerCase();
+    
+    final newItems = Map<String, String>.from(state.items)..[wordLower] = statusLower;
+    
+    final newCounts = VocabularyCounts(
+      total: state.counts.total,
+      known: statusLower == 'known' ? state.counts.known + 1 : state.counts.known,
+      learning: statusLower == 'learning' ? state.counts.learning + 1 : state.counts.learning,
+      unknown: statusLower == 'unknown' ? state.counts.unknown + 1 : state.counts.unknown,
+    );
+    
+    state = state.copyWith(items: newItems, counts: newCounts);
+
+    try {
+      await _service.updateStatus(wordLower, statusLower, language);
+    } catch (e) {
+      // Revert on error
+      final revertedItems = Map<String, String>.from(state.items)..remove(wordLower);
+      state = state.copyWith(items: revertedItems, counts: state.counts);
+    }
+  }
+
+  Future<void> deleteWord(String word, String language) async {
+    final wordLower = word.toLowerCase();
+    final removedStatus = state.items[wordLower];
+    
+    final newItems = Map<String, String>.from(state.items)..remove(wordLower);
+    
+    final newCounts = VocabularyCounts(
+      total: state.counts.total - 1,
+      known: removedStatus == 'known' ? state.counts.known - 1 : state.counts.known,
+      learning: removedStatus == 'learning' ? state.counts.learning - 1 : state.counts.learning,
+      unknown: removedStatus == 'unknown' ? state.counts.unknown - 1 : state.counts.unknown,
+    );
+    
+    state = state.copyWith(items: newItems, counts: newCounts);
+
+    try {
+      await _service.deleteWord(wordLower, language);
+    } catch (e) {
+      // Revert on error
+      final revertedItems = Map<String, String>.from(state.items)..[wordLower] = removedStatus ?? '';
+      state = state.copyWith(items: revertedItems, counts: state.counts);
+    }
+  }
+}
+
+final paginatedVocabularyProvider =
+    StateNotifierProvider<PaginatedVocabularyNotifier, VocabularyData>((ref) {
+      return PaginatedVocabularyNotifier(
+        ref.watch(vocabularyServiceProvider),
+        ref,
+      );
+    });
 </file>
 
 <file path="lib/services/sync_service.dart">
@@ -12720,12 +12495,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/logger_service.dart';
+import '../../services/token_service.dart';
+import '../../services/book_service.dart';
 import '../../theme/liquid_theme.dart';
+import '../../utils/constants.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
+import '../../models/book.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -12923,11 +12703,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                               color: Colors.black26,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(
-                              Icons.menu_book,
-                              size: 48,
-                              color: Colors.white38,
-                            ),
+                            child: BookCoverImage(book: book),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -12976,6 +12752,74 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class BookCoverImage extends ConsumerWidget {
+  final UserBook book;
+  const BookCoverImage({super.key, required this.book});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // If there's no cover image path in the local DB, show the default icon
+    if (book.coverImageUrl == null) {
+      return const Center(
+        child: Icon(
+          Icons.menu_book,
+          size: 48,
+          color: Colors.white38,
+        ),
+      );
+    }
+
+    // Use the BookService to get the stable proxy URL
+    final bookService = ref.watch(bookServiceProvider);
+    final coverUrl = bookService.getCoverProxyUrl(book.id);
+
+    // Fetch the auth token to pass in the headers for CachedNetworkImage
+    return FutureBuilder<String?>(
+      future: ref.read(tokenServiceProvider(TokenType.auth)).getToken(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+
+        final token = snapshot.data!;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: coverUrl,
+            httpHeaders: {
+              'Authorization': 'Bearer $token',
+            },
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            placeholder: (context, url) => const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+            errorWidget: (context, url, error) => const Center(
+              child: Icon(
+                Icons.menu_book,
+                size: 48,
+                color: Colors.white38,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -13228,6 +13072,242 @@ class _ActivityTile extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/screens/path_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../theme/liquid_theme.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+import '../../providers/path_provider.dart';
+import '../../models/learning_module.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/onboarding_provider.dart';
+import '../../providers/journal_provider.dart';
+import '../../models/user_profile.dart';
+import '../../models/journal_entry.dart';
+
+class PathScreen extends ConsumerWidget {
+  const PathScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pathAsync = ref.watch(learningPathProvider);
+
+    return GlassScaffold(
+      title: 'Your Path',
+      subtitle: 'Personalized Curriculum',
+      showBackButton: false,
+      body: pathAsync.when(
+        loading: () => const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator(color: Colors.white)),
+        ),
+        error: (e, _) => SliverFillRemaining(
+          child: Center(
+            child: Text(
+              "Error loading path: $e",
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ),
+        data: (modules) {
+          final profile = ref.watch(userProfileProvider).value;
+          final onboardingStep = ref.watch(onboardingProvider);
+          
+          if (profile != null && !profile.onboardingCompleted) {
+             final journals = ref.watch(journalHistoryProvider).value ?? [];
+             return SliverToBoxAdapter(
+               child: Padding(
+                 padding: const EdgeInsets.all(20),
+                 child: Column(
+                   children: [
+                     const Text("WELCOME TO LEXITY", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                     const SizedBox(height: 8),
+                     const Text("Complete these steps to unlock your path", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                     const SizedBox(height: 32),
+                     _buildOnboardingTimeline(profile, journals),
+                     const SizedBox(height: 32),
+                     if (onboardingStep == OnboardingStep.firstJournal)
+                        LiquidButton(text: "Start First Journal", onTap: () => context.push('/path/read')),
+                   ],
+                 ),
+               ),
+             );
+          }
+
+          if (modules.isEmpty) {
+            return SliverFillRemaining(
+              child: Center(
+                child: LiquidButton(
+                  text: "Generate First Module",
+                  onTap: () => ref
+                      .read(pathNotifierProvider.notifier)
+                      .generateNextModule(),
+                ),
+              ),
+            );
+          }
+
+          return SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final module = modules[index];
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (module.status != 'PENDING') {
+                        context.push('/path/module/${module.id}');
+                      }
+                    },
+                    child: _TimelineModuleItem(module: module, index: index),
+                  ),
+                );
+              },
+              childCount: modules.length,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _TimelineModuleItem extends StatelessWidget {
+  final LearningModule module;
+  final int index;
+
+  const _TimelineModuleItem({required this.module, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompleted = module.status == 'COMPLETED';
+    final isPending = module.status == 'PENDING';
+    final isInProgress = module.status == 'IN_PROGRESS';
+
+    return GlassCard(
+      padding: 16,
+      child: Row(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: isPending
+                  ? Colors.white10
+                  : (isCompleted
+                        ? Colors.green.withValues(alpha: 0.2)
+                        : LiquidTheme.primaryAccent.withValues(alpha: 0.2)),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isPending
+                  ? Icons.lock
+                  : (isCompleted ? Icons.check : Icons.play_arrow),
+              color: isPending
+                  ? Colors.white38
+                  : (isCompleted
+                        ? Colors.greenAccent
+                        : LiquidTheme.primaryAccent),
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  module.title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: isPending ? Colors.white38 : Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  module.targetConceptTag.replaceAll('_', ' '),
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+                if (isInProgress)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      "Tap to continue...",
+                      style: TextStyle(
+                        color: LiquidTheme.primaryAccent,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (!isPending)
+            const Icon(Icons.chevron_right, color: Colors.white24),
+        ],
+      ),
+    ).animate().fadeIn().slideY(begin: 0.1, end: 0);
+  }
+}
+
+Widget _buildOnboardingTimeline(UserProfile profile, List<JournalEntry> journals) {
+  final step1Complete = profile.nativeLanguage != null && profile.nativeLanguage!.isNotEmpty;
+  final step2Complete = journals.isNotEmpty;
+  final step3Complete = journals.isNotEmpty && journals.first.analysis != null;
+  final step4Complete = profile.onboardingCompleted;
+
+  return Column(
+    children: [
+      _TimelineNode(title: "1. Language Setup", isDone: step1Complete),
+      _TimelineNode(title: "2. First Journal Entry", isDone: step2Complete, isActive: step1Complete),
+      _TimelineNode(title: "3. AI Analysis", isDone: step3Complete, isActive: step2Complete),
+      _TimelineNode(title: "4. Personalized Path", isDone: step4Complete, isActive: step3Complete),
+    ],
+  );
+}
+
+class _TimelineNode extends StatelessWidget {
+  final String title;
+  final bool isDone;
+  final bool isActive;
+
+  const _TimelineNode({required this.title, required this.isDone, this.isActive = true});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: isDone ? Colors.greenAccent : (isActive ? LiquidTheme.primaryAccent.withValues(alpha: 0.2) : Colors.white10),
+              shape: BoxShape.circle,
+              border: isDone ? null : Border.all(color: isActive ? LiquidTheme.primaryAccent : Colors.white24),
+            ),
+            child: isDone ? const Icon(Icons.check, size: 16, color: Colors.black) : null,
+          ),
+          const SizedBox(width: 16),
+          Text(
+            title,
+            style: TextStyle(
+              color: isDone ? Colors.white : (isActive ? Colors.white70 : Colors.white24),
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -15746,392 +15826,6 @@ final srsServiceProvider = Provider(
 );
 </file>
 
-<file path="lib/services/vocabulary_service.dart">
-import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-import 'token_service.dart';
-import '../utils/constants.dart';
-import '../database/app_database.dart';
-import '../database/repositories/sync_repository.dart';
-import '../providers/connectivity_provider.dart';
-import 'logger_service.dart';
-import 'sync_service.dart';
-
-class VocabularyCounts {
-  final int total;
-  final int known;
-  final int learning;
-  final int unknown;
-
-  VocabularyCounts({
-    required this.total,
-    required this.known,
-    required this.learning,
-    required this.unknown,
-  });
-}
-
-class VocabularyPageResult {
-  final Map<String, String> items;
-  final int totalCount;
-  final int totalPages;
-  final int currentPage;
-  final VocabularyCounts counts;
-
-  VocabularyPageResult({
-    required this.items,
-    required this.totalCount,
-    required this.totalPages,
-    required this.currentPage,
-    required this.counts,
-  });
-}
-
-class VocabularyService {
-  final TokenService _authTokenService;
-  final AppDatabase _db;
-  final SyncRepository _syncRepo;
-  final Ref _ref;
-  late final LoggerService _logger;
-
-  VocabularyService(
-    this._authTokenService,
-    this._db,
-    this._syncRepo,
-    this._ref,
-  ) {
-    _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<Map<String, String>> getVocabulary(String language) async {
-    final isOnline = _ref.read(connectivityProvider);
-
-    if (isOnline) {
-      try {
-        final response = await http.get(
-          Uri.parse(
-            '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language',
-          ),
-          headers: await _getHeaders(),
-        );
-
-        if (response.statusCode == 200) {
-          final Map<String, dynamic> data = jsonDecode(response.body);
-
-          for (final entry in data.entries) {
-            await _db.insertVocabulary({
-              'word': entry.key.toLowerCase(),
-              'status': entry.value.toString().toLowerCase(),
-              'language': language,
-              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-            });
-          }
-
-          return data.map(
-            (key, value) =>
-                MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
-          );
-        }
-      } catch (e, st) {
-        _logger.warning(
-          'VocabularyService: Failed to fetch from backend',
-          e,
-          st,
-        );
-      }
-    }
-
-    return _getLocalVocabulary();
-  }
-
-  Future<Map<String, String>> _getLocalVocabulary() async {
-    final items = await _db.getAllVocabularies();
-    final result = <String, String>{};
-    for (final item in items) {
-      result[item['word'] as String] = item['status'] as String;
-    }
-    return result;
-  }
-
-  Future<VocabularyPageResult> getVocabularyPage(String language, {int page = 1, int limit = 50, String? status}) async {
-    final isOnline = _ref.read(connectivityProvider);
-
-    if (isOnline) {
-      try {
-        var url = '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language&page=$page&limit=$limit';
-        if (status != null) {
-          url += '&status=$status';
-        }
-        
-        final response = await http.get(
-          Uri.parse(url),
-          headers: await _getHeaders(),
-        );
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          final items = data['items'] as Map<String, dynamic>;
-          final pagination = data['pagination'] as Map<String, dynamic>;
-          final counts = data['counts'] as Map<String, dynamic>;
-
-          for (final entry in items.entries) {
-            await _db.insertVocabulary({
-              'word': entry.key.toLowerCase(),
-              'status': entry.value.toString().toLowerCase(),
-              'language': language,
-              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-            });
-          }
-
-          return VocabularyPageResult(
-            items: items.map((key, value) => MapEntry(key.toLowerCase(), value.toString().toLowerCase())),
-            totalCount: pagination['totalCount'] as int,
-            totalPages: pagination['totalPages'] as int,
-            currentPage: pagination['page'] as int,
-            counts: VocabularyCounts(
-              total: counts['total'] as int,
-              known: counts['known'] as int,
-              learning: counts['learning'] as int,
-              unknown: counts['unknown'] as int,
-            ),
-          );
-        }
-      } catch (e, st) {
-        _logger.warning('VocabularyService: Failed to fetch paginated vocabulary', e, st);
-      }
-    }
-
-    return _getLocalVocabularyPage(language);
-  }
-
-  Future<VocabularyPageResult> _getLocalVocabularyPage(String language) async {
-    final items = await _db.getAllVocabularies();
-    final result = <String, String>{};
-    int known = 0, learning = 0, unknown = 0;
-    
-    for (final item in items) {
-      final word = item['word'] as String;
-      final status = item['status'] as String;
-      result[word] = status;
-      if (status == 'known') known++;
-      else if (status == 'learning') learning++;
-      else unknown++;
-    }
-
-    return VocabularyPageResult(
-      items: result,
-      totalCount: items.length,
-      totalPages: 1,
-      currentPage: 1,
-      counts: VocabularyCounts(
-        total: items.length,
-        known: known,
-        learning: learning,
-        unknown: unknown,
-      ),
-    );
-  }
-
-  Future<void> updateStatus(String word, String status, String language) async {
-    _logger.info(
-      'VocabularyService: Updating status for "$word" to "$status" locally',
-    );
-
-    await _db.insertVocabulary({
-      'word': word.toLowerCase(),
-      'status': status.toLowerCase(),
-      'language': language,
-      'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await _syncRepo.enqueueVocabUpdate(
-      word.toLowerCase(),
-      status,
-      language,
-    );
-
-    _logger.info('VocabularyService: Status update queued for sync');
-
-    if (_ref.read(connectivityProvider)) {
-      _logger.info('VocabularyService: Online, triggering immediate sync...');
-      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
-    }
-  }
-
-  Future<void> markBatchKnown(List<String> words, String language) async {
-    _logger.info(
-      'VocabularyService: Marking ${words.length} words as known locally',
-    );
-
-    final lowerWords = words.map((w) => w.toLowerCase()).toList();
-    
-    for (final word in lowerWords) {
-      await _db.insertVocabulary({
-        'word': word,
-        'status': 'known',
-        'language': language,
-        'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-      });
-    }
-
-    await _syncRepo.enqueueVocabBatchUpdate(lowerWords, 'known', language);
-
-    _logger.info('VocabularyService: Batch update queued for sync');
-
-    if (_ref.read(connectivityProvider)) {
-      _logger.info('VocabularyService: Online, triggering immediate sync...');
-      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
-    }
-  }
-
-  Future<void> deleteWord(String word, String language) async {
-    _logger.info('VocabularyService: Deleting word "$word" locally');
-    await _db.deleteVocabulary(word.toLowerCase());
-  }
-
-  Stream<Map<String, String>> watchVocabulary() {
-    return _db.watchAllVocabularies().map((items) {
-      final result = <String, String>{};
-      for (final item in items) {
-        result[item['word'] as String] = item['status'] as String;
-      }
-      return result;
-    });
-  }
-}
-
-final vocabularyServiceProvider = Provider(
-  (ref) => VocabularyService(
-    ref.watch(tokenServiceProvider(TokenType.auth)),
-    ref.watch(databaseProvider),
-    ref.watch(syncRepositoryProvider),
-    ref,
-  ),
-);
-</file>
-
-<file path="lib/ui/widgets/glass_scaffold.dart">
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-
-class GlassScaffold extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final Widget body;
-  final Widget? floatingActionButton;
-  final bool? showBackButton;
-  final VoidCallback? onBackPressed;
-  final Future<void> Function()? onRefresh;
-
-  const GlassScaffold({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.body,
-    this.floatingActionButton,
-    this.showBackButton,
-    this.onBackPressed,
-    this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width > 800;
-    final canPop = showBackButton ?? context.canPop();
-    final topPadding = MediaQuery.of(context).padding.top + 20;
-
-    final scrollView = CustomScrollView(
-      physics: onRefresh != null ? const AlwaysScrollableScrollPhysics() : null,
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              isDesktop ? 100 : 24,
-              topPadding,
-              24,
-              20,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (canPop)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: GestureDetector(
-                      onTap: () {
-                        if (onBackPressed != null) {
-                          onBackPressed!();
-                        } else if (context.canPop()) {
-                          context.pop();
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_ios_new,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  ),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          sliver: SliverToBoxAdapter(child: body),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: 120)),
-      ],
-    );
-
-    return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
-      resizeToAvoidBottomInset: false,
-      floatingActionButton: floatingActionButton,
-      body: onRefresh != null
-          ? RefreshIndicator(
-              onRefresh: onRefresh!,
-              color: const Color(0xFF6C63FF),
-              backgroundColor: const Color(0xFF1A1A1A),
-              child: scrollView,
-            )
-          : scrollView,
-    );
-  }
-}
-</file>
-
 <file path="lib/providers/book_provider.dart">
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16871,6 +16565,392 @@ final userServiceProvider = Provider(
 );
 </file>
 
+<file path="lib/services/vocabulary_service.dart">
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'token_service.dart';
+import '../utils/constants.dart';
+import '../database/app_database.dart';
+import '../database/repositories/sync_repository.dart';
+import '../providers/connectivity_provider.dart';
+import 'logger_service.dart';
+import 'sync_service.dart';
+
+class VocabularyCounts {
+  final int total;
+  final int known;
+  final int learning;
+  final int unknown;
+
+  VocabularyCounts({
+    required this.total,
+    required this.known,
+    required this.learning,
+    required this.unknown,
+  });
+}
+
+class VocabularyPageResult {
+  final Map<String, String> items;
+  final int totalCount;
+  final int totalPages;
+  final int currentPage;
+  final VocabularyCounts counts;
+
+  VocabularyPageResult({
+    required this.items,
+    required this.totalCount,
+    required this.totalPages,
+    required this.currentPage,
+    required this.counts,
+  });
+}
+
+class VocabularyService {
+  final TokenService _authTokenService;
+  final AppDatabase _db;
+  final SyncRepository _syncRepo;
+  final Ref _ref;
+  late final LoggerService _logger;
+
+  VocabularyService(
+    this._authTokenService,
+    this._db,
+    this._syncRepo,
+    this._ref,
+  ) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<Map<String, String>> getVocabulary(String language) async {
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (isOnline) {
+      try {
+        final response = await http.get(
+          Uri.parse(
+            '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language',
+          ),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> data = jsonDecode(response.body);
+
+          for (final entry in data.entries) {
+            await _db.insertVocabulary({
+              'word': entry.key.toLowerCase(),
+              'status': entry.value.toString().toLowerCase(),
+              'language': language,
+              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+            });
+          }
+
+          return data.map(
+            (key, value) =>
+                MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
+          );
+        }
+      } catch (e, st) {
+        _logger.warning(
+          'VocabularyService: Failed to fetch from backend',
+          e,
+          st,
+        );
+      }
+    }
+
+    return _getLocalVocabulary();
+  }
+
+  Future<Map<String, String>> _getLocalVocabulary() async {
+    final items = await _db.getAllVocabularies();
+    final result = <String, String>{};
+    for (final item in items) {
+      result[item['word'] as String] = item['status'] as String;
+    }
+    return result;
+  }
+
+  Future<VocabularyPageResult> getVocabularyPage(String language, {int page = 1, int limit = 50, String? status}) async {
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (isOnline) {
+      try {
+        var url = '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language&page=$page&limit=$limit';
+        if (status != null) {
+          url += '&status=$status';
+        }
+        
+        final response = await http.get(
+          Uri.parse(url),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final items = data['items'] as Map<String, dynamic>;
+          final pagination = data['pagination'] as Map<String, dynamic>;
+          final counts = data['counts'] as Map<String, dynamic>;
+
+          for (final entry in items.entries) {
+            await _db.insertVocabulary({
+              'word': entry.key.toLowerCase(),
+              'status': entry.value.toString().toLowerCase(),
+              'language': language,
+              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+            });
+          }
+
+          return VocabularyPageResult(
+            items: items.map((key, value) => MapEntry(key.toLowerCase(), value.toString().toLowerCase())),
+            totalCount: pagination['totalCount'] as int,
+            totalPages: pagination['totalPages'] as int,
+            currentPage: pagination['page'] as int,
+            counts: VocabularyCounts(
+              total: counts['total'] as int,
+              known: counts['known'] as int,
+              learning: counts['learning'] as int,
+              unknown: counts['unknown'] as int,
+            ),
+          );
+        }
+      } catch (e, st) {
+        _logger.warning('VocabularyService: Failed to fetch paginated vocabulary', e, st);
+      }
+    }
+
+    return _getLocalVocabularyPage(language);
+  }
+
+  Future<VocabularyPageResult> _getLocalVocabularyPage(String language) async {
+    final items = await _db.getAllVocabularies();
+    final result = <String, String>{};
+    int known = 0, learning = 0, unknown = 0;
+    
+    for (final item in items) {
+      final word = item['word'] as String;
+      final status = item['status'] as String;
+      result[word] = status;
+      if (status == 'known') known++;
+      else if (status == 'learning') learning++;
+      else unknown++;
+    }
+
+    return VocabularyPageResult(
+      items: result,
+      totalCount: items.length,
+      totalPages: 1,
+      currentPage: 1,
+      counts: VocabularyCounts(
+        total: items.length,
+        known: known,
+        learning: learning,
+        unknown: unknown,
+      ),
+    );
+  }
+
+  Future<void> updateStatus(String word, String status, String language) async {
+    _logger.info(
+      'VocabularyService: Updating status for "$word" to "$status" locally',
+    );
+
+    await _db.insertVocabulary({
+      'word': word.toLowerCase(),
+      'status': status.toLowerCase(),
+      'language': language,
+      'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    await _syncRepo.enqueueVocabUpdate(
+      word.toLowerCase(),
+      status,
+      language,
+    );
+
+    _logger.info('VocabularyService: Status update queued for sync');
+
+    if (_ref.read(connectivityProvider)) {
+      _logger.info('VocabularyService: Online, triggering immediate sync...');
+      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
+    }
+  }
+
+  Future<void> markBatchKnown(List<String> words, String language) async {
+    _logger.info(
+      'VocabularyService: Marking ${words.length} words as known locally',
+    );
+
+    final lowerWords = words.map((w) => w.toLowerCase()).toList();
+    
+    for (final word in lowerWords) {
+      await _db.insertVocabulary({
+        'word': word,
+        'status': 'known',
+        'language': language,
+        'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+      });
+    }
+
+    await _syncRepo.enqueueVocabBatchUpdate(lowerWords, 'known', language);
+
+    _logger.info('VocabularyService: Batch update queued for sync');
+
+    if (_ref.read(connectivityProvider)) {
+      _logger.info('VocabularyService: Online, triggering immediate sync...');
+      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
+    }
+  }
+
+  Future<void> deleteWord(String word, String language) async {
+    _logger.info('VocabularyService: Deleting word "$word" locally');
+    await _db.deleteVocabulary(word.toLowerCase());
+  }
+
+  Stream<Map<String, String>> watchVocabulary() {
+    return _db.watchAllVocabularies().map((items) {
+      final result = <String, String>{};
+      for (final item in items) {
+        result[item['word'] as String] = item['status'] as String;
+      }
+      return result;
+    });
+  }
+}
+
+final vocabularyServiceProvider = Provider(
+  (ref) => VocabularyService(
+    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(databaseProvider),
+    ref.watch(syncRepositoryProvider),
+    ref,
+  ),
+);
+</file>
+
+<file path="lib/ui/widgets/glass_scaffold.dart">
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+class GlassScaffold extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final bool? showBackButton;
+  final VoidCallback? onBackPressed;
+  final Future<void> Function()? onRefresh;
+
+  const GlassScaffold({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.body,
+    this.floatingActionButton,
+    this.showBackButton,
+    this.onBackPressed,
+    this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width > 800;
+    final canPop = showBackButton ?? context.canPop();
+    final topPadding = MediaQuery.of(context).padding.top + 20;
+
+    final scrollView = CustomScrollView(
+      physics: onRefresh != null ? const AlwaysScrollableScrollPhysics() : null,
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              isDesktop ? 100 : 24,
+              topPadding,
+              24,
+              20,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (canPop)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: GestureDetector(
+                      onTap: () {
+                        if (onBackPressed != null) {
+                          onBackPressed!();
+                        } else if (context.canPop()) {
+                          context.pop();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: body,
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
+      ],
+    );
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D1117),
+      resizeToAvoidBottomInset: false,
+      floatingActionButton: floatingActionButton,
+      body: onRefresh != null
+          ? RefreshIndicator(
+              onRefresh: onRefresh!,
+              color: const Color(0xFF6C63FF),
+              backgroundColor: const Color(0xFF1A1A1A),
+              child: scrollView,
+            )
+          : scrollView,
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/widgets/liquid_components.dart">
 // lib/ui/widgets/liquid_components.dart
 import 'dart:ui';
@@ -17460,6 +17540,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:epub_pro/epub_pro.dart';
+import 'package:image/image.dart' as img;
 import '../models/book.dart';
 import '../utils/constants.dart';
 import '../database/app_database.dart';
@@ -17492,6 +17574,12 @@ class BookService {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
+  }
+
+  /// Constructs the stable proxy URL for a book's cover image.
+  /// The backend handles the redirection to a temporary signed Supabase URL.
+  String getCoverProxyUrl(String bookId) {
+    return '${AppConstants.baseUrl}/api/books/$bookId/cover';
   }
 
   /// Handles 401 errors by attempting to refresh the token and retrying the request.
@@ -17784,6 +17872,64 @@ class BookService {
     try {
       final filename = file.path.split('/').last;
 
+      // 1. Extract Metadata and Cover Image in Flutter
+      _logger.info('BookService: Extracting metadata and cover from EPUB');
+      final bytes = await file.readAsBytes();
+      final epubBook = await EpubReader.readBook(bytes);
+      final author = epubBook.author ?? "Unknown";
+      final bookTitle = epubBook.title ?? title;
+
+      String? coverStoragePath;
+
+      // 2. Extract and Upload Cover if it exists
+      final coverImage = epubBook.coverImage;
+      if (coverImage != null) {
+        try {
+          _logger.info('BookService: Cover image found, preparing upload');
+          final coverFilename =
+              'cover-${DateTime.now().millisecondsSinceEpoch}.jpg';
+          final coverUrlRes = await http.get(
+            Uri.parse(
+              '${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$coverFilename',
+            ),
+            headers: await _getHeaders(),
+          );
+
+          if (coverUrlRes.statusCode == 200) {
+            final coverUrlData = jsonDecode(coverUrlRes.body);
+            var coverSignedUrl = coverUrlData['signedUrl'] as String;
+            coverStoragePath = coverUrlData['path'];
+
+            if (coverSignedUrl.startsWith('/')) {
+              coverSignedUrl = '${AppConstants.baseUrl}$coverSignedUrl';
+            }
+
+            // Convert the Image object from epub_pro package to JPEG bytes using the image package
+            final encodedCover = img.encodeJpg(coverImage);
+
+            final uploadRes = await http.put(
+              Uri.parse(coverSignedUrl),
+              headers: {'Content-Type': 'image/jpeg'},
+              body: encodedCover,
+            );
+
+            if (uploadRes.statusCode != 200) {
+              _logger.warning(
+                'BookService: Cover upload failed, proceeding without it',
+              );
+              coverStoragePath = null;
+            }
+          }
+        } catch (e) {
+          _logger.warning(
+            'BookService: Error during cover extraction/upload',
+            e,
+          );
+          coverStoragePath = null;
+        }
+      }
+
+      // 3. Request signed upload URL for the EPUB
       _logger.info('BookService: Requesting signed upload URL for $filename');
       final uploadUrlResponse = await http.get(
         Uri.parse(
@@ -17807,10 +17953,10 @@ class BookService {
         signedUrl = '${AppConstants.baseUrl}$signedUrl';
       }
 
+      // 4. Upload EPUB binary
       _logger.info(
         'BookService: Uploading binary to storage path: $storagePath',
       );
-      final bytes = await file.readAsBytes();
       final uploadRes = await http.put(
         Uri.parse(signedUrl),
         headers: {'Content-Type': 'application/epub+zip'},
@@ -17824,15 +17970,17 @@ class BookService {
         throw Exception('Failed to upload file to storage');
       }
 
+      // 5. Register book record in database
       _logger.info('BookService: Registering book record in database');
       final dbRes = await http.post(
         Uri.parse('${AppConstants.baseUrl}/api/books'),
         headers: await _getHeaders(),
         body: jsonEncode({
-          'title': title,
-          'author': 'Unknown',
+          'title': bookTitle,
+          'author': author,
           'targetLanguage': targetLanguage,
           'storagePath': storagePath,
+          'coverImageUrl': coverStoragePath,
         }),
       );
 
@@ -17840,7 +17988,7 @@ class BookService {
         final data = jsonDecode(dbRes.body);
         await _upsertBookLocal(data);
         _logger.info(
-          'BookService: Upload and registration complete for "$title"',
+          'BookService: Upload and registration complete for "$bookTitle"',
         );
         return;
       }
@@ -17915,39 +18063,20 @@ final bookServiceProvider = Provider(
 <file path="pubspec.yaml">
 name: lexity_mobile
 description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
+
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-# The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
+
 version: 1.0.0+1
 
 environment:
   sdk: ^3.10.8
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
+
 dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.5.1
   http: ^1.2.1
@@ -17972,6 +18101,9 @@ dependencies:
   connectivity_plus: ^6.1.1
   uuid: ^4.5.1
   google_mlkit_translation: ^0.13.0
+  cached_network_image: ^3.4.1
+  epub_pro: 
+  image: ^4.2.0
   
 
 
@@ -17983,54 +18115,19 @@ dev_dependencies:
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
 
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
+
   flutter_lints: ^6.0.0
 
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
 
-# The following section is specific to Flutter packages.
 flutter:
 
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
+
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
+
   assets:
     - app_logo.svg
     - app_logo_small.svg
-
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
 </file>
 
 <file path="lib/ui/screens/book_reader_html.dart">
