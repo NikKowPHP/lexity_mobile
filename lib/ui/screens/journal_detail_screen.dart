@@ -34,6 +34,7 @@ class JournalDetailScreen extends ConsumerWidget {
           floatingActionButton: entry.isPending
               ? null
               : FloatingActionButton.extended(
+                  heroTag: 'journal_detail_lexi_fab',
                   icon: const Icon(Icons.auto_awesome),
                   label: const Text("Ask Lexi"),
                   backgroundColor: LiquidTheme.primaryAccent,

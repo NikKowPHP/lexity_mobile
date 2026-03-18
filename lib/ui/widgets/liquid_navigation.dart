@@ -7,7 +7,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 class LiquidNavigation extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
-  LiquidNavigation({super.key, required this.navigationShell});
+  const LiquidNavigation({super.key, required this.navigationShell});
 
   final List<({IconData icon, String label})> _mainItems = const [
     (icon: LucideIcons.map, label: 'Path'),           // Index 0
@@ -122,8 +122,8 @@ class LiquidNavigation extends StatelessWidget {
 
   BoxDecoration _glassDecoration() {
     return BoxDecoration(
-      color: Colors.white.withOpacity(0.05), // Frost tint
-      border: Border.all(color: Colors.white.withOpacity(0.25), width: 1.5), // Specular rim light
+      color: Colors.white.withValues(alpha: 0.05), // Frost tint
+      border: Border.all(color: Colors.white.withValues(alpha: 0.25), width: 1.5), // Specular rim light
       borderRadius: BorderRadius.circular(100),
     );
   }
@@ -157,7 +157,7 @@ class _NavItem extends StatelessWidget {
             curve: Curves.easeOutExpo,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive ? Colors.white.withOpacity(0.15) : Colors.transparent,
+              color: isActive ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
               borderRadius: BorderRadius.circular(30),
             ),
             child: Column(
@@ -166,7 +166,7 @@ class _NavItem extends StatelessWidget {
               children: [
                 Icon(
                   icon,
-                  color: isActive ? Colors.white : Colors.white.withOpacity(0.7),
+                  color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.7),
                   size: 26,
                 ),
                 const SizedBox(height: 6),
@@ -175,7 +175,7 @@ class _NavItem extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.visible,
                   style: TextStyle(
-                    color: isActive ? Colors.white : Colors.white.withOpacity(0.7),
+                    color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.7),
                     fontSize: 10,
                     letterSpacing: -0.2,
                     fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,

@@ -141,6 +141,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 80),
         child: FloatingActionButton.extended(
+          heroTag: 'library_upload_fab',
           onPressed: _isUploading ? null : _handleUpload,
           backgroundColor: LiquidTheme.primaryAccent,
           icon: _isUploading

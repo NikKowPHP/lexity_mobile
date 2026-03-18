@@ -1,11 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/connectivity_service.dart';
 
-class ConnectivityNotifier extends StateNotifier<bool> {
-  final ConnectivityService _service;
+class ConnectivityNotifier extends Notifier<bool> {
+  late final ConnectivityService _service;
 
-  ConnectivityNotifier(this._service) : super(true) {
+  @override
+  bool build() {
+    _service = ref.watch(connectivityServiceProvider);
     _init();
+    return true;
   }
 
   void _init() async {
@@ -21,9 +24,6 @@ class ConnectivityNotifier extends StateNotifier<bool> {
   }
 }
 
-final connectivityProvider = StateNotifierProvider<ConnectivityNotifier, bool>((
-  ref,
-) {
-  final service = ref.watch(connectivityServiceProvider);
-  return ConnectivityNotifier(service);
+final connectivityProvider = NotifierProvider<ConnectivityNotifier, bool>(() {
+  return ConnectivityNotifier();
 });

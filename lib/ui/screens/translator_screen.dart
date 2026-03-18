@@ -337,6 +337,7 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
           ? Padding(
               padding: const EdgeInsets.only(bottom: 80),
               child: FloatingActionButton(
+                heroTag: 'translator_bubble_fab',
                 backgroundColor: LiquidTheme.primaryAccent,
                 onPressed: _enableBubbleMode,
                 child: const Icon(Icons.open_in_new, color: Colors.white),

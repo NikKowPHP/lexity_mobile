@@ -40,28 +40,42 @@ const String bookReaderHtmlTemplate = """
       return null;
     }
 
+    // NEW: Listen for vocab delta updates via postWebMessage
+    window.addEventListener("message", (event) => {
+        if (event.data && event.data.type === 'vocab_delta') {
+            window.applyVocabStyles(JSON.stringify(event.data.delta));
+        }
+    });
+
+    // NEW: Listen for the message channel port
+    window.addEventListener("flutterInAppWebViewPlatformReady", function(event) {
+        window.addEventListener("message", function(event) {
+            if (event.data === 'capture_port') {
+                window.vocabPort = event.ports[0];
+                window.vocabPort.onmessage = function(e) {
+                    if (e.data.type === 'vocab_delta') {
+                        window.applyVocabStyles(JSON.stringify(e.data.delta));
+                    }
+                };
+            }
+        });
+    });
+
     window.applyVocabStyles = function(vocabMapJson) {
       if (!rendition) return;
       try {
         const newEntries = JSON.parse(vocabMapJson);
         
         // Update our global cache so future pages use these styles
-        Object.assign(window.vocabMap, newEntries); 
-        const vocabMap = window.vocabMap;
-
+        Object.assign(window.vocabMap, newEntries);
+        
+        // PERFORMANCE FIX: Only iterate over the DELTA words to avoid O(N) DOM scans
         rendition.getContents().forEach(content => {
-            const spans = content.document.querySelectorAll('.lexity-word');
-            spans.forEach(span => {
-                const dataWord = span.getAttribute('data-word');
-                if (!dataWord) return;
-                const word = dataWord.toLowerCase();
-                // Check if this word is in our (merged) global map
-                if (vocabMap[word]) {
-                    const status = vocabMap[word].toLowerCase();
-                    const newClassName = 'lexity-word ' + status;
-                    if (span.className !== newClassName) {
-                        span.className = newClassName;
-                    }
+            Object.keys(newEntries).forEach(function(word) {
+                var selector = '.lexity-word[data-word="' + word + '"]';
+                var spans = content.document.querySelectorAll(selector);
+                for (var i = 0; i < spans.length; i++) {
+                    spans[i].className = 'lexity-word ' + newEntries[word].toLowerCase();
                 }
             });
         });

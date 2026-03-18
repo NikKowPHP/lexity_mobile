@@ -1,54 +1,22 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import '../models/learning_module.dart';
-import '../utils/constants.dart';
-import 'token_service.dart';
-import 'logger_service.dart';
-import '../providers/connectivity_provider.dart';
-import '../providers/auth_provider.dart';
 import '../database/app_database.dart';
+import '../providers/connectivity_provider.dart';
+import 'logger_service.dart';
+import '../network/api_client.dart';
 
 class LearningPathService {
   final Ref _ref;
-  final TokenService _authTokenService;
+  final ApiClient _client;
   final AppDatabase _db;
   late final LoggerService _logger;
 
-  LearningPathService(this._ref, this._authTokenService, this._db) {
+  LearningPathService(this._ref, this._client, this._db) {
     _logger = _ref.read(loggerProvider);
   }
 
   bool get _isOnline => _ref.read(connectivityProvider);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  /// Handles 401 errors by attempting to refresh the token and retrying the request.
-  /// Returns true if the request was successful after refresh, false otherwise.
-  Future<bool> _handleUnauthorizedAndRetry(
-    Future<http.Response> Function() requestFn,
-  ) async {
-    _logger.warning(
-      'LearningPathService: 401 detected, attempting token refresh',
-    );
-
-    final newToken = await _ref.read(authProvider.notifier).forceRefreshToken();
-
-    if (newToken != null) {
-      _logger.info('LearningPathService: Token refreshed, retrying request');
-      final retryResponse = await requestFn();
-      return retryResponse.statusCode == 200;
-    }
-
-    _logger.warning('LearningPathService: Token refresh failed');
-    return false;
-  }
 
   Future<List<LearningModule>> getPath(String language) async {
     _logger.info('LearningPathService: Fetching path for $language');
@@ -63,54 +31,13 @@ class LearningPathService {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse(
-          '${AppConstants.baseUrl}/api/learning-path?targetLanguage=$language',
-        ),
-        headers: await _getHeaders(),
+      final response = await _client.get(
+        '/api/learning-path',
+        queryParameters: {'targetLanguage': language},
       );
 
-      // Handle 401 - try to refresh token and retry once
-      if (response.statusCode == 401) {
-        final success = await _handleUnauthorizedAndRetry(() async {
-          return await http.get(
-            Uri.parse(
-              '${AppConstants.baseUrl}/api/learning-path?targetLanguage=$language',
-            ),
-            headers: await _getHeaders(),
-          );
-        });
-
-        if (success) {
-          // Re-fetch the data with the new token
-          final retryResponse = await http.get(
-            Uri.parse(
-              '${AppConstants.baseUrl}/api/learning-path?targetLanguage=$language',
-            ),
-            headers: await _getHeaders(),
-          );
-
-          if (retryResponse.statusCode == 200) {
-            final List data = jsonDecode(retryResponse.body);
-            await _db.cacheLearningModules(
-              language,
-              data.cast<Map<String, dynamic>>(),
-            );
-            _prefetchNextModules(language);
-            return data.map((e) => LearningModule.fromJson(e)).toList();
-          }
-        }
-
-        // If refresh failed or retry still failed, try cached data
-        final cached = await _db.getCachedLearningModules(language);
-        if (cached.isNotEmpty) {
-          return cached.map((e) => LearningModule.fromJson(e)).toList();
-        }
-        throw Exception('Unauthorized - please log in again');
-      }
-
       if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
+        final List data = response.data;
         await _db.cacheLearningModules(
           language,
           data.cast<Map<String, dynamic>>(),
@@ -139,34 +66,28 @@ class LearningPathService {
 
     try {
       _logger.info('LearningPathService: Pre-fetching next modules');
-      final response = await http.put(
-        Uri.parse(
-          '${AppConstants.baseUrl}/api/learning-path/prefetch?targetLanguage=$language',
-        ),
-        headers: await _getHeaders(),
+      final response = await _client.put(
+        '/api/learning-path/prefetch',
+        queryParameters: {'targetLanguage': language},
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         _logger.info(
           'LearningPathService: Pre-fetched ${data['cachedModules'] ?? 0} modules on server',
         );
 
-        // Also update local DB to stay in sync
         await _db.cacheLearningModules(language, []);
         final cached = await _db.getCachedLearningModules(language);
         final existingIds = cached.map((e) => e['id'] as String).toSet();
 
-        // Fetch fresh data from main endpoint to update local cache
-        final refreshResponse = await http.get(
-          Uri.parse(
-            '${AppConstants.baseUrl}/api/learning-path?targetLanguage=$language',
-          ),
-          headers: await _getHeaders(),
+        final refreshResponse = await _client.get(
+          '/api/learning-path',
+          queryParameters: {'targetLanguage': language},
         );
 
         if (refreshResponse.statusCode == 200) {
-          final List modulesData = jsonDecode(refreshResponse.body);
+          final List modulesData = refreshResponse.data;
           for (final module in modulesData) {
             if (!existingIds.contains(module['id'])) {
               await _db.insertLearningModule({
@@ -207,12 +128,9 @@ class LearningPathService {
       throw Exception('Cannot generate new module while offline');
     }
 
-    final response = await http.post(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/learning-path/generate-next-module',
-      ),
-      headers: await _getHeaders(),
-      body: jsonEncode({'targetLanguage': language}),
+    final response = await _client.post(
+      '/api/learning-path/generate-next-module',
+      data: {'targetLanguage': language},
     );
 
     if (response.statusCode != 200) {
@@ -230,16 +148,13 @@ class LearningPathService {
       throw Exception('Cannot update activity while offline');
     }
 
-    await http.put(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/learning-path/modules/$moduleId/activity',
-      ),
-      headers: await _getHeaders(),
-      body: jsonEncode({
+    await _client.put(
+      '/api/learning-path/modules/$moduleId/activity',
+      data: {
         'activityKey': activityKey,
         'isCompleted': isCompleted,
         'metadata': metadata,
-      }),
+      },
     );
   }
 
@@ -251,16 +166,13 @@ class LearningPathService {
       throw Exception('Cannot complete module while offline');
     }
 
-    final response = await http.post(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/learning-path/modules/$moduleId/complete',
-      ),
-      headers: await _getHeaders(),
-      body: jsonEncode({'skip': skip}),
+    final response = await _client.post(
+      '/api/learning-path/modules/$moduleId/complete',
+      data: {'skip': skip},
     );
 
     if (response.statusCode == 200) {
-      return LearningModule.fromJson(jsonDecode(response.body));
+      return LearningModule.fromJson(response.data);
     }
     throw Exception('Failed to complete module');
   }
@@ -269,7 +181,7 @@ class LearningPathService {
 final learningPathServiceProvider = Provider(
   (ref) => LearningPathService(
     ref,
-    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(apiClientProvider),
     ref.watch(databaseProvider),
   ),
 );

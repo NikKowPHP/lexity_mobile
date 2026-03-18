@@ -23,25 +23,27 @@ final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((
   return book;
 });
 
-class BookNotifier extends StateNotifier<AsyncValue<void>> {
-  final BookService _service;
-  final LoggerService _logger;
-  final Ref _ref;
+class BookNotifier extends Notifier<AsyncValue<void>> {
+  late final LoggerService _logger;
 
-  BookNotifier(this._service, this._logger, this._ref)
-    : super(const AsyncValue.data(null));
+  @override
+  AsyncValue<void> build() {
+    _logger = ref.read(loggerProvider);
+    return const AsyncValue.data(null);
+  }
 
   Future<void> uploadBook(
     File file,
     String targetLanguage,
     String title,
   ) async {
+    final service = ref.read(bookServiceProvider);
     _logger.info(
       'BookNotifier: Starting upload process for "$title" ($targetLanguage)',
     );
     state = const AsyncValue.loading();
     try {
-      await _service.uploadBook(file, targetLanguage, title);
+      await service.uploadBook(file, targetLanguage, title);
       state = const AsyncValue.data(null);
       _logger.info('BookNotifier: Upload successful');
     } catch (e, st) {
@@ -52,9 +54,10 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> deleteBook(String id) async {
+    final service = ref.read(bookServiceProvider);
     _logger.info('BookNotifier: Deleting book $id');
     try {
-      await _service.deleteBook(id);
+      await service.deleteBook(id);
       _logger.info('BookNotifier: Deletion completed for $id');
     } catch (e, st) {
       _logger.error('BookNotifier: Deletion failed for $id', e, st);
@@ -62,9 +65,10 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> updateProgress(String id, String cfi, double progressPct) async {
+    final service = ref.read(bookServiceProvider);
     _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
     try {
-      await _service.updateProgress(id, cfi, progressPct);
+      await service.updateProgress(id, cfi, progressPct);
       _logger.info(
         'BookNotifier: Progress update successful for $id $cfi $progressPct',
       );
@@ -74,8 +78,9 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> updateLocations(String id, String locations) async {
+    final service = ref.read(bookServiceProvider);
     try {
-      await _service.updateLocations(id, locations);
+      await service.updateLocations(id, locations);
       _logger.info('BookNotifier: Locations updated successfully for $id');
     } catch (e, st) {
       _logger.error('BookNotifier: Failed to update locations', e, st);
@@ -83,10 +88,11 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   Future<void> refreshBooks() async {
+    final service = ref.read(bookServiceProvider);
     _logger.info('BookNotifier: Starting book refresh');
     state = const AsyncValue.loading();
     try {
-      await _service.syncBooks();
+      await service.syncBooks();
       state = const AsyncValue.data(null);
       _logger.info('BookNotifier: Book refresh successful');
     } catch (e, st) {
@@ -97,11 +103,8 @@ class BookNotifier extends StateNotifier<AsyncValue<void>> {
   }
 }
 
-final bookNotifierProvider =
-    StateNotifierProvider<BookNotifier, AsyncValue<void>>((ref) {
-      return BookNotifier(
-        ref.watch(bookServiceProvider),
-        ref.read(loggerProvider),
-        ref,
-      );
-    });
+final bookNotifierProvider = NotifierProvider<BookNotifier, AsyncValue<void>>(
+  () {
+    return BookNotifier();
+  },
+);

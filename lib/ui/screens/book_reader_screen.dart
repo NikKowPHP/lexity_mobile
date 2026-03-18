@@ -36,6 +36,7 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     with WidgetsBindingObserver {
   InAppWebViewController? webViewController;
+  WebMessagePort? _vocabPort;
   double _progress = 0.0;
   String? _lastCfi;
   String? _currentCfi; // Track for page flips
@@ -134,7 +135,15 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
         // NEW CODE START: Serve the reader HTML at the root to avoid initialData bugs on Linux
         if (request.uri.path == '/') {
           request.response.headers.contentType = ContentType.html;
-          request.response.write(bookReaderHtmlTemplate);
+
+          // NEW: Get current vocab and inject it dynamically into the server response
+          final currentVocab = ref.read(vocabularyProvider).value ?? {};
+          final String injectedHtml = bookReaderHtmlTemplate.replaceFirst(
+            'window.vocabMap = {};',
+            'window.vocabMap = ${jsonEncode(currentVocab)};',
+          );
+
+          request.response.write(injectedHtml);
           await request.response.close();
           return;
         }
@@ -256,6 +265,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     WidgetsBinding.instance.removeObserver(this);
     _handleImmediateSave(); // Catch-all guarantee
     _progressDebounce?.cancel();
+    _vocabPort?.close().catchError((_) {});
     _localServer?.close(force: true);
     super.dispose();
   }
@@ -313,6 +323,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
           );
         }
       });
+    });
+
+    ref.listen(paginatedVocabularyProvider, (previous, next) {
+      if (next.delta != null && _vocabPort != null) {
+        _vocabPort!.postMessage(
+          WebMessage(data: {'type': 'vocab_delta', 'delta': next.delta}),
+        );
+      }
     });
 
     return PopScope(
@@ -466,9 +484,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                       allowFileAccess: true,
                       javaScriptCanOpenWindowsAutomatically: true,
                     ),
-                    onWebViewCreated: (controller) {
+                    onWebViewCreated: (controller) async {
                       webViewController = controller;
                       logger.info('BookReader: WebView created');
+
+                      // SETUP MESSAGE CHANNEL FOR VOCAB DELTAS
+                      final channel = await controller
+                          .createWebMessageChannel();
+                      _vocabPort = channel!.port1;
+                      await controller.postWebMessage(
+                        message: WebMessage(
+                          data: 'capture_port',
+                          ports: [channel.port2],
+                        ),
+                      );
+
                       controller.addJavaScriptHandler(
                         handlerName: 'onProgress',
                         callback: (args) {
@@ -503,8 +533,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                                     logger.info(
                                       'BookReader: Visible unknown words returned: ${words.length}',
                                     );
-                                    if (words.isNotEmpty)
+                                    if (words.isNotEmpty) {
                                       _triggerVocabReview(words);
+                                    }
                                   } else {
                                     logger.info(
                                       'BookReader: Visible unknown words returned: none/invalid',

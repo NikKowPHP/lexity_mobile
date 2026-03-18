@@ -47,10 +47,11 @@ final suggestedTopicsProvider = FutureProvider.autoDispose<List<String>>((
   return service.getSuggestedTopics(activeLang);
 });
 
-class JournalNotifier extends StateNotifier<AsyncValue<void>> {
-  final JournalService _service;
-
-  JournalNotifier(this._service) : super(const AsyncValue.data(null));
+class JournalNotifier extends Notifier<AsyncValue<void>> {
+  @override
+  AsyncValue<void> build() {
+    return const AsyncValue.data(null);
+  }
 
   Future<String?> createEntry(
     String title,
@@ -58,9 +59,10 @@ class JournalNotifier extends StateNotifier<AsyncValue<void>> {
     String language, {
     String? moduleId,
   }) async {
+    final service = ref.read(journalServiceProvider);
     state = const AsyncValue.loading();
     try {
-      final entry = await _service.createEntry(
+      final entry = await service.createEntry(
         content,
         title,
         language,
@@ -79,13 +81,10 @@ class JournalNotifier extends StateNotifier<AsyncValue<void>> {
     String language, {
     String? moduleId,
   }) async {
+    final service = ref.read(journalServiceProvider);
     state = const AsyncValue.loading();
     try {
-      final entry = await _service.createAudioEntry(
-        filePath,
-        language,
-        moduleId: moduleId,
-      );
+      await service.createAudioEntry(filePath, language, moduleId: moduleId);
       state = const AsyncValue.data(null);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
@@ -94,18 +93,18 @@ class JournalNotifier extends StateNotifier<AsyncValue<void>> {
 
   Future<void> deleteEntry(String id) async {
     try {
-      await _service.deleteEntry(id);
-    } catch (e) {
-      // handle error
-    }
+      final service = ref.read(journalServiceProvider);
+      await service.deleteEntry(id);
+    } catch (e) {}
   }
 
   Future<void> refreshTopics(String language) async {
-    await _service.generateTopics(language);
+    final service = ref.read(journalServiceProvider);
+    await service.generateTopics(language);
   }
 }
 
 final journalNotifierProvider =
-    StateNotifierProvider<JournalNotifier, AsyncValue<void>>((ref) {
-      return JournalNotifier(ref.watch(journalServiceProvider));
+    NotifierProvider<JournalNotifier, AsyncValue<void>>(() {
+      return JournalNotifier();
     });

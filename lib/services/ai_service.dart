@@ -1,31 +1,21 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
-import 'package:lexity_mobile/services/token_service.dart';
 import '../models/translation_result.dart';
 import 'logger_service.dart';
-import '../utils/constants.dart';
 import '../providers/connectivity_provider.dart';
+import '../network/api_client.dart';
 
 class AIService {
   final Ref _ref;
   late final LoggerService _logger;
-  final TokenService _authTokenService;
+  final ApiClient _client;
 
-  AIService(this._ref, this._authTokenService) {
+  AIService(this._ref, this._client) {
     _logger = _ref.read(loggerProvider);
   }
 
   bool get _isOnline => _ref.read(connectivityProvider);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
 
   Future<String> translate(
     String text,
@@ -44,14 +34,13 @@ class AIService {
     }
 
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/ai/translate'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
+      final response = await _client.post(
+        '/api/ai/translate',
+        data: {
           'text': text,
           'sourceLanguage': sourceLang,
           'targetLanguage': targetLang,
-        }),
+        },
       );
 
       _logger.debug(
@@ -59,13 +48,12 @@ class AIService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         _logger.info('AIService: Translation successful');
         return data['translatedText'];
       }
 
-      final errorMsg =
-          jsonDecode(response.body)['error'] ?? 'Translation failed';
+      final errorMsg = response.data['error'] ?? 'Translation failed';
       _logger.warning('AIService: Translation failed. Reason: $errorMsg');
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
@@ -182,14 +170,13 @@ class AIService {
     }
 
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/ai/translate-breakdown'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
+      final response = await _client.post(
+        '/api/ai/translate-breakdown',
+        data: {
           'text': text,
           'sourceLanguage': sourceLang,
           'targetLanguage': targetLang,
-        }),
+        },
       );
 
       _logger.debug(
@@ -197,7 +184,7 @@ class AIService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data;
         final List segmentsJson = data['segments'] ?? [];
         _logger.info(
           'AIService: Breakdown successful, found ${segmentsJson.length} segments',
@@ -205,7 +192,7 @@ class AIService {
         return segmentsJson.map((s) => TranslationSegment.fromJson(s)).toList();
       }
 
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Breakdown failed';
+      final errorMsg = response.data['error'] ?? 'Breakdown failed';
       _logger.warning('AIService: Breakdown failed. Reason: $errorMsg');
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
@@ -239,20 +226,19 @@ class AIService {
     }
 
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/ai/contextual-translate'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
+      final response = await _client.post(
+        '/api/ai/contextual-translate',
+        data: {
           'selectedText': selectedText,
           'context': context,
           'sourceLanguage': sourceLanguage,
           'targetLanguage': targetLanguage,
           'nativeLanguage': nativeLanguage,
-        }),
+        },
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        return response.data;
       }
       throw Exception('Contextual translation failed');
     } catch (e, stackTrace) {
@@ -301,14 +287,13 @@ class AIService {
     }
 
     _logger.info('AIService: Requesting tutor response from $endpoint');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}$endpoint'),
-      headers: await _getHeaders(),
-      body: jsonEncode({...context, 'chatHistory': chatHistory}),
+    final response = await _client.post(
+      endpoint,
+      data: {...context, 'chatHistory': chatHistory},
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body)['response'];
+      return response.data['response'];
     }
     throw Exception('Tutor failed to respond');
   }
@@ -324,18 +309,13 @@ class AIService {
     }
 
     _logger.info('AIService: Requesting stuck writer suggestions');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/ai/stuck-writer'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'title': title,
-        'content': content,
-        'targetLanguage': language,
-      }),
+    final response = await _client.post(
+      '/api/ai/stuck-writer',
+      data: {'title': title, 'content': content, 'targetLanguage': language},
     );
 
     if (response.statusCode == 200) {
-      final List suggestions = jsonDecode(response.body)['suggestions'] ?? [];
+      final List suggestions = response.data['suggestions'] ?? [];
       return suggestions.map((s) => s.toString()).toList();
     }
     return _getOfflineSuggestions();
@@ -363,17 +343,16 @@ class AIService {
     }
 
     _logger.info('AIService: Requesting stuck speaker suggestions');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/ai/stuck-speaker'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
+    final response = await _client.post(
+      '/api/ai/stuck-speaker',
+      data: {
         'audioBase64': base64Encode(audioBytes),
         'targetLanguage': language,
-      }),
+      },
     );
 
     if (response.statusCode == 200) {
-      final List suggestions = jsonDecode(response.body)['suggestions'] ?? [];
+      final List suggestions = response.data['suggestions'] ?? [];
       return suggestions.map((s) => s.toString()).toList();
     }
     return ["Try saying: 'I am practicing my speaking.'"];
@@ -381,5 +360,5 @@ class AIService {
 }
 
 final aiServiceProvider = Provider(
-  (ref) => AIService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
+  (ref) => AIService(ref, ref.watch(apiClientProvider)),
 );

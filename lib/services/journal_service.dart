@@ -2,34 +2,25 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lexity_mobile/services/token_service.dart';
 import 'package:uuid/uuid.dart';
 import 'logger_service.dart';
 import '../models/journal_entry.dart';
 import '../models/writing_aids.dart';
-import '../utils/constants.dart';
 import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
+import '../network/api_client.dart';
 
 class JournalService {
   final Ref _ref;
-  final TokenService _authTokenService;
+  final ApiClient _client;
   final AppDatabase _db;
   final SyncRepository _syncRepo;
   late final LoggerService _logger;
   final _uuid = const Uuid();
 
-  JournalService(this._ref, this._authTokenService, this._db, this._syncRepo) {
+  JournalService(this._ref, this._client, this._db, this._syncRepo) {
     _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
   }
 
   Future<List<JournalEntry>> getHistory(String targetLanguage) async {
@@ -37,15 +28,13 @@ class JournalService {
 
     if (isOnline) {
       try {
-        final response = await http.get(
-          Uri.parse(
-            '${AppConstants.baseUrl}/api/journal?targetLanguage=$targetLanguage',
-          ),
-          headers: await _getHeaders(),
+        final response = await _client.get(
+          '/api/journal',
+          queryParameters: {'targetLanguage': targetLanguage},
         );
 
         if (response.statusCode == 200) {
-          final List data = jsonDecode(response.body);
+          final List data = response.data;
 
           for (final item in data) {
             await _upsertJournalLocal(item);
@@ -107,13 +96,10 @@ class JournalService {
 
     if (isOnline) {
       try {
-        final response = await http.get(
-          Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-          headers: await _getHeaders(),
-        );
+        final response = await _client.get('/api/journal/$id');
 
         if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           await _upsertJournalLocal(data);
           return JournalEntry.fromJson(data);
         }
@@ -172,11 +158,9 @@ class JournalService {
 
   Future<void> updateEntry(String id, String content, String title) async {
     _logger.info('JournalService: Updating entry $id locally');
-    // For simplicity, we'll require network for updates
-    final response = await http.put(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/$id'),
-      headers: await _getHeaders(),
-      body: jsonEncode({'content': content, 'topicId': title}),
+    final response = await _client.put(
+      '/api/journal/$id',
+      data: {'content': content, 'topicId': title},
     );
     if (response.statusCode != 200) throw Exception('Failed to update entry');
   }
@@ -207,38 +191,35 @@ class JournalService {
     final file = File(filePath);
     final filename = 'audio_${DateTime.now().millisecondsSinceEpoch}.webm';
 
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/journal/generate-upload-url?filename=$filename',
-      ),
-      headers: await _getHeaders(),
+    final signedResponse = await _client.get(
+      '/api/journal/generate-upload-url',
+      queryParameters: {'filename': filename},
     );
-    if (response.statusCode != 200) {
+    if (signedResponse.statusCode != 200) {
       throw Exception('Failed to generate upload URL');
     }
-    final data = jsonDecode(response.body);
+    final data = signedResponse.data;
     var signedUrl = data['signedUrl'] as String;
     final storagePath = data['path'];
 
     if (signedUrl.startsWith('/')) {
-      signedUrl = '${AppConstants.baseUrl}$signedUrl';
+      signedUrl = 'https://www.lexity.app$signedUrl';
     }
 
     await _uploadFileToSupabase(signedUrl, file);
 
-    final createResponse = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/audio'),
-      headers: await _getHeaders(),
-      body: jsonEncode({
+    final createResponse = await _client.post(
+      '/api/journal/audio',
+      data: {
         'path': storagePath,
         'targetLanguage': targetLanguage,
         'moduleId': moduleId,
         'aidsUsage': [],
-      }),
+      },
     );
 
     if (createResponse.statusCode == 201) {
-      final responseData = jsonDecode(createResponse.body);
+      final responseData = createResponse.data;
       await _upsertJournalLocal(responseData);
       return JournalEntry.fromJson(responseData);
     }
@@ -291,8 +272,6 @@ class JournalService {
 
   Future<void> deleteEntry(String id) async {
     _logger.info('JournalService: Deleting entry $id locally');
-    // Delete locally first, then sync
-    // Note: Need to add delete to sync queue for full implementation
   }
 
   Future<void> analyzeEntry(String id) async {
@@ -312,10 +291,9 @@ class JournalService {
     }
 
     _logger.info('JournalService: Starting analysis for $id');
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/analyze'),
-      headers: await _getHeaders(),
-      body: jsonEncode({'journalId': id}),
+    final response = await _client.post(
+      '/api/analyze',
+      data: {'journalId': id},
     );
     if (response.statusCode != 200) throw Exception('Failed to start analysis');
   }
@@ -325,14 +303,12 @@ class JournalService {
       return [];
     }
 
-    final response = await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/user/suggested-topics?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
+    final response = await _client.get(
+      '/api/user/suggested-topics',
+      queryParameters: {'targetLanguage': targetLanguage},
     );
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = response.data;
       return List<String>.from(data['topics'] ?? []);
     }
     return [];
@@ -343,11 +319,9 @@ class JournalService {
       return;
     }
 
-    await http.get(
-      Uri.parse(
-        '${AppConstants.baseUrl}/api/user/generate-topics?targetLanguage=$targetLanguage',
-      ),
-      headers: await _getHeaders(),
+    await _client.get(
+      '/api/user/generate-topics',
+      queryParameters: {'targetLanguage': targetLanguage},
     );
   }
 
@@ -359,14 +333,13 @@ class JournalService {
       throw Exception('Writing aids require internet connection');
     }
 
-    final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/api/journal/helpers'),
-      headers: await _getHeaders(),
-      body: jsonEncode({'topic': topic, 'targetLanguage': targetLanguage}),
+    final response = await _client.post(
+      '/api/journal/helpers',
+      data: {'topic': topic, 'targetLanguage': targetLanguage},
     );
 
     if (response.statusCode == 200) {
-      return WritingAids.fromJson(jsonDecode(response.body));
+      return WritingAids.fromJson(response.data);
     }
     throw Exception('Failed to load writing aids');
   }
@@ -381,7 +354,7 @@ class JournalService {
 final journalServiceProvider = Provider(
   (ref) => JournalService(
     ref,
-    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(apiClientProvider),
     ref.watch(databaseProvider),
     ref.watch(syncRepositoryProvider),
   ),

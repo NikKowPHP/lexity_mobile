@@ -490,6 +490,31 @@ class AppDatabase {
     return result;
   }
 
+  Future<void> insertVocabularyBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final item in items) {
+        batch.insert(
+          'vocabularies',
+          item,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+    _notify('vocabularies');
+  }
+
+  Future<List<String>> getVocabularyLanguages() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT language FROM vocabularies WHERE language IS NOT NULL AND language != ?',
+      ['unknown'],
+    );
+    return result.map((row) => row['language'] as String).toList();
+  }
+
   // Sync Queue
   Future<int> enqueueMutation(Map<String, dynamic> mutation) async {
     final db = await database;

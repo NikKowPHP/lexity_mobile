@@ -20,8 +20,8 @@ class JournalScreen extends ConsumerWidget {
       subtitle: 'Write freely or describe an image',
       showBackButton: false,
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'journal_new_entry_fab',
         backgroundColor: LiquidTheme.primaryAccent,
-        icon: const Icon(Icons.edit, color: Colors.white),
         label: const Text("New Entry", style: TextStyle(color: Colors.white)),
         onPressed: () => context.push('/journal/new'),
       ),

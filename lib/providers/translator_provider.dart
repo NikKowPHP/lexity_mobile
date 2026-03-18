@@ -30,20 +30,21 @@ class TranslatorState {
   }
 }
 
-class TranslatorNotifier extends StateNotifier<TranslatorState> {
-  final AIService _aiService;
-  TranslatorNotifier(this._aiService) : super(TranslatorState());
+class TranslatorNotifier extends Notifier<TranslatorState> {
+  @override
+  TranslatorState build() {
+    return TranslatorState();
+  }
 
   Future<void> runTranslation(String text, String source, String target) async {
     state = TranslatorState(isTranslating: true, isBreakingDown: true);
 
     try {
-      // 1. Start Fast Translation
-      final fastResult = await _aiService.translate(text, source, target);
+      final aiService = ref.read(aiServiceProvider);
+      final fastResult = await aiService.translate(text, source, target);
       state = state.copyWith(fullTranslation: fastResult, isTranslating: false);
 
-      // 2. Start Heavy Breakdown
-      final segments = await _aiService.translateBreakdown(text, source, target);
+      final segments = await aiService.translateBreakdown(text, source, target);
       state = state.copyWith(segments: segments, isBreakingDown: false);
     } catch (e) {
       state = state.copyWith(isTranslating: false, isBreakingDown: false);
@@ -51,6 +52,7 @@ class TranslatorNotifier extends StateNotifier<TranslatorState> {
   }
 }
 
-final translatorProvider = StateNotifierProvider<TranslatorNotifier, TranslatorState>((ref) {
-  return TranslatorNotifier(ref.watch(aiServiceProvider));
-});
+final translatorProvider =
+    NotifierProvider<TranslatorNotifier, TranslatorState>(() {
+      return TranslatorNotifier();
+    });

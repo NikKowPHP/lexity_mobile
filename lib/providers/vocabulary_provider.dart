@@ -9,6 +9,7 @@ final vocabularyStreamProvider = StreamProvider<Map<String, String>>((ref) {
 
 class VocabularyData {
   final Map<String, String> items;
+  final Map<String, String>? delta; // NEW FIELD
   final int totalCount;
   final int totalPages;
   final int currentPage;
@@ -18,6 +19,7 @@ class VocabularyData {
 
   VocabularyData({
     required this.items,
+    this.delta, // ADDED
     required this.totalCount,
     required this.totalPages,
     required this.currentPage,
@@ -28,6 +30,7 @@ class VocabularyData {
 
   VocabularyData copyWith({
     Map<String, String>? items,
+    Map<String, String>? delta, // ADDED
     int? totalCount,
     int? totalPages,
     int? currentPage,
@@ -37,6 +40,7 @@ class VocabularyData {
   }) {
     return VocabularyData(
       items: items ?? this.items,
+      delta: delta, // Clear delta if not provided
       totalCount: totalCount ?? this.totalCount,
       totalPages: totalPages ?? this.totalPages,
       currentPage: currentPage ?? this.currentPage,
@@ -47,14 +51,14 @@ class VocabularyData {
   }
 }
 
-class VocabularyNotifier
-    extends StateNotifier<AsyncValue<Map<String, String>>> {
-  final VocabularyService _service;
-
-  VocabularyNotifier(this._service) : super(const AsyncValue.loading());
+class VocabularyNotifier extends AsyncNotifier<Map<String, String>> {
+  @override
+  Future<Map<String, String>> build() async {
+    return await ref.read(vocabularyServiceProvider).getVocabulary('es');
+  }
 
   Stream<Map<String, String>> watchVocabulary() {
-    return _service.watchVocabulary();
+    return ref.read(vocabularyServiceProvider).watchVocabulary();
   }
 
   Future<void> loadVocabulary(String language) async {
@@ -62,7 +66,9 @@ class VocabularyNotifier
       state = const AsyncValue.loading();
     }
     try {
-      final vocab = await _service.getVocabulary(language);
+      final vocab = await ref
+          .read(vocabularyServiceProvider)
+          .getVocabulary(language);
       state = AsyncValue.data(vocab);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
@@ -70,11 +76,21 @@ class VocabularyNotifier
   }
 
   Future<Map<String, String>> getVocabulary(String language) async {
-    if (state.hasValue && state.value != null) {
-      return state.value!;
-    }
     await loadVocabulary(language);
     return state.value ?? {};
+  }
+
+  Future<void> preloadVocabularyForLanguages(List<String> languages) async {
+    for (final language in languages) {
+      try {
+        final vocab = await ref
+            .read(vocabularyServiceProvider)
+            .getVocabulary(language);
+        final currentMap = state.value ?? {};
+        final newMap = Map<String, String>.from(currentMap)..addAll(vocab);
+        state = AsyncValue.data(newMap);
+      } catch (e) {}
+    }
   }
 
   Future<void> updateWordStatus(
@@ -91,7 +107,9 @@ class VocabularyNotifier
     state = AsyncValue.data(newMap);
 
     try {
-      await _service.updateStatus(wordLower, statusLower, language);
+      await ref
+          .read(vocabularyServiceProvider)
+          .updateStatus(wordLower, statusLower, language);
     } catch (e) {
       state = AsyncValue.data(currentMap);
     }
@@ -107,7 +125,9 @@ class VocabularyNotifier
     state = AsyncValue.data(newMap);
 
     try {
-      await _service.markBatchKnown(lowerWords, language);
+      await ref
+          .read(vocabularyServiceProvider)
+          .markBatchKnown(lowerWords, language);
     } catch (e) {
       state = AsyncValue.data(currentMap);
     }
@@ -121,7 +141,7 @@ class VocabularyNotifier
     state = AsyncValue.data(newMap);
 
     try {
-      await _service.deleteWord(wordLower, language);
+      await ref.read(vocabularyServiceProvider).deleteWord(wordLower, language);
     } catch (e) {
       state = AsyncValue.data(currentMap);
     }
@@ -129,35 +149,33 @@ class VocabularyNotifier
 }
 
 final vocabularyProvider =
-    StateNotifierProvider<VocabularyNotifier, AsyncValue<Map<String, String>>>((
-      ref,
-    ) {
-      return VocabularyNotifier(ref.watch(vocabularyServiceProvider));
+    AsyncNotifierProvider<VocabularyNotifier, Map<String, String>>(() {
+      return VocabularyNotifier();
     });
 
-class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
-  final VocabularyService _service;
-  final Ref _ref;
+class PaginatedVocabularyNotifier extends Notifier<VocabularyData> {
   String? _currentLanguage;
 
-  PaginatedVocabularyNotifier(this._service, this._ref)
-    : super(
-        VocabularyData(
-          items: {},
-          totalCount: 0,
-          totalPages: 0,
-          currentPage: 1,
-          counts: VocabularyCounts(total: 0, known: 0, learning: 0, unknown: 0),
-          isLoading: true,
-        ),
-      );
+  @override
+  VocabularyData build() {
+    return VocabularyData(
+      items: {},
+      totalCount: 0,
+      totalPages: 0,
+      currentPage: 1,
+      counts: VocabularyCounts(total: 0, known: 0, learning: 0, unknown: 0),
+      isLoading: true,
+    );
+  }
 
   Future<void> loadVocabulary(String language) async {
     _currentLanguage = language;
     state = state.copyWith(isLoading: true);
 
     try {
-      final result = await _service.getVocabularyPage(language, page: 1);
+      final result = await ref
+          .read(vocabularyServiceProvider)
+          .getVocabularyPage(language, page: 1);
       state = VocabularyData(
         items: result.items,
         totalCount: result.totalCount,
@@ -167,7 +185,7 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
         isLoading: false,
         hasMore: result.currentPage < result.totalPages,
       );
-    } catch (e, st) {
+    } catch (e) {
       state = state.copyWith(isLoading: false);
     }
   }
@@ -178,10 +196,9 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
     state = state.copyWith(isLoading: true);
 
     try {
-      final result = await _service.getVocabularyPage(
-        _currentLanguage!,
-        page: state.currentPage + 1,
-      );
+      final result = await ref
+          .read(vocabularyServiceProvider)
+          .getVocabularyPage(_currentLanguage!, page: state.currentPage + 1);
 
       final newItems = Map<String, String>.from(state.items)
         ..addAll(result.items);
@@ -224,15 +241,17 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
           : state.counts.unknown,
     );
 
-    state = state.copyWith(items: newItems, counts: newCounts);
+    final delta = {wordLower: statusLower};
+    state = state.copyWith(items: newItems, counts: newCounts, delta: delta);
 
     try {
-      await _service.updateStatus(wordLower, statusLower, language);
+      await ref
+          .read(vocabularyServiceProvider)
+          .updateStatus(wordLower, statusLower, language);
     } catch (e) {
-      // Revert on error
       final revertedItems = Map<String, String>.from(state.items)
         ..remove(wordLower);
-      state = state.copyWith(items: revertedItems, counts: state.counts);
+      state = state.copyWith(items: revertedItems, counts: state.counts, delta: null);
     }
   }
 
@@ -255,23 +274,20 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
           : state.counts.unknown,
     );
 
-    state = state.copyWith(items: newItems, counts: newCounts);
+    final delta = {wordLower: ''}; // Empty string indicates removal
+    state = state.copyWith(items: newItems, counts: newCounts, delta: delta);
 
     try {
-      await _service.deleteWord(wordLower, language);
+      await ref.read(vocabularyServiceProvider).deleteWord(wordLower, language);
     } catch (e) {
-      // Revert on error
       final revertedItems = Map<String, String>.from(state.items)
         ..[wordLower] = removedStatus ?? '';
-      state = state.copyWith(items: revertedItems, counts: state.counts);
+      state = state.copyWith(items: revertedItems, counts: state.counts, delta: null);
     }
   }
 }
 
 final paginatedVocabularyProvider =
-    StateNotifierProvider<PaginatedVocabularyNotifier, VocabularyData>((ref) {
-      return PaginatedVocabularyNotifier(
-        ref.watch(vocabularyServiceProvider),
-        ref,
-      );
+    NotifierProvider<PaginatedVocabularyNotifier, VocabularyData>(() {
+      return PaginatedVocabularyNotifier();
     });

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,57 +12,22 @@ import '../utils/constants.dart';
 import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
-import '../providers/auth_provider.dart';
-import 'token_service.dart';
 import 'logger_service.dart';
 import 'sync_service.dart';
+import '../network/api_client.dart';
 
 class BookService {
-  final TokenService _authTokenService;
+  final ApiClient _client;
   final AppDatabase _db;
   final SyncRepository _syncRepo;
   final Ref _ref;
   late final LoggerService _logger;
   final Uuid _uuid = const Uuid();
 
-  BookService(
-    this._authTokenService,
-    this._db,
-    this._syncRepo,
-    this._ref,
-    this._logger,
-  );
+  BookService(this._client, this._db, this._syncRepo, this._ref, this._logger);
 
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  /// Constructs the stable proxy URL for a book's cover image.
-  /// The backend handles the redirection to a temporary signed Supabase URL.
   String getCoverProxyUrl(String bookId) {
     return '${AppConstants.baseUrl}/api/books/$bookId/cover';
-  }
-
-  /// Handles 401 errors by attempting to refresh the token and retrying the request.
-  Future<bool> _handleUnauthorizedAndRetry(
-    Future<http.Response> Function() requestFn,
-  ) async {
-    _logger.warning('BookService: 401 detected, attempting token refresh');
-
-    final newToken = await _ref.read(authProvider.notifier).forceRefreshToken();
-
-    if (newToken != null) {
-      _logger.info('BookService: Token refreshed, retrying request');
-      final retryResponse = await requestFn();
-      return retryResponse.statusCode == 200;
-    }
-
-    _logger.warning('BookService: Token refresh failed');
-    return false;
   }
 
   Future<List<UserBook>> getBooks() async {
@@ -69,42 +35,10 @@ class BookService {
 
     if (isOnline) {
       try {
-        final response = await http.get(
-          Uri.parse('${AppConstants.baseUrl}/api/books'),
-          headers: await _getHeaders(),
-        );
-
-        // Handle 401 - try to refresh token and retry once
-        if (response.statusCode == 401) {
-          final success = await _handleUnauthorizedAndRetry(() async {
-            return await http.get(
-              Uri.parse('${AppConstants.baseUrl}/api/books'),
-              headers: await _getHeaders(),
-            );
-          });
-
-          if (success) {
-            final retryResponse = await http.get(
-              Uri.parse('${AppConstants.baseUrl}/api/books'),
-              headers: await _getHeaders(),
-            );
-
-            if (retryResponse.statusCode == 200) {
-              final List data = jsonDecode(retryResponse.body);
-              _logger.info(
-                'BookService: Successfully fetched ${data.length} books after token refresh',
-              );
-              for (final item in data) {
-                await _upsertBookLocal(item);
-              }
-              return data.map((e) => UserBook.fromJson(e)).toList();
-            }
-          }
-          return _getLocalBooks();
-        }
+        final response = await _client.get('/api/books');
 
         if (response.statusCode == 200) {
-          final List data = jsonDecode(response.body);
+          final List data = response.data;
           _logger.info(
             'BookService: Successfully fetched ${data.length} books from backend',
           );
@@ -124,7 +58,7 @@ class BookService {
       }
     }
 
-    return _getLocalBooks();
+    return getLocalBooks();
   }
 
   Future<List<UserBook>> syncBooks() async {
@@ -133,46 +67,14 @@ class BookService {
 
     if (!isOnline) {
       _logger.warning('BookService: Cannot sync, device is offline');
-      return _getLocalBooks();
+      return getLocalBooks();
     }
 
     try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/api/books'),
-        headers: await _getHeaders(),
-      );
-
-      // Handle 401 - try to refresh token and retry once
-      if (response.statusCode == 401) {
-        final success = await _handleUnauthorizedAndRetry(() async {
-          return await http.get(
-            Uri.parse('${AppConstants.baseUrl}/api/books'),
-            headers: await _getHeaders(),
-          );
-        });
-
-        if (success) {
-          final retryResponse = await http.get(
-            Uri.parse('${AppConstants.baseUrl}/api/books'),
-            headers: await _getHeaders(),
-          );
-
-          if (retryResponse.statusCode == 200) {
-            final List data = jsonDecode(retryResponse.body);
-            _logger.info(
-              'BookService: Successfully fetched ${data.length} books from backend for sync',
-            );
-            for (final item in data) {
-              await _upsertBookLocal(item);
-            }
-            return data.map((e) => UserBook.fromJson(e)).toList();
-          }
-        }
-        return _getLocalBooks();
-      }
+      final response = await _client.get('/api/books');
 
       if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
+        final List data = response.data;
         _logger.info(
           'BookService: Successfully fetched ${data.length} books from backend for sync',
         );
@@ -186,15 +88,15 @@ class BookService {
         _logger.error(
           'BookService: Failed to sync books. Status: ${response.statusCode}',
         );
-        return _getLocalBooks();
+        return getLocalBooks();
       }
     } catch (e, st) {
       _logger.error('BookService: Exception during book sync', e, st);
-      return _getLocalBooks();
+      return getLocalBooks();
     }
   }
 
-  Future<List<UserBook>> _getLocalBooks() async {
+  Future<List<UserBook>> getLocalBooks() async {
     final books = await _db.getAllBooks();
     return books.map((map) => _userBookFromDb(map)).toList();
   }
@@ -204,13 +106,10 @@ class BookService {
 
     if (isOnline) {
       try {
-        final response = await http.get(
-          Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-          headers: await _getHeaders(),
-        );
+        final response = await _client.get('/api/books/$id');
 
         if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
+          final data = response.data;
           await _upsertBookLocal(data);
           return UserBook.fromJson(data);
         }
@@ -285,10 +184,9 @@ class BookService {
     }
 
     try {
-      final response = await http.patch(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$id'),
-        headers: await _getHeaders(),
-        body: jsonEncode({'locations': locations}),
+      final response = await _client.patch(
+        '/api/books/$id',
+        data: {'locations': locations},
       );
 
       if (response.statusCode != 200) {
@@ -299,7 +197,6 @@ class BookService {
         'BookService: Locations updated successfully on server for $id',
       );
 
-      // Also update local database so we don't generate again next time
       final existingBook = await _db.getBookById(id);
       if (existingBook != null) {
         await _db.insertBook({...existingBook, 'locations': locations});
@@ -327,10 +224,12 @@ class BookService {
   ) async {
     _logger.info('BookService: Starting EPUB upload sequence for "$title"');
 
-    // 1. Extract Metadata and Cover Image in Flutter
     _logger.info('BookService: Extracting metadata and cover from EPUB');
     final bytes = await file.readAsBytes();
-    final epubBook = await EpubReader.readBook(bytes);
+    
+    // OFFLOAD EPUB PARSING
+    final epubBook = await Isolate.run(() => EpubReader.readBook(bytes));
+    
     final author = epubBook.author ?? "Unknown";
     final bookTitle = epubBook.title ?? title;
     final coverImage = epubBook.coverImage;
@@ -353,21 +252,19 @@ class BookService {
       final filename = file.path.split('/').last;
       String? coverStoragePath;
 
-      // 2. Extract and Upload Cover if it exists
       if (coverImage != null) {
         try {
           _logger.info('BookService: Cover image found, preparing upload');
           final coverFilename =
               'cover-${DateTime.now().millisecondsSinceEpoch}.jpg';
-          final coverUrlRes = await http.get(
-            Uri.parse(
-              '${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$coverFilename',
-            ),
-            headers: await _getHeaders(),
+
+          final signedResponse = await _client.get(
+            '/api/books/generate-upload-url',
+            queryParameters: {'filename': coverFilename},
           );
 
-          if (coverUrlRes.statusCode == 200) {
-            final coverUrlData = jsonDecode(coverUrlRes.body);
+          if (signedResponse.statusCode == 200) {
+            final coverUrlData = signedResponse.data;
             var coverSignedUrl = coverUrlData['signedUrl'] as String;
             coverStoragePath = coverUrlData['path'];
 
@@ -375,8 +272,8 @@ class BookService {
               coverSignedUrl = '${AppConstants.baseUrl}$coverSignedUrl';
             }
 
-            // Convert the Image object from epub_pro package to JPEG bytes using the image package
-            final encodedCover = img.encodeJpg(coverImage);
+            // OFFLOAD IMAGE ENCODING
+            final encodedCover = await Isolate.run(() => img.encodeJpg(coverImage));
 
             final uploadRes = await http.put(
               Uri.parse(coverSignedUrl),
@@ -400,13 +297,10 @@ class BookService {
         }
       }
 
-      // 3. Request signed upload URL for the EPUB
       _logger.info('BookService: Requesting signed upload URL for $filename');
-      final uploadUrlResponse = await http.get(
-        Uri.parse(
-          '${AppConstants.baseUrl}/api/books/generate-upload-url?filename=$filename',
-        ),
-        headers: await _getHeaders(),
+      final uploadUrlResponse = await _client.get(
+        '/api/books/generate-upload-url',
+        queryParameters: {'filename': filename},
       );
 
       if (uploadUrlResponse.statusCode != 200) {
@@ -416,7 +310,7 @@ class BookService {
         throw Exception('Failed to get upload URL');
       }
 
-      final uploadData = jsonDecode(uploadUrlResponse.body);
+      final uploadData = uploadUrlResponse.data;
       var signedUrl = uploadData['signedUrl'] as String;
       final storagePath = uploadData['path'];
 
@@ -424,7 +318,6 @@ class BookService {
         signedUrl = '${AppConstants.baseUrl}$signedUrl';
       }
 
-      // 4. Upload EPUB binary
       _logger.info(
         'BookService: Uploading binary to storage path: $storagePath',
       );
@@ -441,22 +334,20 @@ class BookService {
         throw Exception('Failed to upload file to storage');
       }
 
-      // 5. Register book record in database
       _logger.info('BookService: Registering book record in database');
-      final dbRes = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/books'),
-        headers: await _getHeaders(),
-        body: jsonEncode({
+      final dbRes = await _client.post(
+        '/api/books',
+        data: {
           'title': bookTitle,
           'author': author,
           'targetLanguage': targetLanguage,
           'storagePath': storagePath,
           'coverImageUrl': coverStoragePath,
-        }),
+        },
       );
 
       if (dbRes.statusCode == 200 || dbRes.statusCode == 201) {
-        final data = jsonDecode(dbRes.body);
+        final data = dbRes.data;
         await _upsertBookLocal(data);
         _logger.info(
           'BookService: Upload and registration complete for "$bookTitle"',
@@ -559,7 +450,11 @@ class BookService {
         final dir = await getApplicationDocumentsDirectory();
         final coverFilename = 'cover-$tempId.jpg';
         final coverFile = File('${dir.path}/$coverFilename');
-        await coverFile.writeAsBytes(img.encodeJpg(coverImage));
+        
+        // OFFLOAD IMAGE ENCODING
+        final encoded = await Isolate.run(() => img.encodeJpg(coverImage));
+        await coverFile.writeAsBytes(encoded);
+        
         coverLocalPath = coverFile.path;
       } catch (e) {
         _logger.warning('BookService: Failed to save cover locally', e);
@@ -607,7 +502,7 @@ class BookService {
 
 final bookServiceProvider = Provider(
   (ref) => BookService(
-    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(apiClientProvider),
     ref.watch(databaseProvider),
     ref.watch(syncRepositoryProvider),
     ref,

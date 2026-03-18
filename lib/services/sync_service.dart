@@ -1,21 +1,19 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
-import '../services/token_service.dart';
-import '../utils/constants.dart';
 import '../services/logger_service.dart';
 import '../providers/user_provider.dart';
+import '../network/api_client.dart';
 
 class SyncService {
   final SyncRepository _syncRepo;
+  final ApiClient _client;
   final Ref _ref;
   final LoggerService _logger;
   DateTime? _lastSyncTime;
 
-  SyncService(this._syncRepo, this._ref, this._logger);
+  SyncService(this._syncRepo, this._client, this._ref, this._logger);
 
   void startListening() {
     _ref.listen<bool>(connectivityProvider, (previous, next) {
@@ -60,7 +58,9 @@ class SyncService {
           );
           await Future.delayed(delay);
         } else if (retryCount > 0 && force) {
-          _logger.info('SyncService: Forced sync, bypassing backoff for mutation ${mutation['id']}');
+          _logger.info(
+            'SyncService: Forced sync, bypassing backoff for mutation ${mutation['id']}',
+          );
         }
 
         final success = await _processMutation(mutation);
@@ -70,8 +70,6 @@ class SyncService {
             'SyncService: Successfully synced mutation ${mutation['id']}',
           );
         } else {
-          // CRITICAL FIX: If a mutation fails, increment retry and STOP the loop.
-          // Do not attempt the rest of the queue in this cycle.
           await _syncRepo.incrementRetryCount(mutation['id'] as int);
           _logger.warning(
             'SyncService: Mutation ${mutation['id']} failed. Stopping queue processing to prevent infinite hammering.',
@@ -87,7 +85,6 @@ class SyncService {
       _logger.error('SyncService: Sync failed', e, st);
     } finally {
       _ref.read(isSyncingProvider.notifier).state = false;
-      // Refresh the count provider
       _ref.invalidate(syncQueueCountProvider);
     }
   }
@@ -108,7 +105,7 @@ class SyncService {
 
     try {
       _logger.info('Syncing $entityType:$action for ID: $entityId');
-      
+
       switch (entityType) {
         case 'book':
           return await _syncBookMutation(action, entityId, payload);
@@ -133,29 +130,20 @@ class SyncService {
     String bookId,
     Map<String, dynamic> payload,
   ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-
     if (action == 'update_progress') {
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$bookId/progress'),
-        headers: headers,
-        body: jsonEncode({
+      final response = await _client.put(
+        '/api/books/$bookId/progress',
+        data: {
           'currentCfi': payload['currentCfi'],
           'progressPct': payload['progressPct'],
-        }),
+        },
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+      final status = response.statusCode;
+      return status != null && status >= 200 && status < 300;
     } else if (action == 'delete') {
-      final response = await http.delete(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$bookId'),
-        headers: headers,
-      );
-      return response.statusCode == 200 || response.statusCode == 204;
+      final response = await _client.delete('/api/books/$bookId');
+      final status = response.statusCode;
+      return status != null && (status == 200 || status == 204);
     }
 
     return true;
@@ -166,38 +154,28 @@ class SyncService {
     String journalId,
     Map<String, dynamic> payload,
   ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-
     if (action == 'create') {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/journal'),
-        headers: headers,
-        body: jsonEncode({
+      final response = await _client.post(
+        '/api/journal',
+        data: {
           'id': journalId,
           'title': payload['title'],
           'content': payload['content'],
           'targetLanguage': payload['targetLanguage'],
           'moduleId': payload['moduleId'],
           'mode': payload['mode'],
-        }),
+        },
       );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      }
+      final status = response.statusCode;
+      return status != null && status >= 200 && status < 300;
     } else if (action == 'analyze') {
       _logger.info('SyncService: Triggering analysis for journal $journalId');
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/analyze'),
-        headers: headers,
-        body: jsonEncode({'journalId': journalId}),
+      final response = await _client.post(
+        '/api/analyze',
+        data: {'journalId': journalId},
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+      final status = response.statusCode;
+      return status != null && status >= 200 && status < 300;
     }
 
     return true;
@@ -208,20 +186,13 @@ class SyncService {
     String itemId,
     Map<String, dynamic> payload,
   ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-
     if (action == 'review') {
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/srs/$itemId/review'),
-        headers: headers,
-        body: jsonEncode({'nextReviewDate': payload['nextReviewDate']}),
+      final response = await _client.put(
+        '/api/srs/$itemId/review',
+        data: {'nextReviewDate': payload['nextReviewDate']},
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+      final status = response.statusCode;
+      return status != null && status >= 200 && status < 300;
     }
 
     return true;
@@ -232,42 +203,36 @@ class SyncService {
     String word,
     Map<String, dynamic> payload,
   ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
+    final targetLanguage =
+        payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
 
     if (action == 'batch_update') {
       final words = payload['words'] as List<dynamic>;
-      final targetLanguage = payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
-      final status = (payload['status'] as String).toUpperCase();
+      final statusStr = payload['status'] as String;
 
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
-        headers: headers,
-        body: jsonEncode({
+      final response = await _client.post(
+        '/api/vocabulary',
+        data: {
           'words': words.map((w) => w.toString()).toList(),
           'targetLanguage': targetLanguage,
-          'status': status,
-        }),
+          'status': statusStr.toUpperCase(),
+        },
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+      final status = response.statusCode;
+      return status != null && status >= 200 && status < 300;
     } else if (action == 'update') {
-      final targetLanguage = payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
-      final status = (payload['status'] as String).toUpperCase();
+      final statusStr = payload['status'] as String;
 
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
-        headers: headers,
-        body: jsonEncode({
+      final response = await _client.put(
+        '/api/vocabulary',
+        data: {
           'word': word,
           'targetLanguage': targetLanguage,
-          'status': status,
-        }),
+          'status': statusStr.toUpperCase(),
+        },
       );
-      return response.statusCode >= 200 && response.statusCode < 300;
+      final status = response.statusCode;
+      return status != null && status >= 200 && status < 300;
     }
 
     return true;
@@ -279,7 +244,8 @@ class SyncService {
 final syncServiceProvider = Provider<SyncService>((ref) {
   final syncRepo = ref.watch(syncRepositoryProvider);
   final logger = ref.watch(loggerProvider);
-  final service = SyncService(syncRepo, ref, logger);
+  final client = ref.watch(apiClientProvider);
+  final service = SyncService(syncRepo, client, ref, logger);
   service.startListening();
   return service;
 });
@@ -289,6 +255,18 @@ final syncQueueCountProvider = FutureProvider<int>((ref) async {
   return await syncRepo.getPendingCount();
 });
 
-final lastSyncTimeProvider = StateProvider<DateTime?>((ref) => null);
+class LastSyncTimeNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+}
 
-final isSyncingProvider = StateProvider<bool>((ref) => false);
+final lastSyncTimeProvider =
+    NotifierProvider<LastSyncTimeNotifier, DateTime?>(() => LastSyncTimeNotifier());
+
+class IsSyncingNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+}
+
+final isSyncingProvider =
+    NotifierProvider<IsSyncingNotifier, bool>(() => IsSyncingNotifier());

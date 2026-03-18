@@ -12,6 +12,9 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'dart:io';
 import 'services/sync_service.dart';
 import 'services/hydration_service.dart';
+import 'services/logger_service.dart';
+import 'database/app_database.dart';
+import 'providers/vocabulary_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,10 +50,17 @@ class MyApp extends ConsumerStatefulWidget {
 }
 
 class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
+  bool _startedInBackground = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    _startedInBackground =
+        lifecycleState == AppLifecycleState.paused ||
+        lifecycleState == AppLifecycleState.inactive ||
+        lifecycleState == AppLifecycleState.detached;
   }
 
   @override
@@ -62,15 +72,43 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Check auth status first to validate/refresh token before other providers fetch data
       ref.read(authProvider.notifier).checkAuthStatus();
 
-      // Delay other sync operations to allow auth check to complete first
       Future.delayed(const Duration(milliseconds: 100), () {
-        ref.read(syncServiceProvider).syncPendingMutations();
-        ref.read(hydrationServiceProvider).performFullSync();
+        if (_startedInBackground) {
+          _preloadLocalData();
+        } else {
+          ref.read(syncServiceProvider).syncPendingMutations();
+          ref.read(hydrationServiceProvider).performFullSync();
+        }
       });
     }
+  }
+
+  Future<void> _preloadLocalData() async {
+    final db = ref.read(databaseProvider);
+    final logger = ref.read(loggerProvider);
+
+    logger.info('Preloading local data for background start...');
+
+    try {
+      final vocabLanguages = await db.getVocabularyLanguages();
+      logger.info('Found ${vocabLanguages.length} languages with vocabulary');
+
+      await ref
+          .read(vocabularyProvider.notifier)
+          .preloadVocabularyForLanguages(vocabLanguages);
+
+      logger.info(
+        'Vocabulary preloaded for ${vocabLanguages.length} languages',
+      );
+    } catch (e, st) {
+      logger.error('Failed to preload vocabulary', e, st);
+    }
+
+    ref.read(syncServiceProvider).syncPendingMutations();
+    _startedInBackground = false;
+    logger.info('Local data preload complete, sync started');
   }
 
   @override

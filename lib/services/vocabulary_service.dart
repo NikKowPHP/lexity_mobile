@@ -1,13 +1,10 @@
-import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-import 'token_service.dart';
-import '../utils/constants.dart';
 import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
 import 'logger_service.dart';
 import 'sync_service.dart';
+import '../network/api_client.dart';
 
 class VocabularyCounts {
   final int total;
@@ -40,27 +37,14 @@ class VocabularyPageResult {
 }
 
 class VocabularyService {
-  final TokenService _authTokenService;
+  final ApiClient _client;
   final AppDatabase _db;
   final SyncRepository _syncRepo;
   final Ref _ref;
   late final LoggerService _logger;
 
-  VocabularyService(
-    this._authTokenService,
-    this._db,
-    this._syncRepo,
-    this._ref,
-  ) {
+  VocabularyService(this._client, this._db, this._syncRepo, this._ref) {
     _logger = _ref.read(loggerProvider);
-  }
-
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
   }
 
   Future<Map<String, String>> getVocabulary(String language) async {
@@ -72,15 +56,13 @@ class VocabularyService {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse(
-          '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language',
-        ),
-        headers: await _getHeaders(),
+      final response = await _client.get(
+        '/api/vocabulary',
+        queryParameters: {'targetLanguage': language},
       );
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> data = jsonDecode(response.body);
+        final Map<String, dynamic> data = response.data;
 
         for (final entry in data.entries) {
           await _db.insertVocabulary({
@@ -91,10 +73,14 @@ class VocabularyService {
           });
         }
 
-        return data.map(
+        final backendVocab = data.map(
           (key, value) =>
               MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
         );
+
+        final mergedVocab = Map<String, String>.from(localVocab);
+        mergedVocab.addAll(backendVocab);
+        return mergedVocab;
       }
     } catch (e, st) {
       _logger.warning('VocabularyService: Failed to fetch from backend', e, st);
@@ -122,19 +108,22 @@ class VocabularyService {
 
     if (isOnline) {
       try {
-        var url =
-            '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language&page=$page&limit=$limit';
+        final queryParams = <String, dynamic>{
+          'targetLanguage': language,
+          'page': page,
+          'limit': limit,
+        };
         if (status != null) {
-          url += '&status=$status';
+          queryParams['status'] = status;
         }
 
-        final response = await http.get(
-          Uri.parse(url),
-          headers: await _getHeaders(),
+        final response = await _client.get(
+          '/api/vocabulary',
+          queryParameters: queryParams,
         );
 
         if (response.statusCode == 200) {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final data = response.data as Map<String, dynamic>;
           final items = data['items'] as Map<String, dynamic>;
           final pagination = data['pagination'] as Map<String, dynamic>;
           final counts = data['counts'] as Map<String, dynamic>;
@@ -178,7 +167,7 @@ class VocabularyService {
 
   Future<VocabularyPageResult> _getLocalVocabularyPage(String language) async {
     final items = await _db.getAllVocabularies();
-    
+
     final result = <String, String>{};
     int known = 0, learning = 0, unknown = 0;
 
@@ -186,12 +175,13 @@ class VocabularyService {
       final word = item['word'] as String;
       final status = item['status'] as String;
       result[word] = status;
-      if (status == 'known')
+      if (status == 'known') {
         known++;
-      else if (status == 'learning')
+      } else if (status == 'learning') {
         learning++;
-      else
+      } else {
         unknown++;
+      }
     }
 
     return VocabularyPageResult(
@@ -274,7 +264,7 @@ class VocabularyService {
 
 final vocabularyServiceProvider = Provider(
   (ref) => VocabularyService(
-    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(apiClientProvider),
     ref.watch(databaseProvider),
     ref.watch(syncRepositoryProvider),
     ref,

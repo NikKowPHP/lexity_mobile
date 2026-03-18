@@ -2,22 +2,35 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'user_provider.dart';
 import 'journal_provider.dart';
 
-enum OnboardingStep { profileSetup, firstJournal, viewAnalysis, studyIntro, completed, inactive }
+enum OnboardingStep {
+  profileSetup,
+  firstJournal,
+  viewAnalysis,
+  studyIntro,
+  completed,
+  inactive,
+}
 
-class OnboardingNotifier extends StateNotifier<OnboardingStep> {
-  final Ref ref;
-  OnboardingNotifier(this.ref) : super(OnboardingStep.inactive) {
-    // Determine initial step when provider is first accessed
+class OnboardingNotifier extends Notifier<OnboardingStep> {
+  @override
+  OnboardingStep build() {
+    ref.listen(userProfileProvider, (previous, next) {
+      determineStep();
+    });
+    ref.listen(journalHistoryProvider, (previous, next) {
+      determineStep();
+    });
+
     determineStep();
+    return OnboardingStep.inactive;
   }
 
   void determineStep() {
     final profileAsync = ref.read(userProfileProvider);
     final journalsAsync = ref.read(journalHistoryProvider);
-    
-    // If either is still loading, we can't decide yet
+
     if (profileAsync.isLoading || journalsAsync.isLoading) return;
-    
+
     final profile = profileAsync.value;
     final journals = journalsAsync.value ?? [];
 
@@ -25,7 +38,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingStep> {
       state = OnboardingStep.inactive;
       return;
     }
-    
+
     if (profile.onboardingCompleted) {
       state = OnboardingStep.completed;
       return;
@@ -38,21 +51,15 @@ class OnboardingNotifier extends StateNotifier<OnboardingStep> {
     } else if (journals.first.analysis == null) {
       state = OnboardingStep.viewAnalysis;
     } else if (profile.srsCount == 0) {
-      state = OnboardingStep.viewAnalysis; // Need to see analysis which usually generates cards
+      state = OnboardingStep.viewAnalysis;
     } else {
       state = OnboardingStep.studyIntro;
     }
   }
 }
 
-final StateNotifierProvider<OnboardingNotifier, OnboardingStep> onboardingProvider = StateNotifierProvider<OnboardingNotifier, OnboardingStep>((ref) {
-  // Listen to profile and journal changes to update onboarding state
-  ref.listen(userProfileProvider, (previous, next) {
-     ref.read(onboardingProvider.notifier).determineStep();
-  });
-  ref.listen(journalHistoryProvider, (previous, next) {
-     ref.read(onboardingProvider.notifier).determineStep();
-  });
-  
-  return OnboardingNotifier(ref);
-});
+final onboardingProvider = NotifierProvider<OnboardingNotifier, OnboardingStep>(
+  () {
+    return OnboardingNotifier();
+  },
+);

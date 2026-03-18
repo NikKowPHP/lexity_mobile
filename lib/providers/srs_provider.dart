@@ -32,18 +32,20 @@ class SrsState {
   }
 }
 
-class SrsNotifier extends StateNotifier<SrsState> {
-  final SrsService _service;
-  SrsNotifier(this._service) : super(SrsState());
+class SrsNotifier extends Notifier<SrsState> {
+  @override
+  SrsState build() {
+    return SrsState();
+  }
 
   Stream<List<SrsItem>> watchDeck() {
-    return _service.watchDueSrsItems();
+    return ref.read(srsServiceProvider).watchDueSrsItems();
   }
 
   Future<void> loadDeck(String language) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final deck = await _service.fetchDeck(language);
+      final deck = await ref.read(srsServiceProvider).fetchDeck(language);
       state = state.copyWith(deck: deck, isLoading: false);
     } catch (e) {
       state = state.copyWith(error: e.toString(), isLoading: false);
@@ -53,7 +55,7 @@ class SrsNotifier extends StateNotifier<SrsState> {
   Future<void> loadAllItems(String language) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final items = await _service.fetchAllItems(language);
+      final items = await ref.read(srsServiceProvider).fetchAllItems(language);
       state = state.copyWith(allItems: items, isLoading: false);
     } catch (e) {
       state = state.copyWith(error: e.toString(), isLoading: false);
@@ -62,7 +64,7 @@ class SrsNotifier extends StateNotifier<SrsState> {
 
   Future<void> deleteItem(String id, String language) async {
     try {
-      await _service.deleteItem(id);
+      await ref.read(srsServiceProvider).deleteItem(id);
       loadDeck(language);
       final updatedDeck = state.deck.where((item) => item.id != id).toList();
       state = state.copyWith(deck: updatedDeck);
@@ -79,10 +81,8 @@ class SrsNotifier extends StateNotifier<SrsState> {
     state = state.copyWith(deck: updatedDeck);
 
     try {
-      await _service.reviewItem(card.id, quality);
-    } catch (e) {
-      // Handle error
-    }
+      await ref.read(srsServiceProvider).reviewItem(card.id, quality);
+    } catch (e) {}
   }
 
   Future<bool> addToDeckFromTranslation({
@@ -92,12 +92,14 @@ class SrsNotifier extends StateNotifier<SrsState> {
     String? explanation,
   }) async {
     try {
-      await _service.createFromTranslation(
-        front: front,
-        back: back,
-        language: language,
-        explanation: explanation,
-      );
+      await ref
+          .read(srsServiceProvider)
+          .createFromTranslation(
+            front: front,
+            back: back,
+            language: language,
+            explanation: explanation,
+          );
       loadDeck(language);
       return true;
     } catch (e) {
@@ -108,7 +110,7 @@ class SrsNotifier extends StateNotifier<SrsState> {
   Future<void> loadDrill(String language) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final deck = await _service.fetchDrillItems(language);
+      final deck = await ref.read(srsServiceProvider).fetchDrillItems(language);
       state = state.copyWith(deck: deck, isLoading: false);
     } catch (e) {
       state = state.copyWith(error: e.toString(), isLoading: false);
@@ -116,8 +118,8 @@ class SrsNotifier extends StateNotifier<SrsState> {
   }
 }
 
-final srsProvider = StateNotifierProvider<SrsNotifier, SrsState>((ref) {
-  return SrsNotifier(ref.watch(srsServiceProvider));
+final srsProvider = NotifierProvider<SrsNotifier, SrsState>(() {
+  return SrsNotifier();
 });
 
 final srsDeckStreamProvider = StreamProvider<List<SrsItem>>((ref) {

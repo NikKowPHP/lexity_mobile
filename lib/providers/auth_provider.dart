@@ -32,38 +32,30 @@ class AuthState {
     return AuthState(
       isInitialized: isInitialized ?? this.isInitialized,
       isLoading: isLoading ?? this.isLoading,
-      error: error, // Nullable override
+      error: error,
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
       accessToken: accessToken ?? this.accessToken,
     );
   }
 }
 
-class AuthNotifier extends StateNotifier<AuthState> {
-  final AuthService _authService;
-  final UserService _userService;
-  final Ref _ref;
+class AuthNotifier extends Notifier<AuthState> {
   late final LoggerService _logger;
   late final TokenService _authTokenService;
   late final TokenService _refreshTokenService;
   String? _cachedToken;
 
-  // Lock to prevent multiple simultaneous refresh calls
   Future<List<String>?>? _refreshOngoing;
 
-  AuthNotifier(
-    this._ref,
-    this._authService,
-    this._userService,
-    this._logger,
-    this._authTokenService,
-    this._refreshTokenService,
-  ) : super(AuthState()) {
+  @override
+  AuthState build() {
+    _logger = ref.read(loggerProvider);
+    _authTokenService = ref.read(tokenServiceProvider(TokenType.auth));
+    _refreshTokenService = ref.read(tokenServiceProvider(TokenType.refresh));
     checkAuthStatus();
+    return AuthState();
   }
 
-  /// Returns a valid token, refreshing if necessary.
-  /// This method can be called by services before making API requests.
   Future<String?> getValidToken() async {
     if (_cachedToken != null) {
       return _cachedToken;
@@ -75,8 +67,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   String? get cachedToken => _cachedToken;
 
-  /// Force refresh the token. Returns the new access token if successful, null otherwise.
-  /// Uses a lock to prevent multiple simultaneous refresh calls.
   Future<String?> forceRefreshToken() async {
     final refreshedTokens = await refreshToken();
     if (refreshedTokens != null && refreshedTokens.length >= 2) {
@@ -101,7 +91,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     _cachedToken = token;
 
-    // Token exists - optimistically authenticate
     _logger.info('AuthNotifier: Token found. Optimistically authenticating.');
     state = state.copyWith(
       isAuthenticated: true,
@@ -110,10 +99,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     );
 
     try {
-      final isOnline = _ref.read(connectivityProvider);
+      final isOnline = ref.read(connectivityProvider);
 
       if (isOnline) {
-        await _userService.fetchProfile();
+        final userService = ref.read(userServiceProvider);
+        await userService.fetchProfile();
         _logger.info('AuthNotifier: Profile synced successfully');
       } else {
         _logger.info('AuthNotifier: Offline, relying on local session');
@@ -123,7 +113,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       _logger.warning("AuthNotifier: Background sync failed: $e");
 
-      // Only logout if it's a 401 Unauthorized - try to refresh token first
       if (e.toString().contains('401') ||
           e.toString().contains('Unauthorized')) {
         _logger.info("AuthNotifier: Token expired, trying to refresh...");
@@ -138,7 +127,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
           );
 
           try {
-            await _userService.fetchProfile();
+            final userService = ref.read(userServiceProvider);
+            await userService.fetchProfile();
             _logger.info("AuthNotifier: Profile fetched after token refresh");
             state = state.copyWith(
               isInitialized: true,
@@ -155,16 +145,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
           await logout();
         }
       } else {
-        // Network error - keep user logged in but mark initialized
         state = state.copyWith(isInitialized: true);
       }
     }
   }
 
-  /// Refresh token with lock to prevent multiple simultaneous refresh calls.
-  /// Returns the new tokens if successful, null otherwise.
   Future<List<String>?> refreshToken() async {
-    // If a refresh is already ongoing, wait for it to complete
     if (_refreshOngoing != null) {
       _logger.info(
         'AuthNotifier: Refresh already in progress, waiting for it...',
@@ -172,7 +158,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return await _refreshOngoing;
     }
 
-    // Start a new refresh
     _refreshOngoing = _performRefresh();
     final result = await _refreshOngoing;
     _refreshOngoing = null;
@@ -190,7 +175,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
 
     try {
-      final refreshedAuthToken = await _authService.refreshToken(token);
+      final authService = ref.read(authServiceProvider);
+      final refreshedAuthToken = await authService.refreshToken(token);
       _logger.info('AuthNotifier: refresh token request successful');
       return refreshedAuthToken;
     } catch (e) {
@@ -214,7 +200,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _logger.info('AuthNotifier: login started for $email');
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _authService.login(email, password);
+      final authService = ref.read(authServiceProvider);
+      await authService.login(email, password);
       _logger.info('AuthNotifier: login successful for $email');
       final token = await _authTokenService.getToken();
       _cachedToken = token;
@@ -238,7 +225,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _logger.info('AuthNotifier: signup started for $email');
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _authService.signUp(email, password);
+      final authService = ref.read(authServiceProvider);
+      await authService.signUp(email, password);
       _logger.info('AuthNotifier: signup successful for $email');
       final token = await _authTokenService.getToken();
       _cachedToken = token;
@@ -259,16 +247,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 }
 
-final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  final authService = ref.watch(authServiceProvider);
-  final userService = ref.watch(userServiceProvider);
-  final logger = ref.watch(loggerProvider);
-  return AuthNotifier(
-    ref,
-    authService,
-    userService,
-    logger,
-    ref.watch(tokenServiceProvider(TokenType.auth)),
-    ref.watch(tokenServiceProvider(TokenType.refresh)),
-  );
+final authProvider = NotifierProvider<AuthNotifier, AuthState>(() {
+  return AuthNotifier();
 });
