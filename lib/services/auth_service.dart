@@ -1,35 +1,31 @@
 // lib/services/auth_service.dart
-import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 
 import 'package:lexity_mobile/services/token_service.dart';
 
 import 'logger_service.dart';
-import '../utils/constants.dart';
 import 'hydration_service.dart';
+import '../network/api_client.dart';
 
 class AuthService {
   final Ref ref;
+  final ApiClient _client;
   late final LoggerService _logger;
   late final TokenService _authTokenService;
   late final TokenService _refreshTokenService;
 
-  AuthService(this.ref) {
+  AuthService(this.ref, this._client) {
     _logger = ref.read(loggerProvider);
     _authTokenService = ref.read(tokenServiceProvider(TokenType.auth));
     _refreshTokenService = ref.read(tokenServiceProvider(TokenType.refresh));
   }
 
   Future<bool> login(String email, String password) async {
-    _logger.info(
-      'AuthService: Attempting login for user: $email and ${AppConstants.baseUrl}',
-    );
+    _logger.info('AuthService: Attempting login for user: $email');
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+      final response = await _client.post(
+        '/api/auth/login',
+        data: {'email': email, 'password': password},
       );
 
       _logger.debug(
@@ -37,7 +33,7 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data as Map<String, dynamic>;
         _logger.debug('AuthService: Login response body: $data');
 
         if (data['access_token'] != null) {
@@ -48,10 +44,8 @@ class AuthService {
 
           _logger.info('DATA FROM LOGIN RESPONSE: $data');
 
-          // NEW: Sync user immediately after login to ensure DB profile exists
           await _syncUser(data['access_token']);
 
-          // Hydrate local DB with data from server
           await ref.read(hydrationServiceProvider).performFullSync();
         }
         if (data['refresh_token'] != null) {
@@ -63,8 +57,8 @@ class AuthService {
         return true;
       }
 
-      final body = jsonDecode(response.body);
-      final errorMsg = body['error'] ?? 'Login failed';
+      final responseData = response.data as Map<String, dynamic>;
+      final errorMsg = responseData['error'] ?? 'Login failed';
       _logger.warning(
         'AuthService: Login failed for user: $email. Reason: $errorMsg',
       );
@@ -78,10 +72,9 @@ class AuthService {
   Future<bool> signUp(String email, String password) async {
     _logger.info('AuthService: Attempting signup for user: $email');
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+      final response = await _client.post(
+        '/api/auth/register',
+        data: {'email': email, 'password': password},
       );
 
       _logger.debug(
@@ -89,7 +82,7 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data as Map<String, dynamic>;
         if (data['session'] != null &&
             data['session']['access_token'] != null) {
           _logger.info('DATA FROM SIGNUP RESPONSE: $data');
@@ -98,7 +91,8 @@ class AuthService {
           return true;
         }
       }
-      final errorMsg = jsonDecode(response.body)['error'] ?? 'Signup failed';
+      final responseData = response.data as Map<String, dynamic>;
+      final errorMsg = responseData['error'] ?? 'Signup failed';
       _logger.warning(
         'AuthService: Signup failed for user: $email. Reason: $errorMsg',
       );
@@ -116,10 +110,9 @@ class AuthService {
   Future<List<String>> refreshToken(String refreshToken) async {
     _logger.info('AuthService: Attempting to refresh token');
     try {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refresh_token': refreshToken}),
+      final response = await _client.post(
+        '/api/auth/refresh',
+        data: {'refresh_token': refreshToken},
       );
       List<String> authResponse = [];
 
@@ -128,7 +121,7 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = response.data as Map<String, dynamic>;
         if (data['access_token'] != null) {
           await _authTokenService.saveToken(data['access_token']);
           _logger.info('AuthService: Token refreshed successfully');
@@ -141,8 +134,8 @@ class AuthService {
         }
         return authResponse;
       }
-      final errorMsg =
-          jsonDecode(response.body)['error'] ?? 'Refresh token failed';
+      final responseData = response.data as Map<String, dynamic>;
+      final errorMsg = responseData['error'] ?? 'Refresh token failed';
       _logger.warning('AuthService: Refresh token failed. Reason: $errorMsg');
       throw Exception(errorMsg);
     } catch (e, stackTrace) {
@@ -151,20 +144,15 @@ class AuthService {
     }
   }
 
-  // NEW METHOD
   Future<void> _syncUser(String token) async {
     try {
-      await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/auth/sync-user'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      await _client.post('/api/auth/sync-user');
     } catch (e) {
       _logger.warning('AuthService: User sync failed (non-critical)', e);
     }
   }
 }
 
-final authServiceProvider = Provider((ref) => AuthService(ref));
+final authServiceProvider = Provider(
+  (ref) => AuthService(ref, ref.watch(apiClientProvider)),
+);

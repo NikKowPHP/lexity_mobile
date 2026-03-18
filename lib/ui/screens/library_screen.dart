@@ -200,6 +200,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ),
                   onLongPress: () => _promptDelete(book.id, book.title),
                   child: GlassCard(
+                    isStatic: true,
                     padding: 12,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

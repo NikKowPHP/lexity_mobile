@@ -28,12 +28,39 @@ class HydrationService {
     _logger.info('HydrationService: Starting full sync...');
 
     try {
-      await Future.wait([
-        _syncBooks(),
-        _syncJournals(),
-        _syncSrsItems(),
-        _syncVocabulary(),
+      // Fetch all data in parallel
+      final results = await Future.wait([
+        _fetchBooks(),
+        _fetchJournals(),
+        _fetchSrsItems(),
+        _fetchVocabulary(),
       ]);
+
+      final booksData = results[0];
+      final journalsData = results[1];
+      final srsData = results[2];
+      final vocabData = results[3];
+
+      _logger.info(
+        'HydrationService: Fetched ${booksData.length} books, ${journalsData.length} journals, ${srsData.length} SRS items, ${vocabData.length} vocabulary items',
+      );
+
+      // Atomic database insertion
+      final db = await _db.database;
+      await db.transaction((txn) async {
+        if (booksData.isNotEmpty) {
+          await _db.insertBooksBatch(booksData);
+        }
+        if (journalsData.isNotEmpty) {
+          await _db.insertJournalsBatch(journalsData);
+        }
+        if (srsData.isNotEmpty) {
+          await _db.insertSrsBatch(srsData);
+        }
+        if (vocabData.isNotEmpty) {
+          await _db.insertVocabularyBatch(vocabData);
+        }
+      });
 
       _lastSyncTimestamp = DateTime.now();
       _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTimestamp;
@@ -46,8 +73,8 @@ class HydrationService {
     }
   }
 
-  Future<void> _syncBooks() async {
-    _logger.info('HydrationService: Syncing books...');
+  Future<List<Map<String, dynamic>>> _fetchBooks() async {
+    _logger.info('HydrationService: Fetching books...');
     try {
       final queryParams = <String, dynamic>{};
       if (_lastSyncTimestamp != null) {
@@ -62,10 +89,11 @@ class HydrationService {
 
       if (response.statusCode == 200) {
         final List data = response.data;
-        _logger.info('HydrationService: Syncing ${data.length} books');
-
-        for (final item in data) {
-          await _db.insertBook({
+        _logger.info('HydrationService: Fetched ${data.length} books');
+        final now = DateTime.now().millisecondsSinceEpoch;
+        
+        return data.map<Map<String, dynamic>>((item) {
+          return {
             'id': item['id'],
             'title': item['title'] ?? 'Unknown Title',
             'author': item['author'],
@@ -81,17 +109,19 @@ class HydrationService {
                 ? '${AppConstants.baseUrl}${item['signedUrl']}'
                 : item['signedUrl'],
             'locations': item['locations'],
-            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
+            'last_synced_at': now,
+          };
+        }).toList();
       }
+      return [];
     } catch (e, st) {
-      _logger.error('HydrationService: Book sync failed', e, st);
+      _logger.error('HydrationService: Book fetch failed', e, st);
+      return [];
     }
   }
 
-  Future<void> _syncJournals() async {
-    _logger.info('HydrationService: Syncing journals...');
+  Future<List<Map<String, dynamic>>> _fetchJournals() async {
+    _logger.info('HydrationService: Fetching journals...');
     try {
       final queryParams = <String, dynamic>{};
       if (_lastSyncTimestamp != null) {
@@ -106,11 +136,12 @@ class HydrationService {
 
       if (response.statusCode == 200) {
         final List data = response.data;
-        _logger.info('HydrationService: Syncing ${data.length} journals');
+        _logger.info('HydrationService: Fetched ${data.length} journals');
+        final now = DateTime.now().millisecondsSinceEpoch;
 
-        for (final item in data) {
+        return data.map<Map<String, dynamic>>((item) {
           final analysis = item['analysis'];
-          await _db.insertJournal({
+          return {
             'id': item['id'],
             'content': item['content'] ?? '',
             'title': item['topic']?['title'] ?? 'Free Write',
@@ -120,17 +151,19 @@ class HydrationService {
             'audio_url': item['audioUrl'],
             'is_pending_analysis': analysis == null ? 0 : 0,
             'analysis_json': analysis != null ? jsonEncode(analysis) : null,
-            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
+            'last_synced_at': now,
+          };
+        }).toList();
       }
+      return [];
     } catch (e, st) {
-      _logger.error('HydrationService: Journal sync failed', e, st);
+      _logger.error('HydrationService: Journal fetch failed', e, st);
+      return [];
     }
   }
 
-  Future<void> _syncSrsItems() async {
-    _logger.info('HydrationService: Syncing SRS items...');
+  Future<List<Map<String, dynamic>>> _fetchSrsItems() async {
+    _logger.info('HydrationService: Fetching SRS items...');
     try {
       final queryParams = <String, dynamic>{};
       if (_lastSyncTimestamp != null) {
@@ -145,33 +178,36 @@ class HydrationService {
 
       if (response.statusCode == 200) {
         final List data = response.data;
-        _logger.info('HydrationService: Syncing ${data.length} SRS items');
+        _logger.info('HydrationService: Fetched ${data.length} SRS items');
+        final now = DateTime.now().millisecondsSinceEpoch;
 
-        for (final item in data) {
+        return data.map<Map<String, dynamic>>((item) {
           final nextReview = item['nextReviewDate'] != null
               ? DateTime.parse(item['nextReviewDate']).millisecondsSinceEpoch
               : DateTime.now()
                     .add(const Duration(days: 1))
                     .millisecondsSinceEpoch;
 
-          await _db.insertSrsItem({
+          return {
             'id': item['id'],
             'front': item['frontContent'] ?? '',
             'back': item['backContent'] ?? '',
             'context': item['context'],
             'type': item['type'] ?? 'TRANSLATION',
             'next_review_date': nextReview,
-            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
+            'last_synced_at': now,
+          };
+        }).toList();
       }
+      return [];
     } catch (e, st) {
-      _logger.error('HydrationService: SRS sync failed', e, st);
+      _logger.error('HydrationService: SRS fetch failed', e, st);
+      return [];
     }
   }
 
-  Future<void> _syncVocabulary() async {
-    _logger.info('HydrationService: Syncing vocabulary...');
+  Future<List<Map<String, dynamic>>> _fetchVocabulary() async {
+    _logger.info('HydrationService: Fetching vocabulary...');
     try {
       final queryParams = <String, dynamic>{};
       if (_lastSyncTimestamp != null) {
@@ -187,7 +223,7 @@ class HydrationService {
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = response.data;
         _logger.info(
-          'HydrationService: Syncing ${data.length} vocabulary items',
+          'HydrationService: Fetched ${data.length} vocabulary items',
         );
 
         // OFFLOAD MAPPING TO ISOLATE
@@ -201,11 +237,12 @@ class HydrationService {
           }).toList();
         });
 
-        // USE BATCH INSERT
-        await _db.insertVocabularyBatch(batchItems);
+        return batchItems;
       }
+      return [];
     } catch (e, st) {
-      _logger.error('HydrationService: Vocabulary sync failed', e, st);
+      _logger.error('HydrationService: Vocabulary fetch failed', e, st);
+      return [];
     }
   }
 

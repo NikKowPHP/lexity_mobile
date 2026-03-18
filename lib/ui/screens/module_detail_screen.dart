@@ -16,10 +16,14 @@ class ModuleDetailScreen extends ConsumerWidget {
     final pathAsync = ref.watch(learningPathProvider);
 
     return pathAsync.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text("Error: $e"))),
       data: (modules) {
-        final module = modules.firstWhere((m) => m.id == moduleId, orElse: () => modules.first);
+        final module = modules.firstWhere(
+          (m) => m.id == moduleId,
+          orElse: () => modules.first,
+        );
         final activities = module.activities;
 
         return GlassScaffold(
@@ -28,9 +32,17 @@ class ModuleDetailScreen extends ConsumerWidget {
           body: SliverList(
             delegate: SliverChildListDelegate([
               // 1. Micro Lesson
-              const Text("MICRO-LESSON", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12)),
+              const Text(
+                "MICRO-LESSON",
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
               const SizedBox(height: 12),
               GlassCard(
+                isStatic: true,
                 child: MarkdownBody(
                   data: module.microLesson,
                   styleSheet: MarkdownStyleSheet(

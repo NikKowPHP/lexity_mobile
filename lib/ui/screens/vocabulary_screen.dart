@@ -24,12 +24,13 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
       final lang = ref.read(activeLanguageProvider);
       ref.read(paginatedVocabularyProvider.notifier).loadVocabulary(lang);
     });
-    
+
     _scrollController.addListener(_onScroll);
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
       ref.read(paginatedVocabularyProvider.notifier).loadMore();
     }
   }
@@ -41,9 +42,14 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
     super.dispose();
   }
 
-  List<MapEntry<String, String>> _filterItems(Map<String, String> items, String search) {
+  List<MapEntry<String, String>> _filterItems(
+    Map<String, String> items,
+    String search,
+  ) {
     if (search.isEmpty) return items.entries.toList();
-    return items.entries.where((e) => e.key.toLowerCase().contains(search.toLowerCase())).toList();
+    return items.entries
+        .where((e) => e.key.toLowerCase().contains(search.toLowerCase()))
+        .toList();
   }
 
   @override
@@ -77,45 +83,74 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
               child: vocabData.isLoading && vocabData.items.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : filteredItems.isEmpty
-                      ? const Center(child: Text("No words found", style: TextStyle(color: Colors.white38)))
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          itemCount: filteredItems.length + (vocabData.hasMore ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index >= filteredItems.length) {
-                              return const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Center(child: CircularProgressIndicator()),
-                              );
-                            }
+                  ? const Center(
+                      child: Text(
+                        "No words found",
+                        style: TextStyle(color: Colors.white38),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount:
+                          filteredItems.length + (vocabData.hasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index >= filteredItems.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
 
-                            final entry = filteredItems[index];
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: GlassCard(
-                                padding: 12,
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-                                          Text(entry.value.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.white54)),
-                                        ],
+                        final entry = filteredItems[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: GlassCard(
+                            isStatic: true,
+                            padding: 12,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry.key,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: Colors.white,
+                                        ),
                                       ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                      onPressed: () => ref.read(paginatedVocabularyProvider.notifier).deleteWord(entry.key, activeLang),
-                                    ),
-                                  ],
+                                      Text(
+                                        entry.value.toUpperCase(),
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.white54,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.redAccent,
+                                    size: 20,
+                                  ),
+                                  onPressed: () => ref
+                                      .read(
+                                        paginatedVocabularyProvider.notifier,
+                                      )
+                                      .deleteWord(entry.key, activeLang),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -132,14 +167,27 @@ class _VocabularyCountsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
+      isStatic: true,
       padding: 16,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _CountItem(label: 'Total', value: counts.total, color: Colors.white),
-          _CountItem(label: 'Known', value: counts.known, color: Colors.greenAccent),
-          _CountItem(label: 'Learning', value: counts.learning, color: Colors.orangeAccent),
-          _CountItem(label: 'Unknown', value: counts.unknown, color: Colors.redAccent),
+          _CountItem(
+            label: 'Known',
+            value: counts.known,
+            color: Colors.greenAccent,
+          ),
+          _CountItem(
+            label: 'Learning',
+            value: counts.learning,
+            color: Colors.orangeAccent,
+          ),
+          _CountItem(
+            label: 'Unknown',
+            value: counts.unknown,
+            color: Colors.redAccent,
+          ),
         ],
       ),
     );
@@ -151,7 +199,11 @@ class _CountItem extends StatelessWidget {
   final int value;
   final Color color;
 
-  const _CountItem({required this.label, required this.value, required this.color});
+  const _CountItem({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {

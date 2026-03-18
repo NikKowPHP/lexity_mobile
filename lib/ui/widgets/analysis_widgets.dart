@@ -12,11 +12,17 @@ class AnalysisScoreCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: _ScoreBox(label: "Grammar", score: analysis.grammarScore)),
+        Expanded(
+          child: _ScoreBox(label: "Grammar", score: analysis.grammarScore),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: _ScoreBox(label: "Phrasing", score: analysis.phrasingScore)),
+        Expanded(
+          child: _ScoreBox(label: "Phrasing", score: analysis.phrasingScore),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: _ScoreBox(label: "Vocabulary", score: analysis.vocabScore)),
+        Expanded(
+          child: _ScoreBox(label: "Vocabulary", score: analysis.vocabScore),
+        ),
       ],
     );
   }
@@ -31,6 +37,7 @@ class _ScoreBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
+      isStatic: true,
       padding: 12,
       child: Column(
         children: [
@@ -81,24 +88,57 @@ class _MistakeCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GlassCard(
+        isStatic: true,
         padding: 16,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                 Container(
-                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                   decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
-                   child: Text(mistake.type.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                 ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    mistake.type.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(mistake.original, style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.white54)),
-            Text(mistake.corrected, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+            Text(
+              mistake.original,
+              style: const TextStyle(
+                decoration: TextDecoration.lineThrough,
+                color: Colors.white54,
+              ),
+            ),
+            Text(
+              mistake.corrected,
+              style: const TextStyle(
+                color: Colors.greenAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(mistake.explanation, style: const TextStyle(fontSize: 12, color: Colors.white70, fontStyle: FontStyle.italic)),
+            Text(
+              mistake.explanation,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white70,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
           ],
         ),
       ),

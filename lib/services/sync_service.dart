@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
@@ -12,6 +13,7 @@ class SyncService {
   final Ref _ref;
   final LoggerService _logger;
   DateTime? _lastSyncTime;
+  bool _syncLock = false;
 
   SyncService(this._syncRepo, this._client, this._ref, this._logger);
 
@@ -25,8 +27,8 @@ class SyncService {
   }
 
   Future<void> syncPendingMutations({bool force = false}) async {
-    if (_ref.read(isSyncingProvider) && !force) {
-      _logger.info('SyncService: Sync already in progress, skipping...');
+    if (_syncLock && !force) {
+      _logger.info('SyncService: Sync already in progress (lock), skipping...');
       return;
     }
 
@@ -36,46 +38,113 @@ class SyncService {
       return;
     }
 
+    _syncLock = true;
     _ref.read(isSyncingProvider.notifier).state = true;
     _logger.info('SyncService: Starting sync${force ? " (FORCED)" : ""}...');
 
+    List<int> successfullyProcessedIds = [];
+
     try {
+      // Compact the queue before processing to eliminate redundant mutations
+      await _syncRepo.compactSyncQueue();
+      _logger.info('SyncService: Queue compacted');
+
       final mutations = await _syncRepo.getPendingMutations();
-      _logger.info('SyncService: Found ${mutations.length} pending mutations');
+      _logger.info('SyncService: Found ${mutations.length} pending mutations after compaction');
 
-      for (final mutation in mutations) {
-        if (!_ref.read(connectivityProvider)) {
-          _logger.warning('SyncService: Lost network connection, pausing sync');
-          break;
-        }
+      if (mutations.isEmpty) {
+        return;
+      }
 
-        final retryCount = mutation['retry_count'] as int? ?? 0;
+      // Group mutations by entity_type, action, and relevant payload fields
+      final groups = _groupMutations(mutations);
+      _logger.info('SyncService: Grouped into ${groups.length} batches');
 
-        if (retryCount > 0 && !force) {
-          final delay = _calculateBackoff(retryCount);
-          _logger.info(
-            'SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}',
-          );
-          await Future.delayed(delay);
-        } else if (retryCount > 0 && force) {
-          _logger.info(
-            'SyncService: Forced sync, bypassing backoff for mutation ${mutation['id']}',
-          );
-        }
+      bool stopProcessing = false;
 
-        final success = await _processMutation(mutation);
-        if (success) {
-          await _syncRepo.removeMutation(mutation['id'] as int);
-          _logger.info(
-            'SyncService: Successfully synced mutation ${mutation['id']}',
-          );
+      // Process each group in order
+      for (final groupEntry in groups.entries) {
+        if (stopProcessing) break;
+
+        final key = groupEntry.key;
+        final groupMutations = groupEntry.value;
+        final entityType = key.entityType;
+        final action = key.action;
+
+        _logger.info('SyncService: Processing group $entityType:$action with ${groupMutations.length} items');
+
+        // Determine if this group should be batched
+        final shouldBatch = (entityType == 'vocabulary' && action == 'update') ||
+                           (entityType == 'srs' && action == 'review');
+
+        if (shouldBatch) {
+          // Try batch processing
+          final batchSuccess = await _processBatch(entityType, action, groupMutations);
+          if (batchSuccess) {
+            final batchIds = groupMutations.map((m) => m['id'] as int).toList();
+            successfullyProcessedIds.addAll(batchIds);
+            _logger.info('SyncService: Batch succeeded for $entityType:$action, processed ${batchIds.length} items');
+          } else {
+            _logger.warning('SyncService: Batch failed for $entityType:$action, falling back to individual processing');
+            // Fallback: process each mutation individually
+            for (final mutation in groupMutations) {
+              if (!_ref.read(connectivityProvider)) {
+                _logger.warning('SyncService: Lost network connection, pausing sync');
+                stopProcessing = true;
+                break;
+              }
+
+              final retryCount = mutation['retry_count'] as int? ?? 0;
+              if (retryCount > 0 && !force) {
+                final delay = _calculateBackoff(retryCount);
+                _logger.info('SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}');
+                await Future.delayed(delay);
+              }
+
+              final success = await _processMutation(mutation);
+              if (success) {
+                successfullyProcessedIds.add(mutation['id'] as int);
+              } else {
+                await _syncRepo.incrementRetryCount(mutation['id'] as int);
+                _logger.warning('SyncService: Individual mutation ${mutation['id']} failed after batch fallback. Stopping queue processing.');
+                stopProcessing = true;
+                break;
+              }
+            }
+          }
         } else {
-          await _syncRepo.incrementRetryCount(mutation['id'] as int);
-          _logger.warning(
-            'SyncService: Mutation ${mutation['id']} failed. Stopping queue processing to prevent infinite hammering.',
-          );
-          break;
+          // Non-batchable: process individually
+          for (final mutation in groupMutations) {
+            if (!_ref.read(connectivityProvider)) {
+              _logger.warning('SyncService: Lost network connection, pausing sync');
+              stopProcessing = true;
+              break;
+            }
+
+            final retryCount = mutation['retry_count'] as int? ?? 0;
+            if (retryCount > 0 && !force) {
+              final delay = _calculateBackoff(retryCount);
+              _logger.info('SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}');
+              await Future.delayed(delay);
+            }
+
+            final success = await _processMutation(mutation);
+            if (success) {
+              successfullyProcessedIds.add(mutation['id'] as int);
+            } else {
+              await _syncRepo.incrementRetryCount(mutation['id'] as int);
+              _logger.warning('SyncService: Mutation ${mutation['id']} failed. Stopping queue processing to prevent infinite hammering.');
+              stopProcessing = true;
+              break;
+            }
+          }
         }
+      }
+
+      // Bulk delete processed mutations
+      if (successfullyProcessedIds.isNotEmpty) {
+        await _syncRepo.removeMutations(successfullyProcessedIds);
+        _logger.info('SyncService: Removed ${successfullyProcessedIds.length} processed mutations from queue');
       }
 
       _lastSyncTime = DateTime.now();
@@ -84,6 +153,7 @@ class SyncService {
     } catch (e, st) {
       _logger.error('SyncService: Sync failed', e, st);
     } finally {
+      _syncLock = false;
       _ref.read(isSyncingProvider.notifier).state = false;
       _ref.invalidate(syncQueueCountProvider);
     }
@@ -94,6 +164,95 @@ class SyncService {
     final maxSeconds = 300;
     final seconds = (baseSeconds * (1 << retryCount)).clamp(1, maxSeconds);
     return Duration(seconds: seconds);
+  }
+
+  // Group mutations by entity_type, action, and payload characteristics
+  Map<_GroupKey, List<Map<String, dynamic>>> _groupMutations(List<Map<String, dynamic>> mutations) {
+    final groups = <_GroupKey, List<Map<String, dynamic>>>{};
+    for (final mutation in mutations) {
+      final entityType = mutation['entity_type'] as String;
+      final action = mutation['action'] as String;
+      String? subKey;
+      
+      // For vocabulary updates, group by status to ensure uniform batch payloads
+      if (entityType == 'vocabulary' && action == 'update') {
+        final payload = jsonDecode(mutation['payload_json'] as String) as Map<String, dynamic>;
+        subKey = payload['status'] as String?;
+      }
+      
+      final key = _GroupKey(entityType, action, subKey);
+      groups.putIfAbsent(key, () => []).add(mutation);
+    }
+    return groups;
+  }
+
+  // Process a batch of mutations with a single API call
+  Future<bool> _processBatch(String entityType, String action, List<Map<String, dynamic>> mutations) async {
+    _logger.info('Batch Sync: $entityType:$action with ${mutations.length} items');
+    try {
+      switch (entityType) {
+        case 'vocabulary':
+          if (action == 'update') {
+            // All mutations in this group have the same status (due to grouping)
+            final firstPayload = jsonDecode(mutations.first['payload_json'] as String) as Map<String, dynamic>;
+            final status = firstPayload['status'] as String;
+            final targetLanguage = firstPayload['targetLanguage'] as String? ?? _ref.read(activeLanguageProvider);
+            final words = mutations.map((m) => m['entity_id'] as String).toList();
+            
+            // Extended timeout for batch requests
+            final options = Options(
+              sendTimeout: const Duration(seconds: 60),
+              receiveTimeout: const Duration(seconds: 60),
+            );
+            
+            final response = await _client.post(
+              '/api/vocabulary',
+              data: {
+                'words': words,
+                'targetLanguage': targetLanguage,
+                'status': status,
+              },
+              options: options,
+            );
+            final statusCode = response.statusCode;
+            return statusCode != null && statusCode >= 200 && statusCode < 300;
+          }
+          return true; // other actions not batchable
+          
+        case 'srs':
+          if (action == 'review') {
+            final reviews = mutations.map((m) {
+              final payload = jsonDecode(m['payload_json'] as String) as Map<String, dynamic>;
+              return {
+                'id': m['entity_id'],
+                'date': payload['nextReviewDate'],
+              };
+            }).toList();
+            
+            // Extended timeout for batch requests
+            final options = Options(
+              sendTimeout: const Duration(seconds: 60),
+              receiveTimeout: const Duration(seconds: 60),
+            );
+            
+            final response = await _client.post(
+              '/api/srs/batch-review',
+              data: {'reviews': reviews},
+              options: options,
+            );
+            final statusCode = response.statusCode;
+            return statusCode != null && statusCode >= 200 && statusCode < 300;
+          }
+          return true;
+          
+        default:
+          // For other types, treat as success to avoid infinite loops
+          return true;
+      }
+    } catch (e) {
+      _logger.error('SyncService: Batch processing error for $entityType:$action', e);
+      return false;
+    }
   }
 
   Future<bool> _processMutation(Map<String, dynamic> mutation) async {
@@ -239,6 +398,24 @@ class SyncService {
   }
 
   DateTime? get lastSyncTime => _lastSyncTime;
+}
+
+class _GroupKey {
+  final String entityType;
+  final String action;
+  final String? subKey;
+
+  _GroupKey(this.entityType, this.action, [this.subKey]);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _GroupKey &&
+      other.entityType == entityType &&
+      other.action == action &&
+      other.subKey == subKey;
+
+  @override
+  int get hashCode => entityType.hashCode ^ action.hashCode ^ (subKey?.hashCode ?? 0);
 }
 
 final syncServiceProvider = Provider<SyncService>((ref) {

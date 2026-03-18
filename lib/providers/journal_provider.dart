@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/journal_entry.dart';
-import '../services/journal_service.dart';
+import '../data/repositories/journal_repository.dart';
 import '../database/app_database.dart';
 import 'user_provider.dart';
 
@@ -42,7 +42,7 @@ final journalDetailProvider = FutureProvider.autoDispose
 final suggestedTopicsProvider = FutureProvider.autoDispose<List<String>>((
   ref,
 ) async {
-  final service = ref.watch(journalServiceProvider);
+  final service = ref.watch(journalRepositoryProvider);
   final activeLang = ref.watch(activeLanguageProvider);
   return service.getSuggestedTopics(activeLang);
 });
@@ -59,7 +59,7 @@ class JournalNotifier extends Notifier<AsyncValue<void>> {
     String language, {
     String? moduleId,
   }) async {
-    final service = ref.read(journalServiceProvider);
+    final service = ref.read(journalRepositoryProvider);
     state = const AsyncValue.loading();
     try {
       final entry = await service.createEntry(
@@ -81,7 +81,7 @@ class JournalNotifier extends Notifier<AsyncValue<void>> {
     String language, {
     String? moduleId,
   }) async {
-    final service = ref.read(journalServiceProvider);
+    final service = ref.read(journalRepositoryProvider);
     state = const AsyncValue.loading();
     try {
       await service.createAudioEntry(filePath, language, moduleId: moduleId);
@@ -93,13 +93,13 @@ class JournalNotifier extends Notifier<AsyncValue<void>> {
 
   Future<void> deleteEntry(String id) async {
     try {
-      final service = ref.read(journalServiceProvider);
+      final service = ref.read(journalRepositoryProvider);
       await service.deleteEntry(id);
     } catch (e) {}
   }
 
   Future<void> refreshTopics(String language) async {
-    final service = ref.read(journalServiceProvider);
+    final service = ref.read(journalRepositoryProvider);
     await service.generateTopics(language);
   }
 }

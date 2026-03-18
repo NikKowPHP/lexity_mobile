@@ -349,6 +349,20 @@ class AppDatabase {
     return result;
   }
 
+  Future<void> insertBooksBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final item in items) {
+      batch.insert(
+        'books',
+        item,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+    _notify('books');
+  }
+
   // Journals
   Future<int> insertJournal(Map<String, dynamic> journal) async {
     final db = await database;
@@ -492,18 +506,75 @@ class AppDatabase {
 
   Future<void> insertVocabularyBatch(List<Map<String, dynamic>> items) async {
     final db = await database;
-    await db.transaction((txn) async {
-      final batch = txn.batch();
-      for (final item in items) {
-        batch.insert(
-          'vocabularies',
-          item,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-      await batch.commit(noResult: true);
-    });
+    final batch = db.batch();
+    for (final item in items) {
+      batch.insert(
+        'vocabularies',
+        item,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
     _notify('vocabularies');
+  }
+
+  Future<void> insertJournalsBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final item in items) {
+      batch.insert(
+        'journals',
+        item,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+    _notify('journals');
+  }
+
+  Future<void> insertSrsBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final item in items) {
+      batch.insert(
+        'srs_items',
+        item,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+    _notify('srs_items');
+    _notifyDueSrsItems();
+  }
+
+  Future<void> compactSyncQueue() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      // For book progress updates, keep only the most recent entry per book_id
+      await txn.execute('''
+        DELETE FROM sync_queue
+        WHERE id NOT IN (
+          SELECT MAX(id)
+          FROM sync_queue
+          WHERE entity_type = 'book' AND action = 'update_progress'
+          GROUP BY entity_id
+        )
+        AND entity_type = 'book' AND action = 'update_progress'
+      ''');
+
+      // For vocabulary updates, keep only the most recent entry per word
+      await txn.execute('''
+        DELETE FROM sync_queue
+        WHERE id NOT IN (
+          SELECT MAX(id)
+          FROM sync_queue
+          WHERE entity_type = 'vocabulary' AND action = 'update'
+          GROUP BY entity_id
+        )
+        AND entity_type = 'vocabulary' AND action = 'update'
+      ''');
+    });
+    _notify('sync_queue');
   }
 
   Future<List<String>> getVocabularyLanguages() async {
@@ -560,6 +631,19 @@ class AppDatabase {
       'sync_queue',
       where: 'id = ?',
       whereArgs: [id],
+    );
+    _notify('sync_queue');
+    return result;
+  }
+
+  Future<int> removeMutations(List<int> ids) async {
+    if (ids.isEmpty) return 0;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final result = await db.delete(
+      'sync_queue',
+      where: 'id IN ($placeholders)',
+      whereArgs: ids,
     );
     _notify('sync_queue');
     return result;

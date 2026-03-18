@@ -37,12 +37,20 @@ class SyncRepository {
     await _db.removeMutation(id);
   }
 
+  Future<void> removeMutations(List<int> ids) async {
+    await _db.removeMutations(ids);
+  }
+
   Future<void> incrementRetryCount(int id) async {
     await _db.incrementRetryCount(id);
   }
 
   Future<void> clearQueue() async {
     await _db.clearSyncQueue();
+  }
+
+  Future<void> compactSyncQueue() async {
+    await _db.compactSyncQueue();
   }
 
   // Book mutations

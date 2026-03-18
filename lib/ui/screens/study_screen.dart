@@ -149,32 +149,33 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     return Column(
       children: [
         const SizedBox(height: 20),
-        // 3D Flip Animation
-        GestureDetector(
-          onTap: () => setState(() => isFlipped = !isFlipped),
-          child: TweenAnimationBuilder(
-            tween: Tween<double>(begin: 0, end: isFlipped ? 180 : 0),
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.easeOutBack,
-            builder: (context, double val, child) {
-              return Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.001) // Perspective
-                  ..rotateY(val * pi / 180),
-                child: val < 90
-                    ? _CardContent(text: card.front, isFront: true)
-                    : Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()..rotateY(pi),
-                        child: _CardContent(
-                          text: card.back,
-                          isFront: false,
-                          contextInfo: card.context,
+        RepaintBoundary(
+          child: GestureDetector(
+            onTap: () => setState(() => isFlipped = !isFlipped),
+            child: TweenAnimationBuilder(
+              tween: Tween<double>(begin: 0, end: isFlipped ? 180 : 0),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutBack,
+              builder: (context, double val, child) {
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.001)
+                    ..rotateY(val * pi / 180),
+                  child: val < 90
+                      ? _CardContent(text: card.front, isFront: true)
+                      : Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.identity()..rotateY(pi),
+                          child: _CardContent(
+                            text: card.back,
+                            isFront: false,
+                            contextInfo: card.context,
+                          ),
                         ),
-                      ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
         const SizedBox(height: 40),

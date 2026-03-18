@@ -58,6 +58,7 @@ class JournalScreen extends ConsumerWidget {
                 child: GestureDetector(
                   onTap: () => context.push('/journal/${entry.id}'),
                   child: GlassCard(
+                    isStatic: true,
                     padding: 16,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

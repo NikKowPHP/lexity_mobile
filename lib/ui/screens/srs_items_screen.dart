@@ -31,17 +31,21 @@ class _SrsItemsScreenState extends ConsumerState<SrsItemsScreen> {
       title: 'Flashcards',
       subtitle: 'Manage your study deck',
       showBackButton: true,
-      body: state.isLoading 
-        ? const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: Colors.white)))
-        : SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) {
+      body: state.isLoading
+          ? const SliverFillRemaining(
+              child: Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            )
+          : SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, i) {
                   final item = state.allItems[i];
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: GlassCard(
+                      isStatic: true,
                       padding: 16,
                       child: Row(
                         children: [
@@ -60,7 +64,9 @@ class _SrsItemsScreenState extends ConsumerState<SrsItemsScreen> {
                                 Text(
                                   item.back,
                                   style: TextStyle(
-                                    color: Colors.greenAccent.withValues(alpha: 0.8),
+                                    color: Colors.greenAccent.withValues(
+                                      alpha: 0.8,
+                                    ),
                                     fontSize: 14,
                                   ),
                                 ),
@@ -68,18 +74,21 @@ class _SrsItemsScreenState extends ConsumerState<SrsItemsScreen> {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                            onPressed: () => ref.read(srsProvider.notifier).deleteItem(item.id, lang),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.redAccent,
+                            ),
+                            onPressed: () => ref
+                                .read(srsProvider.notifier)
+                                .deleteItem(item.id, lang),
                           ),
                         ],
                       ),
                     ),
                   );
-                },
-                childCount: state.allItems.length,
+                }, childCount: state.allItems.length),
               ),
             ),
-          ),
     );
   }
 }

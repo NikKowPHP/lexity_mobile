@@ -3,7 +3,7 @@ class SrsItem {
   final String front;
   final String back;
   final String? context;
-  final String type; // MISTAKE or TRANSLATION
+  final String type;
 
   SrsItem({
     required this.id,
@@ -16,11 +16,20 @@ class SrsItem {
   factory SrsItem.fromJson(Map<String, dynamic> json) {
     return SrsItem(
       id: json['id'],
-      // Note: Backend might return 'frontContent' or 'front' based on your prisma schema
-      front: json['frontContent'] ?? '', 
-      back: json['backContent'] ?? '',
+      front: json['frontContent'] ?? json['front'] ?? '',
+      back: json['backContent'] ?? json['back'] ?? '',
       context: json['context'],
       type: json['type'] ?? 'TRANSLATION',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'frontContent': front,
+      'backContent': back,
+      'context': context,
+      'type': type,
+    };
   }
 }
