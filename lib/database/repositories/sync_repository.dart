@@ -110,6 +110,19 @@ class SyncRepository {
       payload: {'status': status.toUpperCase(), 'targetLanguage': targetLanguage},
     );
   }
+
+  Future<void> enqueueVocabBatchUpdate(List<String> words, String status, String targetLanguage) async {
+    await enqueueMutation(
+      entityType: 'vocabulary',
+      action: 'batch_update',
+      entityId: 'batch_${DateTime.now().millisecondsSinceEpoch}',
+      payload: {
+        'words': words,
+        'status': status.toUpperCase(),
+        'targetLanguage': targetLanguage,
+      },
+    );
+  }
 }
 
 final syncRepositoryProvider = Provider<SyncRepository>((ref) {

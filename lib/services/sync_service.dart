@@ -239,7 +239,22 @@ class SyncService {
       'Authorization': 'Bearer $token',
     };
 
-    if (action == 'update') {
+    if (action == 'batch_update') {
+      final words = payload['words'] as List<dynamic>;
+      final targetLanguage = payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
+      final status = (payload['status'] as String).toUpperCase();
+
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
+        headers: headers,
+        body: jsonEncode({
+          'words': words.map((w) => w.toString()).toList(),
+          'targetLanguage': targetLanguage,
+          'status': status,
+        }),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } else if (action == 'update') {
       final targetLanguage = payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
       final status = (payload['status'] as String).toUpperCase();
 

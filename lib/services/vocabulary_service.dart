@@ -7,6 +7,7 @@ import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
 import 'logger_service.dart';
+import 'sync_service.dart';
 
 class VocabularyService {
   final TokenService _authTokenService;
@@ -101,6 +102,11 @@ class VocabularyService {
     );
 
     _logger.info('VocabularyService: Status update queued for sync');
+
+    if (_ref.read(connectivityProvider)) {
+      _logger.info('VocabularyService: Online, triggering immediate sync...');
+      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
+    }
   }
 
   Future<void> markBatchKnown(List<String> words, String language) async {
@@ -108,18 +114,25 @@ class VocabularyService {
       'VocabularyService: Marking ${words.length} words as known locally',
     );
 
-    for (final word in words) {
+    final lowerWords = words.map((w) => w.toLowerCase()).toList();
+    
+    for (final word in lowerWords) {
       await _db.insertVocabulary({
-        'word': word.toLowerCase(),
+        'word': word,
         'status': 'known',
         'language': language,
         'last_synced_at': DateTime.now().millisecondsSinceEpoch,
       });
-
-      await _syncRepo.enqueueVocabUpdate(word.toLowerCase(), 'known', language);
     }
 
+    await _syncRepo.enqueueVocabBatchUpdate(lowerWords, 'known', language);
+
     _logger.info('VocabularyService: Batch update queued for sync');
+
+    if (_ref.read(connectivityProvider)) {
+      _logger.info('VocabularyService: Online, triggering immediate sync...');
+      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
+    }
   }
 
   Future<void> deleteWord(String word, String language) async {
