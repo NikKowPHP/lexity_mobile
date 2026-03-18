@@ -35,7 +35,10 @@ class _DrillScreenState extends ConsumerState<DrillScreen> {
     final items = srsState.deck;
 
     if (srsState.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        backgroundColor: Color(0xFF0D1117),
+        body: Center(child: CircularProgressIndicator(color: Colors.white))
+      );
     }
 
     if (items.isEmpty) {
@@ -43,6 +46,7 @@ class _DrillScreenState extends ConsumerState<DrillScreen> {
          title: 'Drill', 
          subtitle: 'Practice',
          body: SliverFillRemaining(
+           hasScrollBody: false,
            child: Center(
              child: Column(
                mainAxisAlignment: MainAxisAlignment.center,
@@ -58,11 +62,11 @@ class _DrillScreenState extends ConsumerState<DrillScreen> {
     }
 
     if (currentIndex >= items.length) {
-       // Completed
        return GlassScaffold(
          title: 'Complete!', 
          subtitle: 'Great job',
          body: SliverFillRemaining(
+           hasScrollBody: false,
            child: Center(
              child: Column(
                mainAxisAlignment: MainAxisAlignment.center,
@@ -72,7 +76,6 @@ class _DrillScreenState extends ConsumerState<DrillScreen> {
                  const Text("Drill Completed", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                  const SizedBox(height: 40),
                  LiquidButton(text: "Finish", onTap: () {
-                   // Mark activity as done
                    ref.read(pathNotifierProvider.notifier).updateActivity(
                      widget.moduleId, 
                      'drill', 
@@ -94,54 +97,57 @@ class _DrillScreenState extends ConsumerState<DrillScreen> {
       title: 'Drill',
       subtitle: '${currentIndex + 1} / ${items.length}',
       body: SliverFillRemaining(
-        hasScrollBody: false,
-        child: Column(
-          children: [
-            const SizedBox(height: 40),
-            GestureDetector(
-              onTap: () => setState(() => isFlipped = !isFlipped),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 400),
-                transitionBuilder: (child, anim) {
-                   final rotate = Tween(begin: 3.14, end: 0.0).animate(anim);
-                   return AnimatedBuilder(
-                     animation: rotate,
-                     child: child,
-                     builder: (context, child) {
-                       return Transform(
-                         transform: Matrix4.rotationY(rotate.value),
-                         alignment: Alignment.center,
-                         child: child,
-                       );
-                     },
-                   );
-                },
-                child: isFlipped 
-                  ? _CardFace(key: const ValueKey(true), text: currentItem.back, label: "ANSWER", color: Colors.greenAccent)
-                  : _CardFace(key: const ValueKey(false), text: currentItem.front, label: "QUESTION", color: LiquidTheme.primaryAccent),
+        hasScrollBody: true,
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              GestureDetector(
+                onTap: () => setState(() => isFlipped = !isFlipped),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) {
+                     final rotate = Tween(begin: 3.14, end: 0.0).animate(anim);
+                     return AnimatedBuilder(
+                       animation: rotate,
+                       child: child,
+                       builder: (context, child) {
+                         return Transform(
+                           transform: Matrix4.rotationY(rotate.value),
+                           alignment: Alignment.center,
+                           child: child,
+                         );
+                       },
+                     );
+                  },
+                  child: isFlipped 
+                    ? _CardFace(key: const ValueKey(true), text: currentItem.back, label: "ANSWER", color: Colors.greenAccent)
+                    : _CardFace(key: const ValueKey(false), text: currentItem.front, label: "QUESTION", color: LiquidTheme.primaryAccent),
+                ),
               ),
-            ),
-            const Spacer(),
-            if (isFlipped)
-               Padding(
-                 padding: const EdgeInsets.only(bottom: 40),
-                 child: Row(
-                   children: [
-                     Expanded(child: LiquidButton(text: "Next", onTap: () {
-                        setState(() {
-                          currentIndex++;
-                          isFlipped = false;
-                        });
-                     })),
-                   ],
-                 ),
-               )
-            else
-               const Padding(
-                 padding: EdgeInsets.only(bottom: 40),
-                 child: Text("Tap card to reveal answer", style: TextStyle(color: Colors.white54)),
-               )
-          ],
+              const SizedBox(height: 40),
+              if (isFlipped)
+                 Padding(
+                   padding: const EdgeInsets.only(bottom: 40),
+                   child: Row(
+                     children: [
+                       Expanded(child: LiquidButton(text: "Next", onTap: () {
+                          setState(() {
+                            currentIndex++;
+                            isFlipped = false;
+                          });
+                       })),
+                     ],
+                   ),
+                 )
+              else
+                 const Padding(
+                   padding: EdgeInsets.only(bottom: 40),
+                   child: Text("Tap card to reveal answer", style: TextStyle(color: Colors.white54)),
+                 )
+            ],
+          ),
         ),
       ),
     );
@@ -175,3 +181,4 @@ class _CardFace extends StatelessWidget {
     );
   }
 }
+      

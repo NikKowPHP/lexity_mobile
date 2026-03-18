@@ -12,12 +12,14 @@ class AuthState {
   final bool isLoading;
   final String? error;
   final bool isAuthenticated;
+  final String? accessToken;
 
   AuthState({
     this.isInitialized = false,
     this.isLoading = false,
     this.error,
     this.isAuthenticated = false,
+    this.accessToken,
   });
 
   AuthState copyWith({
@@ -25,12 +27,14 @@ class AuthState {
     bool? isLoading,
     String? error,
     bool? isAuthenticated,
+    String? accessToken,
   }) {
     return AuthState(
       isInitialized: isInitialized ?? this.isInitialized,
       isLoading: isLoading ?? this.isLoading,
       error: error, // Nullable override
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+      accessToken: accessToken ?? this.accessToken,
     );
   }
 }
@@ -42,6 +46,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   late final LoggerService _logger;
   late final TokenService _authTokenService;
   late final TokenService _refreshTokenService;
+  String? _cachedToken;
 
   // Lock to prevent multiple simultaneous refresh calls
   Future<List<String>?>? _refreshOngoing;
@@ -60,14 +65,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Returns a valid token, refreshing if necessary.
   /// This method can be called by services before making API requests.
   Future<String?> getValidToken() async {
-    final token = await _authTokenService.getToken();
-    if (token == null) {
-      return null;
+    if (_cachedToken != null) {
+      return _cachedToken;
     }
-    // Note: For additional safety, you could add JWT decoding here to check expiry locally
-    // before sending the request. For now, we rely on 401 responses to trigger refresh.
+    final token = await _authTokenService.getToken();
+    _cachedToken = token;
     return token;
   }
+
+  String? get cachedToken => _cachedToken;
 
   /// Force refresh the token. Returns the new access token if successful, null otherwise.
   /// Uses a lock to prevent multiple simultaneous refresh calls.
@@ -76,6 +82,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (refreshedTokens != null && refreshedTokens.length >= 2) {
       await _authTokenService.saveToken(refreshedTokens[0]);
       await _refreshTokenService.saveToken(refreshedTokens[1]);
+      _cachedToken = refreshedTokens[0];
       _logger.info('AuthNotifier: Token force refreshed successfully');
       return refreshedTokens[0];
     }
@@ -92,9 +99,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
+    _cachedToken = token;
+
     // Token exists - optimistically authenticate
     _logger.info('AuthNotifier: Token found. Optimistically authenticating.');
-    state = state.copyWith(isAuthenticated: true, isInitialized: false);
+    state = state.copyWith(
+      isAuthenticated: true,
+      isInitialized: false,
+      accessToken: token,
+    );
 
     try {
       final isOnline = _ref.read(connectivityProvider);
@@ -119,6 +132,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         if (refreshedTokens != null && refreshedTokens.length >= 2) {
           await _authTokenService.saveToken(refreshedTokens[0]);
           await _refreshTokenService.saveToken(refreshedTokens[1]);
+          _cachedToken = refreshedTokens[0];
           _logger.info(
             "AuthNotifier: Token refreshed, retrying profile fetch...",
           );
@@ -126,7 +140,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
           try {
             await _userService.fetchProfile();
             _logger.info("AuthNotifier: Profile fetched after token refresh");
-            state = state.copyWith(isInitialized: true);
+            state = state.copyWith(
+              isInitialized: true,
+              accessToken: refreshedTokens[0],
+            );
           } catch (retryError) {
             _logger.warning(
               "AuthNotifier: Profile fetch failed after refresh: $retryError",
@@ -185,7 +202,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout() async {
     _logger.info('AuthNotifier: logging out');
     await _authTokenService.clearToken();
-    state = state.copyWith(isAuthenticated: false, isInitialized: true);
+    _cachedToken = null;
+    state = state.copyWith(
+      isAuthenticated: false,
+      isInitialized: true,
+      accessToken: null,
+    );
   }
 
   Future<void> login(String email, String password) async {
@@ -194,10 +216,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       await _authService.login(email, password);
       _logger.info('AuthNotifier: login successful for $email');
+      final token = await _authTokenService.getToken();
+      _cachedToken = token;
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
         isInitialized: true,
+        accessToken: token,
       );
     } catch (e, stackTrace) {
       _logger.error('AuthNotifier: login failed for $email', e, stackTrace);
@@ -215,10 +240,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       await _authService.signUp(email, password);
       _logger.info('AuthNotifier: signup successful for $email');
+      final token = await _authTokenService.getToken();
+      _cachedToken = token;
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
         isInitialized: true,
+        accessToken: token,
       );
     } catch (e, stackTrace) {
       _logger.error('AuthNotifier: signup failed for $email', e, stackTrace);

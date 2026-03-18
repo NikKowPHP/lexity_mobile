@@ -64,48 +64,47 @@ class VocabularyService {
   }
 
   Future<Map<String, String>> getVocabulary(String language) async {
+    final localVocab = await _getLocalVocabulary(language);
+
     final isOnline = _ref.read(connectivityProvider);
-
-    if (isOnline) {
-      try {
-        final response = await http.get(
-          Uri.parse(
-            '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language',
-          ),
-          headers: await _getHeaders(),
-        );
-
-        if (response.statusCode == 200) {
-          final Map<String, dynamic> data = jsonDecode(response.body);
-
-          for (final entry in data.entries) {
-            await _db.insertVocabulary({
-              'word': entry.key.toLowerCase(),
-              'status': entry.value.toString().toLowerCase(),
-              'language': language,
-              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-            });
-          }
-
-          return data.map(
-            (key, value) =>
-                MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
-          );
-        }
-      } catch (e, st) {
-        _logger.warning(
-          'VocabularyService: Failed to fetch from backend',
-          e,
-          st,
-        );
-      }
+    if (!isOnline) {
+      return localVocab;
     }
 
-    return _getLocalVocabulary();
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language',
+        ),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+
+        for (final entry in data.entries) {
+          await _db.insertVocabulary({
+            'word': entry.key.toLowerCase(),
+            'status': entry.value.toString().toLowerCase(),
+            'language': language,
+            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+
+        return data.map(
+          (key, value) =>
+              MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
+        );
+      }
+    } catch (e, st) {
+      _logger.warning('VocabularyService: Failed to fetch from backend', e, st);
+    }
+
+    return localVocab;
   }
 
-  Future<Map<String, String>> _getLocalVocabulary() async {
-    final items = await _db.getAllVocabularies();
+  Future<Map<String, String>> _getLocalVocabulary(String language) async {
+    final items = await _db.getVocabulariesByLanguage(language);
     final result = <String, String>{};
     for (final item in items) {
       result[item['word'] as String] = item['status'] as String;
@@ -113,16 +112,22 @@ class VocabularyService {
     return result;
   }
 
-  Future<VocabularyPageResult> getVocabularyPage(String language, {int page = 1, int limit = 50, String? status}) async {
+  Future<VocabularyPageResult> getVocabularyPage(
+    String language, {
+    int page = 1,
+    int limit = 50,
+    String? status,
+  }) async {
     final isOnline = _ref.read(connectivityProvider);
 
     if (isOnline) {
       try {
-        var url = '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language&page=$page&limit=$limit';
+        var url =
+            '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language&page=$page&limit=$limit';
         if (status != null) {
           url += '&status=$status';
         }
-        
+
         final response = await http.get(
           Uri.parse(url),
           headers: await _getHeaders(),
@@ -144,7 +149,10 @@ class VocabularyService {
           }
 
           return VocabularyPageResult(
-            items: items.map((key, value) => MapEntry(key.toLowerCase(), value.toString().toLowerCase())),
+            items: items.map(
+              (key, value) =>
+                  MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
+            ),
             totalCount: pagination['totalCount'] as int,
             totalPages: pagination['totalPages'] as int,
             currentPage: pagination['page'] as int,
@@ -157,7 +165,11 @@ class VocabularyService {
           );
         }
       } catch (e, st) {
-        _logger.warning('VocabularyService: Failed to fetch paginated vocabulary', e, st);
+        _logger.warning(
+          'VocabularyService: Failed to fetch paginated vocabulary',
+          e,
+          st,
+        );
       }
     }
 
@@ -166,16 +178,20 @@ class VocabularyService {
 
   Future<VocabularyPageResult> _getLocalVocabularyPage(String language) async {
     final items = await _db.getAllVocabularies();
+    
     final result = <String, String>{};
     int known = 0, learning = 0, unknown = 0;
-    
+
     for (final item in items) {
       final word = item['word'] as String;
       final status = item['status'] as String;
       result[word] = status;
-      if (status == 'known') known++;
-      else if (status == 'learning') learning++;
-      else unknown++;
+      if (status == 'known')
+        known++;
+      else if (status == 'learning')
+        learning++;
+      else
+        unknown++;
     }
 
     return VocabularyPageResult(
@@ -204,11 +220,7 @@ class VocabularyService {
       'last_synced_at': DateTime.now().millisecondsSinceEpoch,
     });
 
-    await _syncRepo.enqueueVocabUpdate(
-      word.toLowerCase(),
-      status,
-      language,
-    );
+    await _syncRepo.enqueueVocabUpdate(word.toLowerCase(), status, language);
 
     _logger.info('VocabularyService: Status update queued for sync');
 
@@ -224,7 +236,7 @@ class VocabularyService {
     );
 
     final lowerWords = words.map((w) => w.toLowerCase()).toList();
-    
+
     for (final word in lowerWords) {
       await _db.insertVocabulary({
         'word': word,

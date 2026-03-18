@@ -33,7 +33,8 @@ class BookReaderScreen extends ConsumerStatefulWidget {
   ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
 }
 
-class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with WidgetsBindingObserver {
+class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
+    with WidgetsBindingObserver {
   InAppWebViewController? webViewController;
   double _progress = 0.0;
   String? _lastCfi;
@@ -59,7 +60,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
 
   // Flag to prevent early '0%' percentage reports from overwriting DB progress
   bool _canSaveToBackend = false;
-  
+
   // Track initial CFI when book opens to only save on user navigation
   String? _initialCfiOnReady;
 
@@ -85,7 +86,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
     final colors = _themeColors();
 
     webViewController?.evaluateJavascript(
-      source: "if (window.applyTheme) window.applyTheme(${jsonEncode(colors)}, $_fontSize, '$_theme');",
+      source:
+          "if (window.applyTheme) window.applyTheme(${jsonEncode(colors)}, $_fontSize, '$_theme');",
     );
   }
 
@@ -282,8 +284,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
         setState(() {
           _progress = book.progressPct;
           _lastCfi = book.currentCfi;
-          _lastSavedCfi = book.currentCfi; // Sync state to avoid over-saving initial load
-          _initialCfiOnReady = book.currentCfi; // Set initial CFI to compare against
+          _lastSavedCfi =
+              book.currentCfi; // Sync state to avoid over-saving initial load
+          _initialCfiOnReady =
+              book.currentCfi; // Set initial CFI to compare against
           _hasLocationsFromBackend = book.locations != null;
         });
         _ensureBookDownloaded(book);
@@ -366,7 +370,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text("Marked ${words.length} words as known"),
+                          content: Text(
+                            "Marked ${words.length} words as known",
+                          ),
                         ),
                       );
                     }
@@ -434,7 +440,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                     initialData: kIsWeb
                         ? InAppWebViewInitialData(
                             data: bookReaderHtmlTemplate,
-                            baseUrl: WebUri("/"), // Grants a proper origin context vs "null"
+                            baseUrl: WebUri(
+                              "/",
+                            ), // Grants a proper origin context vs "null"
                           )
                         : null,
                     initialUrlRequest: !kIsWeb
@@ -468,7 +476,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
 
                           final cfi = args[0] as String;
                           final pct = (args[1] as num).toDouble();
-                          final acceptProgress = _hasLocationsFromBackend ||
+                          final acceptProgress =
+                              _hasLocationsFromBackend ||
                               (pct >= 0 && pct < 100) ||
                               (_progress >= 95 && pct >= 100);
 
@@ -487,19 +496,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                                   source: "window.getVisibleUnknownWords();",
                                 )
                                 .then((wordsObj) {
-                              if (wordsObj != null && wordsObj is List) {
-                                final words =
-                                    wordsObj.map((e) => e.toString()).toList();
-                                logger.info(
-                                  'BookReader: Visible unknown words returned: ${words.length}',
-                                );
-                                if (words.isNotEmpty) _triggerVocabReview(words);
-                              } else {
-                                logger.info(
-                                  'BookReader: Visible unknown words returned: none/invalid',
-                                );
-                              }
-                            });
+                                  if (wordsObj != null && wordsObj is List) {
+                                    final words = wordsObj
+                                        .map((e) => e.toString())
+                                        .toList();
+                                    logger.info(
+                                      'BookReader: Visible unknown words returned: ${words.length}',
+                                    );
+                                    if (words.isNotEmpty)
+                                      _triggerVocabReview(words);
+                                  } else {
+                                    logger.info(
+                                      'BookReader: Visible unknown words returned: none/invalid',
+                                    );
+                                  }
+                                });
                           }
 
                           if (mounted) {
@@ -514,9 +525,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
 
                           // Ensure we don't push progress to the backend during initial setup
                           if (!_canSaveToBackend) return;
-                           
+
                           // Only save if user has moved to a different position from initial
-                          if (_initialCfiOnReady != null && cfi == _initialCfiOnReady) {
+                          if (_initialCfiOnReady != null &&
+                              cfi == _initialCfiOnReady) {
                             logger.info(
                               'BookReader: Skipping save - at initial position: $cfi',
                             );
@@ -528,8 +540,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                             const Duration(milliseconds: 1500),
                             () {
                               if (mounted && _lastCfi != _lastSavedCfi) {
-                                final progressToSave =
-                                    acceptProgress ? _progress : _progress;
+                                final progressToSave = acceptProgress
+                                    ? _progress
+                                    : _progress;
                                 logger.info(
                                   'BookReader: Saving progress - CFI: $_lastCfi, Progress: $progressToSave% (acceptProgress: $acceptProgress)',
                                 );
@@ -575,7 +588,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                       controller.addJavaScriptHandler(
                         handlerName: 'onReady',
                         callback: (_) {
-                          logger.info('BookReader: onReady fired, enabling save');
+                          logger.info(
+                            'BookReader: onReady fired, enabling save',
+                          );
                           if (mounted) {
                             setState(() {
                               _canSaveToBackend = true;
@@ -672,21 +687,24 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                         handlerName: 'onLocationsGenerated',
                         callback: (args) {
                           final String locationsJson = args[0] as String;
-                          
+
                           // NEW CODE START: Prevent syncing empty arrays
                           if (locationsJson == "[]" || locationsJson.isEmpty) {
-                            logger.warning('BookReader: Received empty locations from JS, skipping sync.');
+                            logger.warning(
+                              'BookReader: Received empty locations from JS, skipping sync.',
+                            );
                             return;
                           }
                           // NEW CODE END
-                          
-                          logger.info('BookReader: Received generated locations from JS. Size: ${locationsJson.length}');
-                          
-                          // Call the notifier to save this to the backend
-                          ref.read(bookNotifierProvider.notifier).updateLocations(
-                            widget.bookId,
-                            locationsJson
+
+                          logger.info(
+                            'BookReader: Received generated locations from JS. Size: ${locationsJson.length}',
                           );
+
+                          // Call the notifier to save this to the backend
+                          ref
+                              .read(bookNotifierProvider.notifier)
+                              .updateLocations(widget.bookId, locationsJson);
                         },
                       );
                     },
@@ -698,18 +716,22 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> with Widget
                         final String bookUrl = kIsWeb
                             ? (book.signedUrl ?? '')
                             : "http://localhost:$_localPort/books/${book.id}.epub";
-                        
+
                         // NEW: Pass the locations string from the DB to the JS function
                         final String locationsJson = book.locations ?? 'null';
-                        final vocabData = ref.read(vocabularyProvider).value;
-                        final String vocabJson =
-                            vocabData != null ? jsonEncode(vocabData) : 'null';
+                        final vocabData = await ref
+                            .read(vocabularyProvider.notifier)
+                            .getVocabulary(book.targetLanguage);
+                        final String vocabJson = vocabData.isNotEmpty
+                            ? jsonEncode(vocabData)
+                            : 'null';
                         final colors = _themeColors();
-                        
+
                         logger.info(
-                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}, locations: ${book.locations != null ? "present (${book.locations!.length})" : "null"}',
+                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}, locations: ${book.locations != null ? "present (${book.locations!.length})" : "null"}, vocab: ${vocabData.isNotEmpty ? "present (${vocabData.length} words)" : "null"}',
                         );
-                        final jsCall = """
+                        final jsCall =
+                            """
                           loadBook({
                             url: ${jsonEncode(bookUrl)},
                             initialCfi: ${jsonEncode(_lastCfi ?? '')},
@@ -1061,7 +1083,9 @@ class _TranslationBottomSheetState
         if (success) {
           _isAdded = true;
           // NEW: Trigger local vocab update so the word color changes in the background
-          ref.read(vocabularyProvider.notifier).updateWordStatus(
+          ref
+              .read(vocabularyProvider.notifier)
+              .updateWordStatus(
                 widget.selectedText,
                 'learning',
                 widget.sourceLang,
@@ -1200,10 +1224,12 @@ class _VocabularyReviewSheet extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_VocabularyReviewSheet> createState() => _VocabularyReviewSheetState();
+  ConsumerState<_VocabularyReviewSheet> createState() =>
+      _VocabularyReviewSheetState();
 }
 
-class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> {
+class _VocabularyReviewSheetState
+    extends ConsumerState<_VocabularyReviewSheet> {
   late List<String> _pendingWords;
 
   @override
@@ -1254,11 +1280,18 @@ class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> 
                 webViewController: widget.webViewController,
                 onMarkKnown: () {
                   // 1. Update Remote + Provider state
-                  ref.read(vocabularyProvider.notifier).updateWordStatus(_pendingWords[i], 'known', widget.targetLanguage);
-                  
+                  ref
+                      .read(vocabularyProvider.notifier)
+                      .updateWordStatus(
+                        _pendingWords[i],
+                        'known',
+                        widget.targetLanguage,
+                      );
+
                   // 2. Trigger JS to update the highlight color in the reader
                   widget.webViewController?.evaluateJavascript(
-                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'known'}).replaceAll("'", "\\'")}');"
+                    source:
+                        "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'known'}).replaceAll("'", "\\'")}');",
                   );
 
                   // 3. Remove from UI list
@@ -1266,11 +1299,18 @@ class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> 
                 },
                 onAddedToDeck: () {
                   // Status will sync implicitly or can be updated directly
-                  ref.read(vocabularyProvider.notifier).updateWordStatus(_pendingWords[i], 'learning', widget.targetLanguage);
-                  
+                  ref
+                      .read(vocabularyProvider.notifier)
+                      .updateWordStatus(
+                        _pendingWords[i],
+                        'learning',
+                        widget.targetLanguage,
+                      );
+
                   // Update reader highlight via JS
                   widget.webViewController?.evaluateJavascript(
-                    source: "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'learning'}).replaceAll("'", "\\'")}');"
+                    source:
+                        "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'learning'}).replaceAll("'", "\\'")}');",
                   );
 
                   _removeWord(_pendingWords[i]);
@@ -1288,11 +1328,14 @@ class _VocabularyReviewSheetState extends ConsumerState<_VocabularyReviewSheet> 
                     ref
                         .read(vocabularyProvider.notifier)
                         .markBatchKnown(_pendingWords, widget.targetLanguage);
-                    
+
                     // Bulk update reader highlights
-                    final bulkHighlights = {for (var w in _pendingWords) w.toLowerCase(): 'known'};
+                    final bulkHighlights = {
+                      for (var w in _pendingWords) w.toLowerCase(): 'known',
+                    };
                     widget.webViewController?.evaluateJavascript(
-                      source: "window.applyVocabStyles('${jsonEncode(bulkHighlights).replaceAll("'", "\\'")}');"
+                      source:
+                          "window.applyVocabStyles('${jsonEncode(bulkHighlights).replaceAll("'", "\\'")}');",
                     );
 
                     Navigator.pop(context);
@@ -1343,12 +1386,11 @@ class _VocabListItemState extends ConsumerState<_VocabListItem> {
     if (_expanded && _translation == null) {
       setState(() => _loading = true);
       try {
-        final nativeLang = ref.read(userProfileProvider).value?.nativeLanguage ?? 'english';
-        final res = await ref.read(aiServiceProvider).translate(
-              widget.word,
-              widget.targetLanguage,
-              nativeLang,
-            );
+        final nativeLang =
+            ref.read(userProfileProvider).value?.nativeLanguage ?? 'english';
+        final res = await ref
+            .read(aiServiceProvider)
+            .translate(widget.word, widget.targetLanguage, nativeLang);
         if (mounted) {
           setState(() {
             _translation = res;
@@ -1381,7 +1423,10 @@ class _VocabListItemState extends ConsumerState<_VocabListItem> {
           ListTile(
             title: Text(
               widget.word,
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
             onTap: _toggle,
             trailing: Row(
@@ -1398,8 +1443,15 @@ class _VocabListItemState extends ConsumerState<_VocabListItem> {
                     if (_translation == null) {
                       setState(() => _loading = true);
                       try {
-                        final nativeLang = ref.read(userProfileProvider).value?.nativeLanguage ?? 'english';
-                        final res = await ref.read(aiServiceProvider).translate(
+                        final nativeLang =
+                            ref
+                                .read(userProfileProvider)
+                                .value
+                                ?.nativeLanguage ??
+                            'english';
+                        final res = await ref
+                            .read(aiServiceProvider)
+                            .translate(
                               widget.word,
                               widget.targetLanguage,
                               nativeLang,
@@ -1410,12 +1462,14 @@ class _VocabListItemState extends ConsumerState<_VocabListItem> {
                       }
                     }
                     if (mounted) {
-                       ref.read(srsProvider.notifier).addToDeckFromTranslation(
+                      ref
+                          .read(srsProvider.notifier)
+                          .addToDeckFromTranslation(
                             front: widget.word,
                             back: _translation!,
                             language: widget.targetLanguage,
-                       );
-                       widget.onAddedToDeck();
+                          );
+                      widget.onAddedToDeck();
                     }
                   },
                   tooltip: "Add to Deck",
@@ -1430,11 +1484,18 @@ class _VocabListItemState extends ConsumerState<_VocabListItem> {
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white54,
+                      ),
                     )
                   : Row(
                       children: [
-                        const Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.white54),
+                        const Icon(
+                          Icons.subdirectory_arrow_right,
+                          size: 16,
+                          color: Colors.white54,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(

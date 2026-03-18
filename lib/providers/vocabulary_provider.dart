@@ -47,7 +47,8 @@ class VocabularyData {
   }
 }
 
-class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> {
+class VocabularyNotifier
+    extends StateNotifier<AsyncValue<Map<String, String>>> {
   final VocabularyService _service;
 
   VocabularyNotifier(this._service) : super(const AsyncValue.loading());
@@ -66,6 +67,14 @@ class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> 
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
+  }
+
+  Future<Map<String, String>> getVocabulary(String language) async {
+    if (state.hasValue && state.value != null) {
+      return state.value!;
+    }
+    await loadVocabulary(language);
+    return state.value ?? {};
   }
 
   Future<void> updateWordStatus(
@@ -131,20 +140,22 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
   final Ref _ref;
   String? _currentLanguage;
 
-  PaginatedVocabularyNotifier(this._service, this._ref) 
-      : super(VocabularyData(
+  PaginatedVocabularyNotifier(this._service, this._ref)
+    : super(
+        VocabularyData(
           items: {},
           totalCount: 0,
           totalPages: 0,
           currentPage: 1,
           counts: VocabularyCounts(total: 0, known: 0, learning: 0, unknown: 0),
           isLoading: true,
-        ));
+        ),
+      );
 
   Future<void> loadVocabulary(String language) async {
     _currentLanguage = language;
     state = state.copyWith(isLoading: true);
-    
+
     try {
       final result = await _service.getVocabularyPage(language, page: 1);
       state = VocabularyData(
@@ -165,15 +176,16 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
     if (state.isLoading || !state.hasMore || _currentLanguage == null) return;
 
     state = state.copyWith(isLoading: true);
-    
+
     try {
       final result = await _service.getVocabularyPage(
         _currentLanguage!,
         page: state.currentPage + 1,
       );
-      
-      final newItems = Map<String, String>.from(state.items)..addAll(result.items);
-      
+
+      final newItems = Map<String, String>.from(state.items)
+        ..addAll(result.items);
+
       state = VocabularyData(
         items: newItems,
         totalCount: result.totalCount,
@@ -188,26 +200,38 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
     }
   }
 
-  Future<void> updateWordStatus(String word, String status, String language) async {
+  Future<void> updateWordStatus(
+    String word,
+    String status,
+    String language,
+  ) async {
     final wordLower = word.toLowerCase();
     final statusLower = status.toLowerCase();
-    
-    final newItems = Map<String, String>.from(state.items)..[wordLower] = statusLower;
-    
+
+    final newItems = Map<String, String>.from(state.items)
+      ..[wordLower] = statusLower;
+
     final newCounts = VocabularyCounts(
       total: state.counts.total,
-      known: statusLower == 'known' ? state.counts.known + 1 : state.counts.known,
-      learning: statusLower == 'learning' ? state.counts.learning + 1 : state.counts.learning,
-      unknown: statusLower == 'unknown' ? state.counts.unknown + 1 : state.counts.unknown,
+      known: statusLower == 'known'
+          ? state.counts.known + 1
+          : state.counts.known,
+      learning: statusLower == 'learning'
+          ? state.counts.learning + 1
+          : state.counts.learning,
+      unknown: statusLower == 'unknown'
+          ? state.counts.unknown + 1
+          : state.counts.unknown,
     );
-    
+
     state = state.copyWith(items: newItems, counts: newCounts);
 
     try {
       await _service.updateStatus(wordLower, statusLower, language);
     } catch (e) {
       // Revert on error
-      final revertedItems = Map<String, String>.from(state.items)..remove(wordLower);
+      final revertedItems = Map<String, String>.from(state.items)
+        ..remove(wordLower);
       state = state.copyWith(items: revertedItems, counts: state.counts);
     }
   }
@@ -215,23 +239,30 @@ class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
   Future<void> deleteWord(String word, String language) async {
     final wordLower = word.toLowerCase();
     final removedStatus = state.items[wordLower];
-    
+
     final newItems = Map<String, String>.from(state.items)..remove(wordLower);
-    
+
     final newCounts = VocabularyCounts(
       total: state.counts.total - 1,
-      known: removedStatus == 'known' ? state.counts.known - 1 : state.counts.known,
-      learning: removedStatus == 'learning' ? state.counts.learning - 1 : state.counts.learning,
-      unknown: removedStatus == 'unknown' ? state.counts.unknown - 1 : state.counts.unknown,
+      known: removedStatus == 'known'
+          ? state.counts.known - 1
+          : state.counts.known,
+      learning: removedStatus == 'learning'
+          ? state.counts.learning - 1
+          : state.counts.learning,
+      unknown: removedStatus == 'unknown'
+          ? state.counts.unknown - 1
+          : state.counts.unknown,
     );
-    
+
     state = state.copyWith(items: newItems, counts: newCounts);
 
     try {
       await _service.deleteWord(wordLower, language);
     } catch (e) {
       // Revert on error
-      final revertedItems = Map<String, String>.from(state.items)..[wordLower] = removedStatus ?? '';
+      final revertedItems = Map<String, String>.from(state.items)
+        ..[wordLower] = removedStatus ?? '';
       state = state.copyWith(items: revertedItems, counts: state.counts);
     }
   }

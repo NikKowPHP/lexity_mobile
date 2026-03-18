@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:epub_pro/epub_pro.dart';
@@ -325,27 +326,34 @@ class BookService {
     String title,
   ) async {
     _logger.info('BookService: Starting EPUB upload sequence for "$title"');
+
+    // 1. Extract Metadata and Cover Image in Flutter
+    _logger.info('BookService: Extracting metadata and cover from EPUB');
+    final bytes = await file.readAsBytes();
+    final epubBook = await EpubReader.readBook(bytes);
+    final author = epubBook.author ?? "Unknown";
+    final bookTitle = epubBook.title ?? title;
+    final coverImage = epubBook.coverImage;
+
     final isOnline = _ref.read(connectivityProvider);
 
     if (!isOnline) {
-      await _uploadBookOffline(file, targetLanguage, title);
+      await _uploadBookOffline(
+        file,
+        targetLanguage,
+        bookTitle,
+        author,
+        coverImage,
+        epubBook,
+      );
       return;
     }
 
     try {
       final filename = file.path.split('/').last;
-
-      // 1. Extract Metadata and Cover Image in Flutter
-      _logger.info('BookService: Extracting metadata and cover from EPUB');
-      final bytes = await file.readAsBytes();
-      final epubBook = await EpubReader.readBook(bytes);
-      final author = epubBook.author ?? "Unknown";
-      final bookTitle = epubBook.title ?? title;
-
       String? coverStoragePath;
 
       // 2. Extract and Upload Cover if it exists
-      final coverImage = epubBook.coverImage;
       if (coverImage != null) {
         try {
           _logger.info('BookService: Cover image found, preparing upload');
@@ -465,28 +473,113 @@ class BookService {
     }
   }
 
+  Future<String?> _generateLocations(EpubBook epubBook) async {
+    try {
+      _logger.info('BookService: Generating locations from EPUB chapters');
+
+      final locations = <Map<String, dynamic>>[];
+      final chapters = epubBook.chapters;
+
+      if (chapters.isEmpty) {
+        _logger.warning('BookService: No chapters found in EPUB');
+        return null;
+      }
+
+      int totalChars = 0;
+      for (final chapter in chapters) {
+        final content = chapter.htmlContent ?? '';
+        totalChars += content.replaceAll(RegExp(r'\s+'), ' ').length;
+      }
+
+      if (totalChars == 0) {
+        _logger.warning('BookService: No text content found in EPUB');
+        return null;
+      }
+
+      const charsPerLocation = 1600;
+      int currentChar = 0;
+      int spineIndex = 0;
+
+      for (final chapter in chapters) {
+        final content = chapter.htmlContent ?? '';
+        final plainText = content.replaceAll(RegExp(r'\s+'), ' ');
+
+        int offset = 0;
+        while (offset < plainText.length) {
+          final cfi = _generateCfi(spineIndex, offset);
+          final percentage = currentChar / totalChars;
+
+          locations.add({
+            'cfi': cfi,
+            'percentage': percentage,
+            'location': locations.length + 1,
+          });
+
+          offset += charsPerLocation;
+          currentChar += charsPerLocation;
+
+          if (currentChar > totalChars) break;
+        }
+        spineIndex++;
+      }
+
+      if (locations.isEmpty) {
+        return null;
+      }
+
+      _logger.info('BookService: Generated ${locations.length} locations');
+      return jsonEncode(locations);
+    } catch (e, st) {
+      _logger.error('BookService: Error generating locations', e, st);
+      return null;
+    }
+  }
+
+  String _generateCfi(int spineIndex, int offset) {
+    final part = (offset ~/ 2) + 1;
+    return 'epubcfi(/6/$spineIndex/4/$part)';
+  }
+
   Future<void> _uploadBookOffline(
     File file,
     String targetLanguage,
     String title,
+    String author,
+    img.Image? coverImage,
+    EpubBook epubBook,
   ) async {
     _logger.info('BookService: Saving book locally for offline upload');
 
     final tempId = _uuid.v4();
     final localPath = file.path;
 
+    String? coverLocalPath;
+    if (coverImage != null) {
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        final coverFilename = 'cover-$tempId.jpg';
+        final coverFile = File('${dir.path}/$coverFilename');
+        await coverFile.writeAsBytes(img.encodeJpg(coverImage));
+        coverLocalPath = coverFile.path;
+      } catch (e) {
+        _logger.warning('BookService: Failed to save cover locally', e);
+      }
+    }
+
+    final locations = await _generateLocations(epubBook);
+
     await _db.insertBook({
       'id': tempId,
       'title': title,
-      'author': 'Unknown',
+      'author': author,
       'target_language': targetLanguage,
       'storage_path': localPath,
-      'cover_image_url': null,
+      'cover_image_url': coverLocalPath,
       'current_cfi': null,
       'progress_pct': 0.0,
       'created_at': DateTime.now().millisecondsSinceEpoch,
       'signed_url': null,
-      'locations': null,
+      'locations': locations,
       'last_synced_at': null,
     });
 
@@ -496,7 +589,7 @@ class BookService {
       entityId: tempId,
       payload: {
         'title': title,
-        'author': 'Unknown',
+        'author': author,
         'targetLanguage': targetLanguage,
         'localFilePath': localPath,
       },

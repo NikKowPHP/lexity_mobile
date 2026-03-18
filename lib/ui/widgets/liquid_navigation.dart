@@ -61,14 +61,14 @@ class LiquidNavigation extends StatelessWidget {
                       ),
                     );
                   }),
-                  Expanded(
-                    child: _NavItem(
-                      icon: Icons.more_horiz,
-                      label: 'More',
-                      isActive: currentIndex == 6,
-                      onTap: () => _onTap(context, 6),
-                    ),
-                  ),
+                   Expanded(
+                     child: _NavItem(
+                       icon: Icons.more_horiz,
+                       label: 'More',
+                       isActive: currentIndex == 4,
+                       onTap: () => _onTap(context, 4),
+                     ),
+                   ),
                 ],
               ),
             ),
@@ -107,8 +107,8 @@ class LiquidNavigation extends StatelessWidget {
                   _NavItem(
                     icon: Icons.more_horiz,
                     label: 'More',
-                    isActive: currentIndex == 6,
-                    onTap: () => _onTap(context, 6),
+                    isActive: currentIndex == 4,
+                    onTap: () => _onTap(context, 4),
                     isVertical: true,
                   ),
                 ],

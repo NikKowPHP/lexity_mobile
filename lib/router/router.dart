@@ -214,25 +214,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 3: Progress (hidden in nav, accessed via More)
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/progress',
-                pageBuilder: (context, state) => _buildFadePage(const ProgressScreen(), state),
-              ),
-            ],
-          ),
-          // Branch 4: Profile (hidden in nav, accessed via More)
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/profile',
-                pageBuilder: (context, state) => _buildFadePage(const ProfileScreen(), state),
-              ),
-            ],
-          ),
-          // Branch 5: Translator
+          // Branch 3: Translator
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -242,13 +224,31 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 6: More
+          // Branch 4: More
           StatefulShellBranch(
             routes: [
               GoRoute(
                 path: '/more',
                 pageBuilder: (context, state) =>
                     _buildFadePage(const MoreScreen(), state),
+              ),
+            ],
+          ),
+          // Branch 5: Progress (hidden in nav, accessed via More)
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/progress',
+                pageBuilder: (context, state) => _buildFadePage(const ProgressScreen(), state),
+              ),
+            ],
+          ),
+          // Branch 6: Profile (hidden in nav, accessed via More)
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                pageBuilder: (context, state) => _buildFadePage(const ProfileScreen(), state),
               ),
             ],
           ),

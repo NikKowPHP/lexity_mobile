@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -8,6 +9,44 @@ class AppDatabase {
   static const String _dbName = 'lexity.db';
   static const int _dbVersion = 4;
 
+  final Map<String, StreamController<List<Map<String, dynamic>>>> _controllers =
+      {};
+
+  StreamController<List<Map<String, dynamic>>> _getController(String key) {
+    if (!_controllers.containsKey(key)) {
+      _controllers[key] =
+          StreamController<List<Map<String, dynamic>>>.broadcast();
+    }
+    return _controllers[key]!;
+  }
+
+  void _notify(String key) async {
+    final db = await database;
+    final data = await db.query(_tableForKey(key));
+    _getController(key).add(data);
+  }
+
+  String _tableForKey(String key) {
+    switch (key) {
+      case 'users':
+        return 'users';
+      case 'books':
+        return 'books';
+      case 'journals':
+        return 'journals';
+      case 'srs_items':
+        return 'srs_items';
+      case 'vocabularies':
+        return 'vocabularies';
+      case 'sync_queue':
+        return 'sync_queue';
+      case 'due_srs_items':
+        return 'srs_items';
+      default:
+        return key;
+    }
+  }
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -17,9 +56,6 @@ class AppDatabase {
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, _dbName);
-
-    // NOTE: Database migrations are handled in _onUpgrade
-    // Do NOT delete the database here - it would wipe all cached data
 
     return await openDatabase(
       path,
@@ -188,7 +224,6 @@ class AppDatabase {
   Future<int> insertUser(Map<String, dynamic> user) async {
     final db = await database;
 
-    // Map API field names to SQLite column names
     final mappedUser = {
       'id': user['id'],
       'email': user['email'],
@@ -213,11 +248,13 @@ class AppDatabase {
       'last_synced_at': DateTime.now().millisecondsSinceEpoch,
     };
 
-    return await db.insert(
+    final result = await db.insert(
       'users',
       mappedUser,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    _notify('users');
+    return result;
   }
 
   Future<Map<String, dynamic>?> getUserById(String id) async {
@@ -230,7 +267,6 @@ class AppDatabase {
     final db = await database;
     final results = await db.query('users');
 
-    // Convert back to API format for UserProfile.fromJson
     return results.map((row) {
       return {
         'id': row['id'],
@@ -262,20 +298,20 @@ class AppDatabase {
   }
 
   Stream<List<Map<String, dynamic>>> watchAllUsers() async* {
-    final db = await database;
-    yield* Stream.periodic(
-      const Duration(milliseconds: 500),
-    ).asyncMap((_) => db.query('users'));
+    yield await getAllUsers();
+    yield* _getController('users').stream;
   }
 
   // Books
   Future<int> insertBook(Map<String, dynamic> book) async {
     final db = await database;
-    return await db.insert(
+    final result = await db.insert(
       'books',
       book,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    _notify('books');
+    return result;
   }
 
   Future<Map<String, dynamic>?> getBookById(String id) async {
@@ -290,35 +326,39 @@ class AppDatabase {
   }
 
   Stream<List<Map<String, dynamic>>> watchAllBooks() async* {
-    final db = await database;
-    yield* Stream.periodic(
-      const Duration(milliseconds: 500),
-    ).asyncMap((_) => db.query('books'));
+    yield await getAllBooks();
+    yield* _getController('books').stream;
   }
 
   Future<int> updateBookProgress(String id, String cfi, double progress) async {
     final db = await database;
-    return await db.update(
+    final result = await db.update(
       'books',
       {'current_cfi': cfi, 'progress_pct': progress},
       where: 'id = ?',
       whereArgs: [id],
     );
+    _notify('books');
+    return result;
   }
 
   Future<int> deleteBook(String id) async {
     final db = await database;
-    return await db.delete('books', where: 'id = ?', whereArgs: [id]);
+    final result = await db.delete('books', where: 'id = ?', whereArgs: [id]);
+    _notify('books');
+    return result;
   }
 
   // Journals
   Future<int> insertJournal(Map<String, dynamic> journal) async {
     final db = await database;
-    return await db.insert(
+    final result = await db.insert(
       'journals',
       journal,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    _notify('journals');
+    return result;
   }
 
   Future<Map<String, dynamic>?> getJournalById(String id) async {
@@ -337,20 +377,21 @@ class AppDatabase {
   }
 
   Stream<List<Map<String, dynamic>>> watchAllJournals() async* {
-    final db = await database;
-    yield* Stream.periodic(
-      const Duration(milliseconds: 500),
-    ).asyncMap((_) => db.query('journals', orderBy: 'created_at DESC'));
+    yield await getAllJournals();
+    yield* _getController('journals').stream;
   }
 
   // SRS Items
   Future<int> insertSrsItem(Map<String, dynamic> item) async {
     final db = await database;
-    return await db.insert(
+    final result = await db.insert(
       'srs_items',
       item,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    _notify('srs_items');
+    _notifyDueSrsItems();
+    return result;
   }
 
   Future<List<Map<String, dynamic>>> getAllSrsItems() async {
@@ -359,10 +400,8 @@ class AppDatabase {
   }
 
   Stream<List<Map<String, dynamic>>> watchAllSrsItems() async* {
-    final db = await database;
-    yield* Stream.periodic(
-      const Duration(milliseconds: 500),
-    ).asyncMap((_) => db.query('srs_items'));
+    yield await getAllSrsItems();
+    yield* _getController('srs_items').stream;
   }
 
   Future<List<Map<String, dynamic>>> getDueSrsItems() async {
@@ -375,36 +414,48 @@ class AppDatabase {
     );
   }
 
-  Stream<List<Map<String, dynamic>>> watchDueSrsItems() async* {
+  void _notifyDueSrsItems() async {
     final db = await database;
     final now = DateTime.now().millisecondsSinceEpoch;
-    yield* Stream.periodic(const Duration(milliseconds: 500)).asyncMap(
-      (_) => db.query(
-        'srs_items',
-        where: 'next_review_date <= ?',
-        whereArgs: [now],
-      ),
+    final data = await db.query(
+      'srs_items',
+      where: 'next_review_date <= ?',
+      whereArgs: [now],
     );
+    _getController('due_srs_items').add(data);
+  }
+
+  Stream<List<Map<String, dynamic>>> watchDueSrsItems() async* {
+    yield await getDueSrsItems();
+    yield* _getController('due_srs_items').stream;
+    yield* Stream.periodic(
+      const Duration(minutes: 1),
+    ).asyncMap((_) => getDueSrsItems());
   }
 
   Future<int> updateSrsItemReviewDate(String id, DateTime nextReview) async {
     final db = await database;
-    return await db.update(
+    final result = await db.update(
       'srs_items',
       {'next_review_date': nextReview.millisecondsSinceEpoch},
       where: 'id = ?',
       whereArgs: [id],
     );
+    _notify('srs_items');
+    _notifyDueSrsItems();
+    return result;
   }
 
   // Vocabularies
   Future<int> insertVocabulary(Map<String, dynamic> vocab) async {
     final db = await database;
-    return await db.insert(
+    final result = await db.insert(
       'vocabularies',
       vocab,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    _notify('vocabularies');
+    return result;
   }
 
   Future<List<Map<String, dynamic>>> getAllVocabularies() async {
@@ -412,28 +463,37 @@ class AppDatabase {
     return await db.query('vocabularies');
   }
 
-  Stream<List<Map<String, dynamic>>> watchAllVocabularies() async* {
+  Future<List<Map<String, dynamic>>> getVocabulariesByLanguage(
+    String language,
+  ) async {
     final db = await database;
-    yield* Stream.periodic(
-      const Duration(milliseconds: 500),
-    ).asyncMap((_) => db.query('vocabularies'));
+    return await db.query(
+      'vocabularies',
+      where: 'language = ?',
+      whereArgs: [language],
+    );
+  }
+
+  Stream<List<Map<String, dynamic>>> watchAllVocabularies() async* {
+    yield await getAllVocabularies();
+    yield* _getController('vocabularies').stream;
   }
 
   Future<int> deleteVocabulary(String word) async {
     final db = await database;
-    return await db.delete(
+    final result = await db.delete(
       'vocabularies',
       where: 'word = ?',
       whereArgs: [word],
     );
+    _notify('vocabularies');
+    return result;
   }
 
   // Sync Queue
   Future<int> enqueueMutation(Map<String, dynamic> mutation) async {
     final db = await database;
 
-    // OPTIMIZATION: If this is a book progress update, remove older pending
-    // progress updates for the same book to keep the queue slim.
     if (mutation['entity_type'] == 'book' &&
         mutation['action'] == 'update_progress') {
       await db.delete(
@@ -443,10 +503,12 @@ class AppDatabase {
       );
     }
 
-    return await db.insert('sync_queue', {
+    final result = await db.insert('sync_queue', {
       ...mutation,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
+    _notify('sync_queue');
+    return result;
   }
 
   Future<List<Map<String, dynamic>>> getPendingMutations() async {
@@ -455,10 +517,8 @@ class AppDatabase {
   }
 
   Stream<List<Map<String, dynamic>>> watchPendingMutations() async* {
-    final db = await database;
-    yield* Stream.periodic(
-      const Duration(milliseconds: 500),
-    ).asyncMap((_) => db.query('sync_queue', orderBy: 'created_at ASC'));
+    yield await getPendingMutations();
+    yield* _getController('sync_queue').stream;
   }
 
   Future<int> getPendingMutationsCount() async {
@@ -471,7 +531,13 @@ class AppDatabase {
 
   Future<int> removeMutation(int id) async {
     final db = await database;
-    return await db.delete('sync_queue', where: 'id = ?', whereArgs: [id]);
+    final result = await db.delete(
+      'sync_queue',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    _notify('sync_queue');
+    return result;
   }
 
   Future<int> incrementRetryCount(int id) async {
@@ -485,6 +551,7 @@ class AppDatabase {
   Future<void> clearSyncQueue() async {
     final db = await database;
     await db.delete('sync_queue');
+    _notify('sync_queue');
   }
 
   // Analytics Cache
@@ -599,6 +666,10 @@ class AppDatabase {
   }
 
   Future<void> close() async {
+    for (final controller in _controllers.values) {
+      await controller.close();
+    }
+    _controllers.clear();
     final db = await database;
     await db.close();
     _database = null;

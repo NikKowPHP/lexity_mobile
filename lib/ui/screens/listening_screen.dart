@@ -69,9 +69,11 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
       subtitle: 'Comprehension Practice',
       body: exerciseAsync.when(
         loading: () => const SliverFillRemaining(
-          child: Center(child: CircularProgressIndicator()),
+          hasScrollBody: false,
+          child: Center(child: CircularProgressIndicator(color: Colors.white)),
         ),
         error: (e, _) => SliverFillRemaining(
+          hasScrollBody: false,
           child: Center(child: Text("Error loading exercise: $e", style: const TextStyle(color: Colors.white))),
         ),
         data: (exercise) {
@@ -93,31 +95,31 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
           }
 
           return SliverFillRemaining(
-            child: NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorColor: LiquidTheme.primaryAccent,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white54,
-                      tabs: const [
-                        Tab(text: "Watch"),
-                        Tab(text: "Write"),
-                      ],
-                    ),
+            hasScrollBody: true,
+            child: Column(
+              children: [
+                TabBar(
+                  controller: _tabController,
+                  indicatorColor: LiquidTheme.primaryAccent,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white54,
+                  dividerColor: Colors.transparent,
+                  tabs: const [
+                    Tab(text: "Watch"),
+                    Tab(text: "Write"),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildWatchTab(exercise),
+                      _buildWriteTab(tasksAsync, aidsAsync, activeLang, exercise),
+                    ],
                   ),
-                )
+                ),
               ],
-              body: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildWatchTab(exercise),
-                  _buildWriteTab(tasksAsync, aidsAsync, activeLang, exercise),
-                ],
-              ),
             ),
           );
         },
@@ -127,6 +129,7 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
 
   Widget _buildWatchTab(ListeningExercise exercise) {
     return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
           // VIDEO PLAYER
@@ -174,6 +177,7 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
                _tabController.animateTo(1);
             },
           ),
+          const SizedBox(height: 40),
         ],
       ),
     );
@@ -200,6 +204,7 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
     if (tasks == null) return const SizedBox();
 
     return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
           // 1. COMPREHENSION TASK
@@ -359,3 +364,4 @@ class _ListeningScreenState extends ConsumerState<ListeningScreen> with SingleTi
     }
   }
 }
+      

@@ -61,13 +61,14 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
       title: 'Read & Write',
       subtitle: 'Comprehension Practice',
       body: materialAsync.when(
-        // FIX: Wrap Center in SliverFillRemaining
         loading: () => const SliverFillRemaining(
-          child: Center(child: CircularProgressIndicator()),
+          hasScrollBody: false,
+          child: Center(child: CircularProgressIndicator(color: Colors.white)),
         ),
-        // FIX: Wrap Center in SliverFillRemaining
-        error: (e, _) =>
-            SliverFillRemaining(child: Center(child: Text("Error: $e"))),
+        error: (e, _) => SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: Text("Error: $e", style: const TextStyle(color: Colors.white))),
+        ),
         data: (material) {
           if (tasksAsync.value == null && !tasksAsync.isLoading && !tasksAsync.hasError) {
              Future.microtask(() => 
@@ -75,33 +76,33 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
              );
           }
 
-          // FIX: Wrap NestedScrollView in SliverFillRemaining
+          // We use hasScrollBody: true to let the TabBarView/NestedScrollView take up the remaining space
           return SliverFillRemaining(
-            child: NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorColor: LiquidTheme.primaryAccent,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white54,
-                      tabs: const [
-                        Tab(text: "Reading"),
-                        Tab(text: "Writing Task"),
-                      ],
-                    ),
+            hasScrollBody: true,
+            child: Column(
+              children: [
+                TabBar(
+                  controller: _tabController,
+                  indicatorColor: LiquidTheme.primaryAccent,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white54,
+                  dividerColor: Colors.transparent,
+                  tabs: const [
+                    Tab(text: "Reading"),
+                    Tab(text: "Writing Task"),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildReadingTab(material),
+                      _buildWritingTab(tasksAsync, aidsAsync, activeLang, material),
+                    ],
                   ),
                 ),
               ],
-              body: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildReadingTab(material),
-                  _buildWritingTab(tasksAsync, aidsAsync, activeLang, material),
-                ],
-              ),
             ),
           );
         },
@@ -111,26 +112,33 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
 
   Widget _buildReadingTab(ReadingMaterial material) {
     return SingleChildScrollView(
-      child: GlassCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(material.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-            const SizedBox(height: 8),
-            if (material.source != null)
-              Text("Source: ${material.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            const SizedBox(height: 20),
-            Text(
-              material.content,
-              style: const TextStyle(fontSize: 18, height: 1.6, color: Colors.white70),
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: [
+          GlassCard(
+            padding: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(material.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(height: 8),
+                if (material.source != null)
+                  Text("Source: ${material.source}", style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                const SizedBox(height: 20),
+                Text(
+                  material.content,
+                  style: const TextStyle(fontSize: 18, height: 1.6, color: Colors.white70),
+                ),
+              ],
             ),
-            const SizedBox(height: 32),
-            LiquidButton(
-              text: "Start Writing",
-              onTap: () => _tabController.animateTo(1),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 24),
+          LiquidButton(
+            text: "Start Writing",
+            onTap: () => _tabController.animateTo(1),
+          ),
+          const SizedBox(height: 40),
+        ],
       ),
     );
   }
@@ -156,6 +164,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
     if (tasks == null) return const SizedBox();
 
     return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
           GlassCard(
@@ -361,3 +370,4 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> with SingleTicker
     }
   }
 }
+      

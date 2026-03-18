@@ -6,11 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/logger_service.dart';
-import '../../services/token_service.dart';
 import '../../services/book_service.dart';
 import '../../theme/liquid_theme.dart';
-import '../../utils/constants.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
 import '../../models/book.dart';
@@ -273,11 +272,7 @@ class BookCoverImage extends ConsumerWidget {
     // If there's no cover image path in the local DB, show the default icon
     if (book.coverImageUrl == null) {
       return const Center(
-        child: Icon(
-          Icons.menu_book,
-          size: 48,
-          color: Colors.white38,
-        ),
+        child: Icon(Icons.menu_book, size: 48, color: Colors.white38),
       );
     }
 
@@ -285,49 +280,39 @@ class BookCoverImage extends ConsumerWidget {
     final bookService = ref.watch(bookServiceProvider);
     final coverUrl = bookService.getCoverProxyUrl(book.id);
 
-    // Fetch the auth token to pass in the headers for CachedNetworkImage
-    return FutureBuilder<String?>(
-      future: ref.read(tokenServiceProvider(TokenType.auth)).getToken(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          );
-        }
+    // Use cached token from authProvider instead of async disk read
+    final authState = ref.watch(authProvider);
+    final token = authState.accessToken;
 
-        final token = snapshot.data!;
+    if (token == null) {
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: CachedNetworkImage(
-            imageUrl: coverUrl,
-            httpHeaders: {
-              'Authorization': 'Bearer $token',
-            },
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            placeholder: (context, url) => const Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-            errorWidget: (context, url, error) => const Center(
-              child: Icon(
-                Icons.menu_book,
-                size: 48,
-                color: Colors.white38,
-              ),
-            ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: CachedNetworkImage(
+        imageUrl: coverUrl,
+        httpHeaders: {'Authorization': 'Bearer $token'},
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        placeholder: (context, url) => const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-        );
-      },
+        ),
+        errorWidget: (context, url, error) => const Center(
+          child: Icon(Icons.menu_book, size: 48, color: Colors.white38),
+        ),
+      ),
     );
   }
 }
