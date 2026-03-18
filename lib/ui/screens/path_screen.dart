@@ -28,7 +28,7 @@ class PathScreen extends ConsumerWidget {
         loading: () => const SliverFillRemaining(
           child: Center(child: CircularProgressIndicator(color: Colors.white)),
         ),
-        error: (e, _) => SliverToBoxAdapter(
+        error: (e, _) => SliverFillRemaining(
           child: Center(
             child: Text(
               "Error loading path: $e",
@@ -54,7 +54,7 @@ class PathScreen extends ConsumerWidget {
                      _buildOnboardingTimeline(profile, journals),
                      const SizedBox(height: 32),
                      if (onboardingStep == OnboardingStep.firstJournal)
-                        LiquidButton(text: "Start First Journal", onTap: () => context.push('/path/read')), // Using read activity as starting point or similar
+                        LiquidButton(text: "Start First Journal", onTap: () => context.push('/path/read')),
                    ],
                  ),
                ),
@@ -63,7 +63,6 @@ class PathScreen extends ConsumerWidget {
 
           if (modules.isEmpty) {
             return SliverFillRemaining(
-              hasScrollBody: false,
               child: Center(
                 child: LiquidButton(
                   text: "Generate First Module",
@@ -76,21 +75,24 @@ class PathScreen extends ConsumerWidget {
           }
 
           return SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
-              final module = modules[index];
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final module = modules[index];
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: GestureDetector(
-                  onTap: () {
-                    if (module.status != 'PENDING') {
-                      context.push('/path/module/${module.id}');
-                    }
-                  },
-                  child: _TimelineModuleItem(module: module, index: index),
-                ),
-              );
-            }, childCount: modules.length),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (module.status != 'PENDING') {
+                        context.push('/path/module/${module.id}');
+                      }
+                    },
+                    child: _TimelineModuleItem(module: module, index: index),
+                  ),
+                );
+              },
+              childCount: modules.length,
+            ),
           );
         },
       ),

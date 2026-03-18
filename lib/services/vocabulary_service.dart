@@ -9,6 +9,36 @@ import '../providers/connectivity_provider.dart';
 import 'logger_service.dart';
 import 'sync_service.dart';
 
+class VocabularyCounts {
+  final int total;
+  final int known;
+  final int learning;
+  final int unknown;
+
+  VocabularyCounts({
+    required this.total,
+    required this.known,
+    required this.learning,
+    required this.unknown,
+  });
+}
+
+class VocabularyPageResult {
+  final Map<String, String> items;
+  final int totalCount;
+  final int totalPages;
+  final int currentPage;
+  final VocabularyCounts counts;
+
+  VocabularyPageResult({
+    required this.items,
+    required this.totalCount,
+    required this.totalPages,
+    required this.currentPage,
+    required this.counts,
+  });
+}
+
 class VocabularyService {
   final TokenService _authTokenService;
   final AppDatabase _db;
@@ -81,6 +111,85 @@ class VocabularyService {
       result[item['word'] as String] = item['status'] as String;
     }
     return result;
+  }
+
+  Future<VocabularyPageResult> getVocabularyPage(String language, {int page = 1, int limit = 50, String? status}) async {
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (isOnline) {
+      try {
+        var url = '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language&page=$page&limit=$limit';
+        if (status != null) {
+          url += '&status=$status';
+        }
+        
+        final response = await http.get(
+          Uri.parse(url),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final items = data['items'] as Map<String, dynamic>;
+          final pagination = data['pagination'] as Map<String, dynamic>;
+          final counts = data['counts'] as Map<String, dynamic>;
+
+          for (final entry in items.entries) {
+            await _db.insertVocabulary({
+              'word': entry.key.toLowerCase(),
+              'status': entry.value.toString().toLowerCase(),
+              'language': language,
+              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+            });
+          }
+
+          return VocabularyPageResult(
+            items: items.map((key, value) => MapEntry(key.toLowerCase(), value.toString().toLowerCase())),
+            totalCount: pagination['totalCount'] as int,
+            totalPages: pagination['totalPages'] as int,
+            currentPage: pagination['page'] as int,
+            counts: VocabularyCounts(
+              total: counts['total'] as int,
+              known: counts['known'] as int,
+              learning: counts['learning'] as int,
+              unknown: counts['unknown'] as int,
+            ),
+          );
+        }
+      } catch (e, st) {
+        _logger.warning('VocabularyService: Failed to fetch paginated vocabulary', e, st);
+      }
+    }
+
+    return _getLocalVocabularyPage(language);
+  }
+
+  Future<VocabularyPageResult> _getLocalVocabularyPage(String language) async {
+    final items = await _db.getAllVocabularies();
+    final result = <String, String>{};
+    int known = 0, learning = 0, unknown = 0;
+    
+    for (final item in items) {
+      final word = item['word'] as String;
+      final status = item['status'] as String;
+      result[word] = status;
+      if (status == 'known') known++;
+      else if (status == 'learning') learning++;
+      else unknown++;
+    }
+
+    return VocabularyPageResult(
+      items: result,
+      totalCount: items.length,
+      totalPages: 1,
+      currentPage: 1,
+      counts: VocabularyCounts(
+        total: items.length,
+        known: known,
+        learning: learning,
+        unknown: unknown,
+      ),
+    );
   }
 
   Future<void> updateStatus(String word, String status, String language) async {

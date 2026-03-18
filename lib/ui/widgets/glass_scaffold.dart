@@ -89,7 +89,6 @@ class GlassScaffold extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           sliver: body,
         ),
-        // Spacer for Bottom Navigation Bar
         const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],
     );

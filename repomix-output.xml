@@ -207,6 +207,7 @@ lib/
       listening_screen.dart
       login_screen.dart
       module_detail_screen.dart
+      more_screen.dart
       path_screen.dart
       profile_screen.dart
       progress_screen.dart
@@ -1782,127 +1783,6 @@ Runner/GeneratedPluginRegistrant.*
 !default.perspectivev3
 </file>
 
-<file path="lib/database/repositories/sync_repository.dart">
-import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../app_database.dart';
-
-class SyncRepository {
-  final AppDatabase _db;
-
-  SyncRepository(this._db);
-
-  Future<void> enqueueMutation({
-    required String entityType,
-    required String action,
-    required String entityId,
-    required Map<String, dynamic> payload,
-  }) async {
-    await _db.enqueueMutation({
-      'entity_type': entityType,
-      'action': action,
-      'entity_id': entityId,
-      'payload_json': jsonEncode(payload),
-    });
-  }
-
-  Future<List<Map<String, dynamic>>> getPendingMutations() async {
-    return await _db.getPendingMutations();
-  }
-
-  Stream<List<Map<String, dynamic>>> watchPendingMutations() {
-    return _db.watchPendingMutations();
-  }
-
-  Future<int> getPendingCount() async {
-    return await _db.getPendingMutationsCount();
-  }
-
-  Future<void> removeMutation(int id) async {
-    await _db.removeMutation(id);
-  }
-
-  Future<void> incrementRetryCount(int id) async {
-    await _db.incrementRetryCount(id);
-  }
-
-  Future<void> clearQueue() async {
-    await _db.clearSyncQueue();
-  }
-
-  // Book mutations
-  Future<void> enqueueBookProgress(
-    String bookId,
-    String cfi,
-    double progressPct,
-  ) async {
-    await enqueueMutation(
-      entityType: 'book',
-      action: 'update_progress',
-      entityId: bookId,
-      payload: {'currentCfi': cfi, 'progressPct': progressPct},
-    );
-  }
-
-  Future<void> enqueueBookDelete(String bookId) async {
-    await enqueueMutation(
-      entityType: 'book',
-      action: 'delete',
-      entityId: bookId,
-      payload: {},
-    );
-  }
-
-  // Journal mutations
-  Future<void> enqueueJournalCreate(
-    String journalId,
-    String title,
-    String content,
-    String targetLanguage,
-    String? moduleId,
-    String mode,
-  ) async {
-    await enqueueMutation(
-      entityType: 'journal',
-      action: 'create',
-      entityId: journalId,
-      payload: {
-        'title': title,
-        'content': content,
-        'targetLanguage': targetLanguage,
-        'moduleId': moduleId,
-        'mode': mode,
-      },
-    );
-  }
-
-  // SRS mutations
-  Future<void> enqueueSrsReview(String itemId, DateTime nextReviewDate) async {
-    await enqueueMutation(
-      entityType: 'srs',
-      action: 'review',
-      entityId: itemId,
-      payload: {'nextReviewDate': nextReviewDate.toIso8601String()},
-    );
-  }
-
-  // Vocabulary mutations
-  Future<void> enqueueVocabUpdate(String word, String status) async {
-    await enqueueMutation(
-      entityType: 'vocabulary',
-      action: 'update',
-      entityId: word,
-      payload: {'status': status},
-    );
-  }
-}
-
-final syncRepositoryProvider = Provider<SyncRepository>((ref) {
-  final db = ref.watch(databaseProvider);
-  return SyncRepository(db);
-});
-</file>
-
 <file path="lib/models/analytics.dart">
 class AnalyticsData {
   final int totalEntries;
@@ -3055,6 +2935,192 @@ class _CardFace extends StatelessWidget {
 }
 </file>
 
+<file path="lib/ui/screens/more_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import '../widgets/glass_scaffold.dart';
+
+class MoreScreen extends StatelessWidget {
+  const MoreScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassScaffold(
+      title: 'More',
+      subtitle: 'Additional options',
+      showBackButton: false,
+      body: SliverList(
+        delegate: SliverChildListDelegate([
+          const SizedBox(height: 8),
+          _MoreItem(
+            icon: LucideIcons.user,
+            title: 'Profile',
+            subtitle: 'Manage your account settings',
+            onTap: () => context.push('/profile'),
+          ),
+          _MoreItem(
+            icon: LucideIcons.barChart2,
+            title: 'Progress',
+            subtitle: 'View your learning analytics',
+            onTap: () => context.push('/progress'),
+          ),
+          const SizedBox(height: 24),
+          const _SectionHeader(title: "ACCOUNT"),
+          _MoreItem(
+            icon: LucideIcons.settings,
+            title: 'Settings',
+            subtitle: 'App preferences and configuration',
+            onTap: () => context.go('/profile'),
+          ),
+          _MoreItem(
+            icon: LucideIcons.bell,
+            title: 'Notifications',
+            subtitle: 'Manage notification preferences',
+            onTap: () {},
+          ),
+          _MoreItem(
+            icon: LucideIcons.moon,
+            title: 'Appearance',
+            subtitle: 'Theme and display options',
+            onTap: () {},
+          ),
+          const SizedBox(height: 24),
+          const _SectionHeader(title: "DATA"),
+          _MoreItem(
+            icon: LucideIcons.database,
+            title: 'Vocabulary',
+            subtitle: 'Review and manage saved words',
+            onTap: () => context.go('/vocabulary'),
+          ),
+          _MoreItem(
+            icon: LucideIcons.history,
+            title: 'SRS Items',
+            subtitle: 'Spaced repetition review items',
+            onTap: () => context.go('/srs-items'),
+          ),
+          const SizedBox(height: 24),
+          const _SectionHeader(title: "SUPPORT"),
+          _MoreItem(
+            icon: LucideIcons.helpCircle,
+            title: 'Help & FAQ',
+            subtitle: 'Get help and answers',
+            onTap: () {},
+          ),
+          _MoreItem(
+            icon: LucideIcons.mail,
+            title: 'Contact Us',
+            subtitle: 'Send feedback or report issues',
+            onTap: () {},
+          ),
+          _MoreItem(
+            icon: LucideIcons.info,
+            title: 'About',
+            subtitle: 'App version and information',
+            onTap: () {},
+          ),
+          const SizedBox(height: 40),
+        ]),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, bottom: 12, top: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.5),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _MoreItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _MoreItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: Colors.white.withOpacity(0.8),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                LucideIcons.chevronRight,
+                color: Colors.white.withOpacity(0.3),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/screens/srs_items_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -3160,6 +3226,7 @@ class VocabularyScreen extends ConsumerStatefulWidget {
 
 class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   String _search = "";
 
   @override
@@ -3167,72 +3234,154 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final lang = ref.read(activeLanguageProvider);
-      ref.read(vocabularyProvider.notifier).loadVocabulary(lang);
+      ref.read(paginatedVocabularyProvider.notifier).loadVocabulary(lang);
     });
+    
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      ref.read(paginatedVocabularyProvider.notifier).loadMore();
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  List<MapEntry<String, String>> _filterItems(Map<String, String> items, String search) {
+    if (search.isEmpty) return items.entries.toList();
+    return items.entries.where((e) => e.key.toLowerCase().contains(search.toLowerCase())).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final vocabAsync = ref.watch(vocabularyProvider);
+    final vocabData = ref.watch(paginatedVocabularyProvider);
     final activeLang = ref.watch(activeLanguageProvider);
+    final filteredItems = _filterItems(vocabData.items, _search);
 
     return GlassScaffold(
       title: 'Vocabulary',
       subtitle: 'Manage saved words',
-      body: vocabAsync.when(
-        loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
-        error: (e, _) => SliverFillRemaining(child: Center(child: Text("Error: $e", style: const TextStyle(color: Colors.white70)))),
-        data: (vocab) {
-          final words = vocab.entries
-              .where((e) => e.key.contains(_search.toLowerCase()))
-              .toList();
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              children: [
+                _VocabularyCountsCard(counts: vocabData.counts),
+                const SizedBox(height: 16),
+                GlassInput(
+                  hint: "Search words...",
+                  controller: _searchController,
+                  onChanged: (val) => setState(() => _search = val),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: vocabData.isLoading && vocabData.items.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : filteredItems.isEmpty
+                    ? const Center(child: Text("No words found", style: TextStyle(color: Colors.white38)))
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: filteredItems.length + (vocabData.hasMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index >= filteredItems.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
 
-          return SliverList(
-            delegate: SliverChildListDelegate([
-              GlassInput(
-                hint: "Search words...",
-                controller: _searchController,
-                onChanged: (val) => setState(() => _search = val),
-              ),
-              const SizedBox(height: 16),
-              if (words.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40),
-                  child: Center(child: Text("No words found", style: TextStyle(color: Colors.white38))),
-                ),
-              ...words.map((e) => Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: GlassCard(
-                  padding: 12,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-                            Text(e.value.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.white54)),
-                          ],
-                        ),
+                          final entry = filteredItems[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: GlassCard(
+                              padding: 12,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                                        Text(entry.value.toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                    onPressed: () => ref.read(paginatedVocabularyProvider.notifier).deleteWord(entry.key, activeLang),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                        onPressed: () => ref.read(vocabularyProvider.notifier).deleteWord(e.key, activeLang),
-                      ),
-                    ],
-                  ),
-                ),
-              )),
-            ]),
-          );
-        },
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _VocabularyCountsCard extends StatelessWidget {
+  final VocabularyCounts counts;
+
+  const _VocabularyCountsCard({required this.counts});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: 16,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _CountItem(label: 'Total', value: counts.total, color: Colors.white),
+          _CountItem(label: 'Known', value: counts.known, color: Colors.greenAccent),
+          _CountItem(label: 'Learning', value: counts.learning, color: Colors.orangeAccent),
+          _CountItem(label: 'Unknown', value: counts.unknown, color: Colors.redAccent),
+        ],
+      ),
+    );
+  }
+}
+
+class _CountItem extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+
+  const _CountItem({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          value.toString(),
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.white.withValues(alpha: 0.6),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -6147,232 +6296,6 @@ final pathNotifierProvider = StateNotifierProvider<PathNotifier, AsyncValue<void
 });
 </file>
 
-<file path="lib/services/hydration_service.dart">
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../database/app_database.dart';
-import '../providers/connectivity_provider.dart';
-import '../services/token_service.dart';
-import '../utils/constants.dart';
-import '../services/logger_service.dart';
-import '../services/sync_service.dart';
-
-class HydrationService {
-  final AppDatabase _db;
-  final Ref _ref;
-  final LoggerService _logger;
-  DateTime? _lastSyncTimestamp;
-
-  HydrationService(this._db, this._ref, this._logger);
-
-  bool get _isOnline => _ref.read(connectivityProvider);
-
-  Future<Map<String, String>> _getHeaders() async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<void> performFullSync() async {
-    if (!_isOnline) {
-      _logger.info('HydrationService: Offline, skipping full sync');
-      return;
-    }
-
-    _logger.info('HydrationService: Starting full sync...');
-
-    try {
-      await Future.wait([
-        _syncBooks(),
-        _syncJournals(),
-        _syncSrsItems(),
-        _syncVocabulary(),
-      ]);
-
-      _lastSyncTimestamp = DateTime.now();
-      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTimestamp;
-      _logger.info(
-        'HydrationService: Full sync completed at $_lastSyncTimestamp',
-      );
-    } catch (e, st) {
-      _logger.error('HydrationService: Full sync failed', e, st);
-      rethrow;
-    }
-  }
-
-  Future<void> _syncBooks() async {
-    _logger.info('HydrationService: Syncing books...');
-    try {
-      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
-      final url = lastSync != null
-          ? '${AppConstants.baseUrl}/api/books?since=$lastSync'
-          : '${AppConstants.baseUrl}/api/books';
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: await _getHeaders(),
-      );
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info('HydrationService: Syncing ${data.length} books');
-
-        for (final item in data) {
-          await _db.insertBook({
-            'id': item['id'],
-            'title': item['title'] ?? 'Unknown Title',
-            'author': item['author'],
-            'target_language': item['targetLanguage'] ?? 'spanish',
-            'storage_path': item['storagePath'] ?? '',
-            'cover_image_url': item['coverImageUrl'],
-            'current_cfi': item['currentCfi'],
-            'progress_pct': (item['progressPct'] ?? 0).toDouble(),
-            'created_at': DateTime.parse(
-              item['createdAt'],
-            ).millisecondsSinceEpoch,
-            'signed_url': item['signedUrl']?.startsWith('/') == true
-                ? '${AppConstants.baseUrl}${item['signedUrl']}'
-                : item['signedUrl'],
-            'locations': item['locations'],
-            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
-      }
-    } catch (e, st) {
-      _logger.error('HydrationService: Book sync failed', e, st);
-    }
-  }
-
-  Future<void> _syncJournals() async {
-    _logger.info('HydrationService: Syncing journals...');
-    try {
-      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
-      final url = lastSync != null
-          ? '${AppConstants.baseUrl}/api/journal?since=$lastSync'
-          : '${AppConstants.baseUrl}/api/journal';
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: await _getHeaders(),
-      );
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info('HydrationService: Syncing ${data.length} journals');
-
-        for (final item in data) {
-          final analysis = item['analysis'];
-          await _db.insertJournal({
-            'id': item['id'],
-            'content': item['content'] ?? '',
-            'title': item['topic']?['title'] ?? 'Free Write',
-            'created_at': DateTime.parse(
-              item['createdAt'],
-            ).millisecondsSinceEpoch,
-            'audio_url': item['audioUrl'],
-            'is_pending_analysis': analysis == null ? 0 : 0,
-            'analysis_json': analysis != null ? jsonEncode(analysis) : null,
-            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
-      }
-    } catch (e, st) {
-      _logger.error('HydrationService: Journal sync failed', e, st);
-    }
-  }
-
-  Future<void> _syncSrsItems() async {
-    _logger.info('HydrationService: Syncing SRS items...');
-    try {
-      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
-      final url = lastSync != null
-          ? '${AppConstants.baseUrl}/api/srs/all?since=$lastSync'
-          : '${AppConstants.baseUrl}/api/srs/all';
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: await _getHeaders(),
-      );
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        _logger.info('HydrationService: Syncing ${data.length} SRS items');
-
-        for (final item in data) {
-          final nextReview = item['nextReviewDate'] != null
-              ? DateTime.parse(item['nextReviewDate']).millisecondsSinceEpoch
-              : DateTime.now()
-                    .add(const Duration(days: 1))
-                    .millisecondsSinceEpoch;
-
-          await _db.insertSrsItem({
-            'id': item['id'],
-            'front': item['frontContent'] ?? '',
-            'back': item['backContent'] ?? '',
-            'context': item['context'],
-            'type': item['type'] ?? 'TRANSLATION',
-            'next_review_date': nextReview,
-            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
-      }
-    } catch (e, st) {
-      _logger.error('HydrationService: SRS sync failed', e, st);
-    }
-  }
-
-  Future<void> _syncVocabulary() async {
-    _logger.info('HydrationService: Syncing vocabulary...');
-    try {
-      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
-      final url = lastSync != null
-          ? '${AppConstants.baseUrl}/api/vocabulary/all?since=$lastSync'
-          : '${AppConstants.baseUrl}/api/vocabulary/all';
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: await _getHeaders(),
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = jsonDecode(response.body);
-        _logger.info(
-          'HydrationService: Syncing ${data.length} vocabulary items',
-        );
-
-        for (final entry in data.entries) {
-          await _db.insertVocabulary({
-            'word': entry.key.toLowerCase(),
-            'status': entry.value.toString().toLowerCase(),
-            'language': 'unknown',
-            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-          });
-        }
-      }
-    } catch (e, st) {
-      _logger.error('HydrationService: Vocabulary sync failed', e, st);
-    }
-  }
-
-  DateTime? get lastSyncTimestamp => _lastSyncTimestamp;
-}
-
-final hydrationServiceProvider = Provider<HydrationService>((ref) {
-  final db = ref.watch(databaseProvider);
-  final logger = ref.watch(loggerProvider);
-  return HydrationService(db, ref, logger);
-});
-
-final hydrationTriggerProvider = FutureProvider<void>((ref) async {
-  final hydrationService = ref.watch(hydrationServiceProvider);
-  await hydrationService.performFullSync();
-});
-</file>
-
 <file path="lib/services/logger_service.dart">
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -7726,6 +7649,140 @@ Error: Exception: Test exception
 }
 </file>
 
+<file path="lib/database/repositories/sync_repository.dart">
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../app_database.dart';
+
+class SyncRepository {
+  final AppDatabase _db;
+
+  SyncRepository(this._db);
+
+  Future<void> enqueueMutation({
+    required String entityType,
+    required String action,
+    required String entityId,
+    required Map<String, dynamic> payload,
+  }) async {
+    await _db.enqueueMutation({
+      'entity_type': entityType,
+      'action': action,
+      'entity_id': entityId,
+      'payload_json': jsonEncode(payload),
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingMutations() async {
+    return await _db.getPendingMutations();
+  }
+
+  Stream<List<Map<String, dynamic>>> watchPendingMutations() {
+    return _db.watchPendingMutations();
+  }
+
+  Future<int> getPendingCount() async {
+    return await _db.getPendingMutationsCount();
+  }
+
+  Future<void> removeMutation(int id) async {
+    await _db.removeMutation(id);
+  }
+
+  Future<void> incrementRetryCount(int id) async {
+    await _db.incrementRetryCount(id);
+  }
+
+  Future<void> clearQueue() async {
+    await _db.clearSyncQueue();
+  }
+
+  // Book mutations
+  Future<void> enqueueBookProgress(
+    String bookId,
+    String cfi,
+    double progressPct,
+  ) async {
+    await enqueueMutation(
+      entityType: 'book',
+      action: 'update_progress',
+      entityId: bookId,
+      payload: {'currentCfi': cfi, 'progressPct': progressPct},
+    );
+  }
+
+  Future<void> enqueueBookDelete(String bookId) async {
+    await enqueueMutation(
+      entityType: 'book',
+      action: 'delete',
+      entityId: bookId,
+      payload: {},
+    );
+  }
+
+  // Journal mutations
+  Future<void> enqueueJournalCreate(
+    String journalId,
+    String title,
+    String content,
+    String targetLanguage,
+    String? moduleId,
+    String mode,
+  ) async {
+    await enqueueMutation(
+      entityType: 'journal',
+      action: 'create',
+      entityId: journalId,
+      payload: {
+        'title': title,
+        'content': content,
+        'targetLanguage': targetLanguage,
+        'moduleId': moduleId,
+        'mode': mode,
+      },
+    );
+  }
+
+  // SRS mutations
+  Future<void> enqueueSrsReview(String itemId, DateTime nextReviewDate) async {
+    await enqueueMutation(
+      entityType: 'srs',
+      action: 'review',
+      entityId: itemId,
+      payload: {'nextReviewDate': nextReviewDate.toIso8601String()},
+    );
+  }
+
+  // Vocabulary mutations
+  Future<void> enqueueVocabUpdate(String word, String status, String targetLanguage) async {
+    await enqueueMutation(
+      entityType: 'vocabulary',
+      action: 'update',
+      entityId: word,
+      payload: {'status': status.toUpperCase(), 'targetLanguage': targetLanguage},
+    );
+  }
+
+  Future<void> enqueueVocabBatchUpdate(List<String> words, String status, String targetLanguage) async {
+    await enqueueMutation(
+      entityType: 'vocabulary',
+      action: 'batch_update',
+      entityId: 'batch_${DateTime.now().millisecondsSinceEpoch}',
+      payload: {
+        'words': words,
+        'status': status.toUpperCase(),
+        'targetLanguage': targetLanguage,
+      },
+    );
+  }
+}
+
+final syncRepositoryProvider = Provider<SyncRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  return SyncRepository(db);
+});
+</file>
+
 <file path="lib/models/book.dart">
 import '../utils/constants.dart';
 
@@ -7775,6 +7832,232 @@ class UserBook {
     );
   }
 }
+</file>
+
+<file path="lib/services/hydration_service.dart">
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../database/app_database.dart';
+import '../providers/connectivity_provider.dart';
+import '../services/token_service.dart';
+import '../utils/constants.dart';
+import '../services/logger_service.dart';
+import '../services/sync_service.dart';
+
+class HydrationService {
+  final AppDatabase _db;
+  final Ref _ref;
+  final LoggerService _logger;
+  DateTime? _lastSyncTimestamp;
+
+  HydrationService(this._db, this._ref, this._logger);
+
+  bool get _isOnline => _ref.read(connectivityProvider);
+
+  Future<Map<String, String>> _getHeaders() async {
+    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
+    final token = await tokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<void> performFullSync() async {
+    if (!_isOnline) {
+      _logger.info('HydrationService: Offline, skipping full sync');
+      return;
+    }
+
+    _logger.info('HydrationService: Starting full sync...');
+
+    try {
+      await Future.wait([
+        _syncBooks(),
+        _syncJournals(),
+        _syncSrsItems(),
+        _syncVocabulary(),
+      ]);
+
+      _lastSyncTimestamp = DateTime.now();
+      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTimestamp;
+      _logger.info(
+        'HydrationService: Full sync completed at $_lastSyncTimestamp',
+      );
+    } catch (e, st) {
+      _logger.error('HydrationService: Full sync failed', e, st);
+      rethrow;
+    }
+  }
+
+  Future<void> _syncBooks() async {
+    _logger.info('HydrationService: Syncing books...');
+    try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/books?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/books';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info('HydrationService: Syncing ${data.length} books');
+
+        for (final item in data) {
+          await _db.insertBook({
+            'id': item['id'],
+            'title': item['title'] ?? 'Unknown Title',
+            'author': item['author'],
+            'target_language': item['targetLanguage'] ?? 'spanish',
+            'storage_path': item['storagePath'] ?? '',
+            'cover_image_url': item['coverImageUrl'],
+            'current_cfi': item['currentCfi'],
+            'progress_pct': (item['progressPct'] ?? 0).toDouble(),
+            'created_at': DateTime.parse(
+              item['createdAt'],
+            ).millisecondsSinceEpoch,
+            'signed_url': item['signedUrl']?.startsWith('/') == true
+                ? '${AppConstants.baseUrl}${item['signedUrl']}'
+                : item['signedUrl'],
+            'locations': item['locations'],
+            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+      }
+    } catch (e, st) {
+      _logger.error('HydrationService: Book sync failed', e, st);
+    }
+  }
+
+  Future<void> _syncJournals() async {
+    _logger.info('HydrationService: Syncing journals...');
+    try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/journal?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/journal';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info('HydrationService: Syncing ${data.length} journals');
+
+        for (final item in data) {
+          final analysis = item['analysis'];
+          await _db.insertJournal({
+            'id': item['id'],
+            'content': item['content'] ?? '',
+            'title': item['topic']?['title'] ?? 'Free Write',
+            'created_at': DateTime.parse(
+              item['createdAt'],
+            ).millisecondsSinceEpoch,
+            'audio_url': item['audioUrl'],
+            'is_pending_analysis': analysis == null ? 0 : 0,
+            'analysis_json': analysis != null ? jsonEncode(analysis) : null,
+            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+      }
+    } catch (e, st) {
+      _logger.error('HydrationService: Journal sync failed', e, st);
+    }
+  }
+
+  Future<void> _syncSrsItems() async {
+    _logger.info('HydrationService: Syncing SRS items...');
+    try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/srs/all?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/srs/all';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        _logger.info('HydrationService: Syncing ${data.length} SRS items');
+
+        for (final item in data) {
+          final nextReview = item['nextReviewDate'] != null
+              ? DateTime.parse(item['nextReviewDate']).millisecondsSinceEpoch
+              : DateTime.now()
+                    .add(const Duration(days: 1))
+                    .millisecondsSinceEpoch;
+
+          await _db.insertSrsItem({
+            'id': item['id'],
+            'front': item['frontContent'] ?? '',
+            'back': item['backContent'] ?? '',
+            'context': item['context'],
+            'type': item['type'] ?? 'TRANSLATION',
+            'next_review_date': nextReview,
+            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+      }
+    } catch (e, st) {
+      _logger.error('HydrationService: SRS sync failed', e, st);
+    }
+  }
+
+  Future<void> _syncVocabulary() async {
+    _logger.info('HydrationService: Syncing vocabulary...');
+    try {
+      final lastSync = _lastSyncTimestamp?.millisecondsSinceEpoch;
+      final url = lastSync != null
+          ? '${AppConstants.baseUrl}/api/vocabulary/all?since=$lastSync'
+          : '${AppConstants.baseUrl}/api/vocabulary/all';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        _logger.info(
+          'HydrationService: Syncing ${data.length} vocabulary items',
+        );
+
+        for (final entry in data.entries) {
+          await _db.insertVocabulary({
+            'word': entry.key.toLowerCase(),
+            'status': entry.value.toString().toLowerCase(),
+            'language': 'unknown',
+            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+      }
+    } catch (e, st) {
+      _logger.error('HydrationService: Vocabulary sync failed', e, st);
+    }
+  }
+
+  DateTime? get lastSyncTimestamp => _lastSyncTimestamp;
+}
+
+final hydrationServiceProvider = Provider<HydrationService>((ref) {
+  final db = ref.watch(databaseProvider);
+  final logger = ref.watch(loggerProvider);
+  return HydrationService(db, ref, logger);
+});
+
+final hydrationTriggerProvider = FutureProvider<void>((ref) async {
+  final hydrationService = ref.watch(hydrationServiceProvider);
+  await hydrationService.performFullSync();
+});
 </file>
 
 <file path="lib/ui/screens/journal_screen.dart">
@@ -9204,340 +9487,6 @@ final analyticsServiceProvider = Provider(
     ref.watch(databaseProvider),
   ),
 );
-</file>
-
-<file path="lib/services/sync_service.dart">
-import 'dart:async';
-import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-import '../database/repositories/sync_repository.dart';
-import '../providers/connectivity_provider.dart';
-import '../services/token_service.dart';
-import '../utils/constants.dart';
-import '../services/logger_service.dart';
-
-class SyncService {
-  final SyncRepository _syncRepo;
-  final Ref _ref;
-  final LoggerService _logger;
-  DateTime? _lastSyncTime;
-
-  SyncService(this._syncRepo, this._ref, this._logger);
-
-  void startListening() {
-    _ref.listen<bool>(connectivityProvider, (previous, next) {
-      if (next && !_ref.read(isSyncingProvider)) {
-        _logger.info('SyncService: Network became available, starting sync...');
-        syncPendingMutations();
-      }
-    });
-  }
-
-  Future<void> syncPendingMutations({bool force = false}) async {
-    if (_ref.read(isSyncingProvider) && !force) {
-      _logger.info('SyncService: Sync already in progress, skipping...');
-      return;
-    }
-
-    final isOnline = _ref.read(connectivityProvider);
-    if (!isOnline) {
-      _logger.info('SyncService: Offline, skipping sync...');
-      return;
-    }
-
-    _ref.read(isSyncingProvider.notifier).state = true;
-    _logger.info('SyncService: Starting sync${force ? " (FORCED)" : ""}...');
-
-    try {
-      final mutations = await _syncRepo.getPendingMutations();
-      _logger.info('SyncService: Found ${mutations.length} pending mutations');
-
-      for (final mutation in mutations) {
-        if (!_ref.read(connectivityProvider)) {
-          _logger.warning('SyncService: Lost network connection, pausing sync');
-          break;
-        }
-
-        final retryCount = mutation['retry_count'] as int? ?? 0;
-
-        if (retryCount > 0 && !force) {
-          final delay = _calculateBackoff(retryCount);
-          _logger.info(
-            'SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}',
-          );
-          await Future.delayed(delay);
-        } else if (retryCount > 0 && force) {
-          _logger.info('SyncService: Forced sync, bypassing backoff for mutation ${mutation['id']}');
-        }
-
-        final success = await _processMutation(mutation);
-        if (success) {
-          await _syncRepo.removeMutation(mutation['id'] as int);
-          _logger.info(
-            'SyncService: Successfully synced mutation ${mutation['id']}',
-          );
-        } else {
-          // CRITICAL FIX: If a mutation fails, increment retry and STOP the loop.
-          // Do not attempt the rest of the queue in this cycle.
-          await _syncRepo.incrementRetryCount(mutation['id'] as int);
-          _logger.warning(
-            'SyncService: Mutation ${mutation['id']} failed. Stopping queue processing to prevent infinite hammering.',
-          );
-          break;
-        }
-      }
-
-      _lastSyncTime = DateTime.now();
-      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTime;
-      _logger.info('SyncService: Sync completed at $_lastSyncTime');
-    } catch (e, st) {
-      _logger.error('SyncService: Sync failed', e, st);
-    } finally {
-      _ref.read(isSyncingProvider.notifier).state = false;
-      // Refresh the count provider
-      _ref.invalidate(syncQueueCountProvider);
-    }
-  }
-
-  Duration _calculateBackoff(int retryCount) {
-    final baseSeconds = 5;
-    final maxSeconds = 300;
-    final seconds = (baseSeconds * (1 << retryCount)).clamp(1, maxSeconds);
-    return Duration(seconds: seconds);
-  }
-
-  Future<bool> _processMutation(Map<String, dynamic> mutation) async {
-    final entityType = mutation['entity_type'] as String;
-    final action = mutation['action'] as String;
-    final entityId = mutation['entity_id'] as String;
-    final payload =
-        jsonDecode(mutation['payload_json'] as String) as Map<String, dynamic>;
-
-    try {
-      _logger.info('Syncing ${entityType}:${action} for ID: ${entityId}');
-      
-      switch (entityType) {
-        case 'book':
-          return await _syncBookMutation(action, entityId, payload);
-        case 'journal':
-          return await _syncJournalMutation(action, entityId, payload);
-        case 'srs':
-          return await _syncSrsMutation(action, entityId, payload);
-        case 'vocabulary':
-          return await _syncVocabMutation(action, entityId, payload);
-        default:
-          _logger.warning('SyncService: Unknown entity type: $entityType');
-          return true;
-      }
-    } catch (e) {
-      _logger.error('SyncService: Error processing mutation', e);
-      return false;
-    }
-  }
-
-  Future<bool> _syncBookMutation(
-    String action,
-    String bookId,
-    Map<String, dynamic> payload,
-  ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-
-    if (action == 'update_progress') {
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$bookId/progress'),
-        headers: headers,
-        body: jsonEncode({
-          'currentCfi': payload['currentCfi'],
-          'progressPct': payload['progressPct'],
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } else if (action == 'delete') {
-      final response = await http.delete(
-        Uri.parse('${AppConstants.baseUrl}/api/books/$bookId'),
-        headers: headers,
-      );
-      return response.statusCode == 200 || response.statusCode == 204;
-    }
-
-    return true;
-  }
-
-  Future<bool> _syncJournalMutation(
-    String action,
-    String journalId,
-    Map<String, dynamic> payload,
-  ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-
-    if (action == 'create') {
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/journal'),
-        headers: headers,
-        body: jsonEncode({
-          'id': journalId,
-          'title': payload['title'],
-          'content': payload['content'],
-          'targetLanguage': payload['targetLanguage'],
-          'moduleId': payload['moduleId'],
-          'mode': payload['mode'],
-        }),
-      );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      }
-    } else if (action == 'analyze') {
-      _logger.info('SyncService: Triggering analysis for journal $journalId');
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/api/analyze'),
-        headers: headers,
-        body: jsonEncode({'journalId': journalId}),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    }
-
-    return true;
-  }
-
-  Future<bool> _syncSrsMutation(
-    String action,
-    String itemId,
-    Map<String, dynamic> payload,
-  ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-
-    if (action == 'review') {
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/srs/$itemId/review'),
-        headers: headers,
-        body: jsonEncode({'nextReviewDate': payload['nextReviewDate']}),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    }
-
-    return true;
-  }
-
-  Future<bool> _syncVocabMutation(
-    String action,
-    String word,
-    Map<String, dynamic> payload,
-  ) async {
-    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
-    final token = await tokenService.getToken();
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-
-    if (action == 'update') {
-      final response = await http.put(
-        Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
-        headers: headers,
-        body: jsonEncode({
-          'word': word,
-          'targetLanguage': payload['targetLanguage'],
-          'status': payload['status'],
-        }),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    }
-
-    return true;
-  }
-
-  DateTime? get lastSyncTime => _lastSyncTime;
-}
-
-final syncServiceProvider = Provider<SyncService>((ref) {
-  final syncRepo = ref.watch(syncRepositoryProvider);
-  final logger = ref.watch(loggerProvider);
-  final service = SyncService(syncRepo, ref, logger);
-  service.startListening();
-  return service;
-});
-
-final syncQueueCountProvider = FutureProvider<int>((ref) async {
-  final syncRepo = ref.watch(syncRepositoryProvider);
-  return await syncRepo.getPendingCount();
-});
-
-final lastSyncTimeProvider = StateProvider<DateTime?>((ref) => null);
-
-final isSyncingProvider = StateProvider<bool>((ref) => false);
-</file>
-
-<file path="lib/theme/liquid_theme.dart">
-// lib/theme/liquid_theme.dart
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-
-class LiquidTheme {
-  static const Color backgroundDark = Color(0xFF16181F); // Deeper slate
-  static const Color backgroundLight = Color(0xFFF2F4F7);
-
-  static const Color primaryAccent = Color(0xFF0055FF); // Vibrant Cobalt Blue
-  static const Color secondaryAccent = Color(0xFF242731); // Slate Grey for inactive pills
-  static const Color glassBorder = Color(0x1AFFFFFF); // Very subtle white border
-  static const Color cardGrey = Color(0xFF21242D); // Darker surface color
-
-  static ThemeData get darkTheme => _buildTheme(Brightness.dark);
-  static ThemeData get lightTheme => _buildTheme(Brightness.light);
-
-  static ThemeData _buildTheme(Brightness brightness) {
-    final isDark = brightness == Brightness.dark;
-    return ThemeData(
-      brightness: brightness,
-      scaffoldBackgroundColor: isDark ? backgroundDark : backgroundLight,
-      primaryColor: primaryAccent,
-      snackBarTheme: const SnackBarThemeData(
-        contentTextStyle: TextStyle(color: Colors.white, fontSize: 14),
-        backgroundColor: primaryAccent,
-      ),
-      textTheme:
-          GoogleFonts.interTextTheme(
-            isDark ? ThemeData.dark().textTheme : ThemeData.light().textTheme,
-          ).copyWith(
-            displayMedium: const TextStyle(
-              fontWeight: FontWeight.w900,
-              letterSpacing: -1.0,
-            ),
-            titleLarge: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 24,
-            ),
-            bodyMedium: TextStyle(
-              color: isDark ? Colors.white70 : Colors.black87,
-              fontSize: 16,
-              height: 1.5,
-            ),
-          ),
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: primaryAccent,
-        brightness: brightness,
-        surface: isDark ? cardGrey : Colors.white,
-      ),
-      useMaterial3: true,
-    );
-  }
-}
 </file>
 
 <file path="lib/ui/screens/journal_detail_screen.dart">
@@ -11261,14 +11210,54 @@ final srsDeckStreamProvider = StreamProvider<List<SrsItem>>((ref) {
 <file path="lib/providers/vocabulary_provider.dart">
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/vocabulary_service.dart';
+export '../services/vocabulary_service.dart' show VocabularyCounts;
 
 final vocabularyStreamProvider = StreamProvider<Map<String, String>>((ref) {
   final service = ref.watch(vocabularyServiceProvider);
   return service.watchVocabulary();
 });
 
-class VocabularyNotifier
-    extends StateNotifier<AsyncValue<Map<String, String>>> {
+class VocabularyData {
+  final Map<String, String> items;
+  final int totalCount;
+  final int totalPages;
+  final int currentPage;
+  final VocabularyCounts counts;
+  final bool isLoading;
+  final bool hasMore;
+
+  VocabularyData({
+    required this.items,
+    required this.totalCount,
+    required this.totalPages,
+    required this.currentPage,
+    required this.counts,
+    this.isLoading = false,
+    this.hasMore = false,
+  });
+
+  VocabularyData copyWith({
+    Map<String, String>? items,
+    int? totalCount,
+    int? totalPages,
+    int? currentPage,
+    VocabularyCounts? counts,
+    bool? isLoading,
+    bool? hasMore,
+  }) {
+    return VocabularyData(
+      items: items ?? this.items,
+      totalCount: totalCount ?? this.totalCount,
+      totalPages: totalPages ?? this.totalPages,
+      currentPage: currentPage ?? this.currentPage,
+      counts: counts ?? this.counts,
+      isLoading: isLoading ?? this.isLoading,
+      hasMore: hasMore ?? this.hasMore,
+    );
+  }
+}
+
+class VocabularyNotifier extends StateNotifier<AsyncValue<Map<String, String>>> {
   final VocabularyService _service;
 
   VocabularyNotifier(this._service) : super(const AsyncValue.loading());
@@ -11345,6 +11334,125 @@ final vocabularyProvider =
       ref,
     ) {
       return VocabularyNotifier(ref.watch(vocabularyServiceProvider));
+    });
+
+class PaginatedVocabularyNotifier extends StateNotifier<VocabularyData> {
+  final VocabularyService _service;
+  final Ref _ref;
+  String? _currentLanguage;
+
+  PaginatedVocabularyNotifier(this._service, this._ref) 
+      : super(VocabularyData(
+          items: {},
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: 1,
+          counts: VocabularyCounts(total: 0, known: 0, learning: 0, unknown: 0),
+          isLoading: true,
+        ));
+
+  Future<void> loadVocabulary(String language) async {
+    _currentLanguage = language;
+    state = state.copyWith(isLoading: true);
+    
+    try {
+      final result = await _service.getVocabularyPage(language, page: 1);
+      state = VocabularyData(
+        items: result.items,
+        totalCount: result.totalCount,
+        totalPages: result.totalPages,
+        currentPage: result.currentPage,
+        counts: result.counts,
+        isLoading: false,
+        hasMore: result.currentPage < result.totalPages,
+      );
+    } catch (e, st) {
+      state = state.copyWith(isLoading: false);
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (state.isLoading || !state.hasMore || _currentLanguage == null) return;
+
+    state = state.copyWith(isLoading: true);
+    
+    try {
+      final result = await _service.getVocabularyPage(
+        _currentLanguage!,
+        page: state.currentPage + 1,
+      );
+      
+      final newItems = Map<String, String>.from(state.items)..addAll(result.items);
+      
+      state = VocabularyData(
+        items: newItems,
+        totalCount: result.totalCount,
+        totalPages: result.totalPages,
+        currentPage: result.currentPage,
+        counts: result.counts,
+        isLoading: false,
+        hasMore: result.currentPage < result.totalPages,
+      );
+    } catch (e) {
+      state = state.copyWith(isLoading: false);
+    }
+  }
+
+  Future<void> updateWordStatus(String word, String status, String language) async {
+    final wordLower = word.toLowerCase();
+    final statusLower = status.toLowerCase();
+    
+    final newItems = Map<String, String>.from(state.items)..[wordLower] = statusLower;
+    
+    final newCounts = VocabularyCounts(
+      total: state.counts.total,
+      known: statusLower == 'known' ? state.counts.known + 1 : state.counts.known,
+      learning: statusLower == 'learning' ? state.counts.learning + 1 : state.counts.learning,
+      unknown: statusLower == 'unknown' ? state.counts.unknown + 1 : state.counts.unknown,
+    );
+    
+    state = state.copyWith(items: newItems, counts: newCounts);
+
+    try {
+      await _service.updateStatus(wordLower, statusLower, language);
+    } catch (e) {
+      // Revert on error
+      final revertedItems = Map<String, String>.from(state.items)..remove(wordLower);
+      state = state.copyWith(items: revertedItems, counts: state.counts);
+    }
+  }
+
+  Future<void> deleteWord(String word, String language) async {
+    final wordLower = word.toLowerCase();
+    final removedStatus = state.items[wordLower];
+    
+    final newItems = Map<String, String>.from(state.items)..remove(wordLower);
+    
+    final newCounts = VocabularyCounts(
+      total: state.counts.total - 1,
+      known: removedStatus == 'known' ? state.counts.known - 1 : state.counts.known,
+      learning: removedStatus == 'learning' ? state.counts.learning - 1 : state.counts.learning,
+      unknown: removedStatus == 'unknown' ? state.counts.unknown - 1 : state.counts.unknown,
+    );
+    
+    state = state.copyWith(items: newItems, counts: newCounts);
+
+    try {
+      await _service.deleteWord(wordLower, language);
+    } catch (e) {
+      // Revert on error
+      final revertedItems = Map<String, String>.from(state.items)..[wordLower] = removedStatus ?? '';
+      state = state.copyWith(items: revertedItems, counts: state.counts);
+    }
+  }
+}
+
+final paginatedVocabularyProvider =
+    StateNotifierProvider<PaginatedVocabularyNotifier, VocabularyData>((ref) {
+      return PaginatedVocabularyNotifier(
+        ref.watch(vocabularyServiceProvider),
+        ref,
+      );
     });
 </file>
 
@@ -11626,6 +11734,62 @@ final learningPathServiceProvider = Provider(
 );
 </file>
 
+<file path="lib/theme/liquid_theme.dart">
+// lib/theme/liquid_theme.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+class LiquidTheme {
+  static const Color backgroundDark = Color(0xFF16181F); // Deeper slate
+  static const Color backgroundLight = Color(0xFFF2F4F7);
+
+  static const Color primaryAccent = Color(0xFF0055FF); // Vibrant Cobalt Blue
+  static const Color secondaryAccent = Color(0xFF242731); // Slate Grey for inactive pills
+  static const Color glassBorder = Color(0x1AFFFFFF); // Very subtle white border
+  static const Color cardGrey = Color(0xFF21242D); // Darker surface color
+
+  static ThemeData get darkTheme => _buildTheme(Brightness.dark);
+  static ThemeData get lightTheme => _buildTheme(Brightness.light);
+
+  static ThemeData _buildTheme(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    return ThemeData(
+      brightness: brightness,
+      scaffoldBackgroundColor: isDark ? backgroundDark : backgroundLight,
+      primaryColor: primaryAccent,
+      snackBarTheme: const SnackBarThemeData(
+        contentTextStyle: TextStyle(color: Colors.white, fontSize: 14),
+        backgroundColor: primaryAccent,
+      ),
+      textTheme:
+          GoogleFonts.interTextTheme(
+            isDark ? ThemeData.dark().textTheme : ThemeData.light().textTheme,
+          ).copyWith(
+            displayMedium: const TextStyle(
+              fontWeight: FontWeight.w900,
+              letterSpacing: -1.0,
+            ),
+            titleLarge: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 24,
+            ),
+            bodyMedium: TextStyle(
+              color: isDark ? Colors.white70 : Colors.black87,
+              fontSize: 16,
+              height: 1.5,
+            ),
+          ),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: primaryAccent,
+        brightness: brightness,
+        surface: isDark ? cardGrey : Colors.white,
+      ),
+      useMaterial3: true,
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/screens/path_screen.dart">
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -11654,15 +11818,11 @@ class PathScreen extends ConsumerWidget {
       subtitle: 'Personalized Curriculum',
       showBackButton: false,
       body: pathAsync.when(
-        loading: () => const SliverFillRemaining(
-          child: Center(child: CircularProgressIndicator(color: Colors.white)),
-        ),
-        error: (e, _) => SliverToBoxAdapter(
-          child: Center(
-            child: Text(
-              "Error loading path: $e",
-              style: const TextStyle(color: Colors.white),
-            ),
+        loading: () => const Center(child: CircularProgressIndicator(color: Colors.white)),
+        error: (e, _) => Center(
+          child: Text(
+            "Error loading path: $e",
+            style: const TextStyle(color: Colors.white),
           ),
         ),
         data: (modules) {
@@ -11671,41 +11831,39 @@ class PathScreen extends ConsumerWidget {
           
           if (profile != null && !profile.onboardingCompleted) {
              final journals = ref.watch(journalHistoryProvider).value ?? [];
-             return SliverToBoxAdapter(
-               child: Padding(
-                 padding: const EdgeInsets.all(20),
-                 child: Column(
-                   children: [
-                     const Text("WELCOME TO LEXITY", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-                     const SizedBox(height: 8),
-                     const Text("Complete these steps to unlock your path", style: TextStyle(color: Colors.white70, fontSize: 13)),
-                     const SizedBox(height: 32),
-                     _buildOnboardingTimeline(profile, journals),
-                     const SizedBox(height: 32),
-                     if (onboardingStep == OnboardingStep.firstJournal)
-                        LiquidButton(text: "Start First Journal", onTap: () => context.push('/path/read')), // Using read activity as starting point or similar
-                   ],
-                 ),
+             return Padding(
+               padding: const EdgeInsets.all(20),
+               child: Column(
+                 children: [
+                   const Text("WELCOME TO LEXITY", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                   const SizedBox(height: 8),
+                   const Text("Complete these steps to unlock your path", style: TextStyle(color: Colors.white70, fontSize: 13)),
+                   const SizedBox(height: 32),
+                   _buildOnboardingTimeline(profile, journals),
+                   const SizedBox(height: 32),
+                   if (onboardingStep == OnboardingStep.firstJournal)
+                      LiquidButton(text: "Start First Journal", onTap: () => context.push('/path/read')),
+                 ],
                ),
              );
           }
 
           if (modules.isEmpty) {
-            return SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: LiquidButton(
-                  text: "Generate First Module",
-                  onTap: () => ref
-                      .read(pathNotifierProvider.notifier)
-                      .generateNextModule(),
-                ),
+            return Center(
+              child: LiquidButton(
+                text: "Generate First Module",
+                onTap: () => ref
+                    .read(pathNotifierProvider.notifier)
+                    .generateNextModule(),
               ),
             );
           }
 
-          return SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
+          return ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: modules.length,
+            itemBuilder: (context, index) {
               final module = modules[index];
 
               return Padding(
@@ -11719,7 +11877,7 @@ class PathScreen extends ConsumerWidget {
                   child: _TimelineModuleItem(module: module, index: index),
                 ),
               );
-            }, childCount: modules.length),
+            },
           );
         },
       ),
@@ -11854,896 +12012,6 @@ class _TimelineNode extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/screens/profile_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:intl/intl.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/theme_provider.dart';
-import '../../providers/connectivity_provider.dart';
-import '../../services/sync_service.dart';
-import '../../models/user_profile.dart';
-import '../../theme/liquid_theme.dart';
-import '../../utils/constants.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-
-class ProfileScreen extends ConsumerStatefulWidget {
-  const ProfileScreen({super.key});
-
-  @override
-  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  Future<void> _launchURL(String urlString) async {
-    debugPrint("Launching URL: $urlString");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final profileAsync = ref.watch(userProfileProvider);
-
-    return GlassScaffold(
-      title: 'Settings',
-      subtitle: 'Manage your profile and preferences',
-      showBackButton: false,
-      body: profileAsync.when(
-        loading: () => const SliverToBoxAdapter(
-          child: Center(child: CircularProgressIndicator(color: Colors.white)),
-        ),
-        error: (e, _) => SliverToBoxAdapter(child: Text("Error: $e")),
-        data: (profile) {
-          return SliverList(
-            delegate: SliverChildListDelegate([
-              const _SectionHeader(title: "Appearance"),
-              const _ThemeSwitcher(),
-
-              const SizedBox(height: 24),
-              const _SectionHeader(title: "Profile"),
-              _ProfileForm(profile: profile),
-
-              const SizedBox(height: 24),
-              const _SectionHeader(title: "Goals"),
-              _GoalsForm(profile: profile),
-
-              const SizedBox(height: 24),
-              const _SectionHeader(title: "Subscription"),
-              _SubscriptionSection(profile: profile, onManage: _launchURL),
-
-              const SizedBox(height: 24),
-              const _SectionHeader(title: "Data & Onboarding"),
-              _DataSection(
-                onReset: () async {
-                  await ref
-                      .read(userProfileProvider.notifier)
-                      .resetOnboarding();
-                },
-                onExport: () =>
-                    _launchURL('${AppConstants.baseUrl}/api/user/export'),
-              ),
-
-              const SizedBox(height: 24),
-              const _SectionHeader(title: "Sync Status"),
-              const _SyncStatusSection(),
-
-              const SizedBox(height: 24),
-              const _SectionHeader(title: "Account"),
-              _AccountSection(
-                onLogout: () => ref.read(authProvider.notifier).logout(),
-              ),
-
-              const SizedBox(height: 40),
-            ]),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader({required this.title});
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white54,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-}
-
-class _ThemeSwitcher extends ConsumerWidget {
-  const _ThemeSwitcher();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final currentMode = ref.watch(themeProvider);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return GlassCard(
-      padding: 16,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.black.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                _buildThemeOption(
-                  ref,
-                  "Light",
-                  ThemeMode.light,
-                  currentMode == ThemeMode.light,
-                  isDark,
-                ),
-                _buildThemeOption(
-                  ref,
-                  "Dark",
-                  ThemeMode.dark,
-                  currentMode == ThemeMode.dark,
-                  isDark,
-                ),
-                _buildThemeOption(
-                  ref,
-                  "System",
-                  ThemeMode.system,
-                  currentMode == ThemeMode.system,
-                  isDark,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildThemeOption(
-    WidgetRef ref,
-    String label,
-    ThemeMode mode,
-    bool isActive,
-    bool isDark,
-  ) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => ref.read(themeProvider.notifier).setTheme(mode),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? LiquidTheme.primaryAccent : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              color: isActive
-                  ? Colors.white
-                  : (isDark ? Colors.white38 : Colors.black54),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileForm extends ConsumerWidget {
-  final UserProfile profile;
-  const _ProfileForm({required this.profile});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(userProfileProvider.notifier);
-
-    final availableLanguages = AppConstants.supportedLanguages;
-    final userLanguages = {
-      ...profile.languageProfiles.map((lp) => lp.language),
-      profile.defaultTargetLanguage,
-    }.toList();
-
-    return GlassCard(
-      child: Column(
-        children: [
-          _ReadOnlyRow(label: "Email", value: profile.email),
-          const SizedBox(height: 16),
-
-          LiquidDropdown<String>(
-            label: "Native Language",
-            value: profile.nativeLanguage ?? "english",
-            items: availableLanguages.map((l) => l['value']!).toList(),
-            onChanged: (val) => notifier.updateInfo(nativeLanguage: val),
-          ),
-          const SizedBox(height: 16),
-
-          LiquidDropdown<String>(
-            label: "Target Language",
-            value: profile.defaultTargetLanguage,
-            items: userLanguages,
-            onChanged: (val) => notifier.updateInfo(targetLanguage: val),
-          ),
-
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => const _AddLanguageDialog(),
-                );
-              },
-              child: const Text(
-                "Add Language",
-                style: TextStyle(color: LiquidTheme.primaryAccent),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 8),
-          LiquidDropdown<String>(
-            label: "Writing Style",
-            value: profile.writingStyle ?? "Casual",
-            items: AppConstants.writingStyles,
-            onChanged: (val) => notifier.updateInfo(writingStyle: val),
-          ),
-          const SizedBox(height: 16),
-          LiquidDropdown<String>(
-            label: "Writing Purpose",
-            value: profile.writingPurpose ?? "Personal",
-            items: AppConstants.writingPurposes,
-            onChanged: (val) => notifier.updateInfo(writingPurpose: val),
-          ),
-          const SizedBox(height: 16),
-          LiquidDropdown<String>(
-            label: "Proficiency",
-            value: profile.selfAssessedLevel ?? "Beginner",
-            items: AppConstants.proficiencyLevels,
-            onChanged: (val) => notifier.updateInfo(selfAssessedLevel: val),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GoalsForm extends ConsumerStatefulWidget {
-  final UserProfile profile;
-  const _GoalsForm({required this.profile});
-
-  @override
-  ConsumerState<_GoalsForm> createState() => _GoalsFormState();
-}
-
-class _GoalsFormState extends ConsumerState<_GoalsForm> {
-  late TextEditingController _dailyGoalController;
-  late TextEditingController _maxNewController;
-  late TextEditingController _maxReviewController;
-  int _weeklyActivities = 3;
-
-  @override
-  void initState() {
-    super.initState();
-    final g = widget.profile.goals;
-    _weeklyActivities = g?.weeklyActivities ?? 3;
-    _dailyGoalController = TextEditingController(
-      text: (g?.dailyStudyGoalInMinutes ?? 15).toString(),
-    );
-    _maxNewController = TextEditingController(
-      text: (g?.maxNewPerDay ?? 20).toString(),
-    );
-    _maxReviewController = TextEditingController(
-      text: (g?.maxReviewsPerDay ?? 50).toString(),
-    );
-  }
-
-  void _saveGoals() {
-    final newGoals = UserGoals(
-      weeklyActivities: _weeklyActivities,
-      dailyStudyGoalInMinutes: int.tryParse(_dailyGoalController.text) ?? 15,
-      maxNewPerDay: int.tryParse(_maxNewController.text) ?? 20,
-      maxReviewsPerDay: int.tryParse(_maxReviewController.text) ?? 50,
-    );
-    ref.read(userProfileProvider.notifier).updateGoals(newGoals);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Goals saved!")));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LiquidDropdown<int>(
-            label: "Weekly Activities Goal",
-            value: _weeklyActivities,
-            items: const [3, 5, 7, 10],
-            onChanged: (val) => setState(() => _weeklyActivities = val!),
-          ),
-          const SizedBox(height: 16),
-          GlassInput(
-            controller: _dailyGoalController,
-            hint: "Daily Study Goal (mins)",
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: GlassInput(
-                  controller: _maxNewController,
-                  hint: "Max New Cards",
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: GlassInput(
-                  controller: _maxReviewController,
-                  hint: "Max Reviews",
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          LiquidButton(text: "Save Goals", onTap: _saveGoals),
-        ],
-      ),
-    );
-  }
-}
-
-class _SubscriptionSection extends ConsumerWidget {
-  final UserProfile profile;
-  final Function(String) onManage;
-  const _SubscriptionSection({required this.profile, required this.onManage});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isPro = profile.subscriptionTier != "FREE";
-    return GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Current Plan: ${profile.subscriptionTier}",
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (isPro) ...[
-            Text(
-              "Status: ${profile.subscriptionStatus}",
-              style: const TextStyle(color: Colors.white70),
-            ),
-            if (profile.subscriptionPeriodEnd != null)
-              Text(
-                "Renews: ${profile.subscriptionPeriodEnd.toString().split(' ')[0]}",
-                style: const TextStyle(color: Colors.white70),
-              ),
-            const SizedBox(height: 16),
-            LiquidButton(
-              text: "Manage Subscription",
-              onTap: () async {
-                final url = await ref
-                    .read(userProfileProvider.notifier)
-                    .getManageSubscriptionUrl();
-                if (url != null) onManage(url);
-              },
-            ),
-          ] else ...[
-            const Text(
-              "Upgrade to Pro for unlimited features.",
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            LiquidButton(
-              text: "Upgrade Now",
-              onTap: () {
-                /* Nav to pricing */
-              },
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _DataSection extends StatelessWidget {
-  final VoidCallback onReset;
-  final VoidCallback onExport;
-  const _DataSection({required this.onReset, required this.onExport});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      child: Column(
-        children: [
-          _ActionRow(
-            label: "Export My Data",
-            icon: Icons.download,
-            onTap: onExport,
-          ),
-          const Divider(color: Colors.white10),
-          _ActionRow(
-            label: "Restart Onboarding",
-            icon: Icons.refresh,
-            onTap: onReset,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AccountSection extends StatelessWidget {
-  final VoidCallback onLogout;
-  const _AccountSection({required this.onLogout});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      child: Column(
-        children: [
-          _ActionRow(label: "Log Out", icon: Icons.logout, onTap: onLogout),
-          const Divider(color: Colors.white10),
-          _ActionRow(
-            label: "Delete Account",
-            icon: Icons.delete_forever,
-            color: Colors.redAccent,
-            onTap: () {},
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReadOnlyRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _ReadOnlyRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white54, fontSize: 12),
-        ),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 16)),
-      ],
-    );
-  }
-}
-
-class _ActionRow extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final Color? color;
-
-  const _ActionRow({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: color ?? Colors.white70),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                color: color ?? Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const Spacer(),
-            const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AddLanguageDialog extends ConsumerStatefulWidget {
-  const _AddLanguageDialog();
-  @override
-  ConsumerState<_AddLanguageDialog> createState() => _AddLanguageDialogState();
-}
-
-class _AddLanguageDialogState extends ConsumerState<_AddLanguageDialog> {
-  String? _selectedLanguage;
-  @override
-  Widget build(BuildContext context) {
-    final profile = ref.read(userProfileProvider).value!;
-    final existingLangs = {
-      ...profile.languageProfiles.map((lp) => lp.language),
-      if (profile.defaultTargetLanguage.isNotEmpty)
-        profile.defaultTargetLanguage,
-    };
-    final availableToAdd = AppConstants.supportedLanguages
-        .where((l) => !existingLangs.contains(l['value']))
-        .toList();
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: GlassCard(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Add New Language",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 20),
-            if (availableToAdd.isEmpty)
-              const Text(
-                "All languages added!",
-                style: TextStyle(color: Colors.white54),
-              )
-            else
-              LiquidDropdown<String>(
-                label: "Select Language",
-                value: _selectedLanguage ?? availableToAdd.first['value']!,
-                items: availableToAdd.map((l) => l['value']!).toList(),
-                onChanged: (val) => setState(() => _selectedLanguage = val),
-              ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    "Cancel",
-                    style: TextStyle(color: Colors.white54),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                LiquidButton(
-                  text: "Add",
-                  onTap: () {
-                    if (_selectedLanguage != null) {
-                      ref
-                          .read(userProfileProvider.notifier)
-                          .addLanguage(_selectedLanguage!);
-                      Navigator.pop(context);
-                    }
-                  },
-                ).animate(target: _selectedLanguage != null ? 1 : 0.5),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SyncStatusSection extends ConsumerWidget {
-  const _SyncStatusSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isOnline = ref.watch(connectivityProvider);
-    final syncQueueCount = ref.watch(syncQueueCountProvider);
-    final lastSyncTime = ref.watch(lastSyncTimeProvider);
-    final isSyncing = ref.watch(isSyncingProvider);
-
-    return GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isOnline ? Icons.cloud_done : Icons.cloud_off,
-                color: isOnline ? Colors.greenAccent : Colors.orange,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                isOnline ? "Online" : "Offline",
-                style: TextStyle(
-                  color: isOnline ? Colors.greenAccent : Colors.orange,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          syncQueueCount.when(
-            data: (count) => Row(
-              children: [
-                const Icon(Icons.sync, color: Colors.white54, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  isSyncing ? "Syncing $count changes..." : "Pending changes: $count",
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ],
-            ),
-            loading: () => const Text(
-              "Checking sync queue...",
-              style: TextStyle(color: Colors.white38),
-            ),
-            error: (_, _) => const Text(
-              "Unable to check sync status",
-              style: TextStyle(color: Colors.white38),
-            ),
-          ),
-          const SizedBox(height: 8),
-          lastSyncTime != null
-              ? Row(
-                  children: [
-                    const Icon(
-                      Icons.access_time,
-                      color: Colors.white38,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Last synced: ${DateFormat.yMd().add_jm().format(lastSyncTime)}",
-                      style: const TextStyle(
-                        color: Colors.white38,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                )
-              : const Text(
-                  "Never synced",
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-          if (isOnline)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: LiquidButton(
-                text: isSyncing ? "Syncing..." : "Sync Now",
-                isLoading: isSyncing,
-                onTap: () => isSyncing
-                    ? null
-                    : ref.read(syncServiceProvider).syncPendingMutations(force: true),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/screens/progress_screen.dart">
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../widgets/liquid_components.dart';
-import '../widgets/glass_scaffold.dart';
-import '../../providers/analytics_provider.dart';
-import '../widgets/analytics_components.dart';
-import '../../providers/user_provider.dart';
-
-class ProgressScreen extends ConsumerWidget {
-  const ProgressScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final analyticsAsync = ref.watch(analyticsDataProvider);
-    final goalProgressAsync = ref.watch(goalProgressProvider);
-    final heatmapAsync = ref.watch(activityHeatmapProvider);
-    final userProfile = ref.watch(userProfileProvider).value;
-
-    return GlassScaffold(
-      title: 'Analytics',
-      subtitle: 'Your fluency timeline',
-      showBackButton: false,
-      body: analyticsAsync.when(
-        loading: () => const SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(
-            child: Padding(
-              padding: EdgeInsets.all(40),
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          ),
-        ),
-        error: (e, _) => SliverFillRemaining(
-          hasScrollBody: false,
-          child: Center(
-            child: Text(
-              "Error: $e",
-              style: const TextStyle(color: Colors.white),
-            ),
-          ),
-        ),
-        data: (analytics) {
-          final hasData = analytics.totalEntries > 0;
-
-          if (!hasData) {
-            return SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: GlassCard(
-                  padding: 32,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.show_chart,
-                        size: 60,
-                        color: Colors.white24,
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        "No Progress Yet",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        "Write your first journal entry to start tracking.",
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                      const SizedBox(height: 24),
-                      LiquidButton(
-                        text: "Start Writing",
-                        onTap: () {} /* Nav to journal */,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }
-
-          return SliverList(
-            delegate: SliverChildListDelegate(
-              [
-                // 1. Dashboard Summary
-                Row(
-                  children: [
-                    Expanded(
-                      child: DashboardSummaryCard(
-                        label: "Total Entries",
-                        value: analytics.totalEntries.toString(),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DashboardSummaryCard(
-                        label: "Avg. Score",
-                        value: "${analytics.averageScore.toStringAsFixed(1)}%",
-                      ),
-                    ),
-                  ],
-              ),
-                const SizedBox(height: 12),
-                if (userProfile != null)
-                  DashboardSummaryCard(
-                    label: "Streak",
-                    value: "${userProfile.currentStreak} Days",
-                    subValue: "Longest: ${userProfile.longestStreak}",
-                  ),
-              
-                const SizedBox(height: 24),
-
-                // 2. Weekly Goal & Study Time
-                if (goalProgressAsync.hasValue)
-                  GoalProgressWidget(progress: goalProgressAsync.value!),
-
-                const SizedBox(height: 12),
-
-                GlassCard(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Time Studied Today",
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            "Includes writing & review",
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        "${(analytics.studyTimeToday / 60).round()} min",
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // 3. Proficiency Chart (PRO only logic can be added here)
-                ProficiencyLineChart(
-                  history: analytics.proficiencyOverTime,
-                  prediction: analytics.predictedProficiencyOverTime,
-                ),
-
-                const SizedBox(height: 24),
-
-                // 4. SRS Forecast
-                SrsForecastWidget(counts: analytics.dueCounts),
-
-                const SizedBox(height: 24),
-
-                // 5. Heatmap
-                if (heatmapAsync.hasValue)
-                  SimpleHeatmap(data: heatmapAsync.value!),
-
-                const SizedBox(height: 40),
-              ].animate(interval: 100.ms).fadeIn().slideY(begin: 0.1, end: 0),
-            ),
-          );
-        },
       ),
     );
   }
@@ -12890,154 +12158,301 @@ class UserProfile {
 }
 </file>
 
-<file path="lib/services/vocabulary_service.dart">
+<file path="lib/services/sync_service.dart">
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'token_service.dart';
-import '../utils/constants.dart';
-import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
 import '../providers/connectivity_provider.dart';
-import 'logger_service.dart';
+import '../services/token_service.dart';
+import '../utils/constants.dart';
+import '../services/logger_service.dart';
+import '../providers/user_provider.dart';
 
-class VocabularyService {
-  final TokenService _authTokenService;
-  final AppDatabase _db;
+class SyncService {
   final SyncRepository _syncRepo;
   final Ref _ref;
-  late final LoggerService _logger;
+  final LoggerService _logger;
+  DateTime? _lastSyncTime;
 
-  VocabularyService(
-    this._authTokenService,
-    this._db,
-    this._syncRepo,
-    this._ref,
-  ) {
-    _logger = _ref.read(loggerProvider);
+  SyncService(this._syncRepo, this._ref, this._logger);
+
+  void startListening() {
+    _ref.listen<bool>(connectivityProvider, (previous, next) {
+      if (next && !_ref.read(isSyncingProvider)) {
+        _logger.info('SyncService: Network became available, starting sync...');
+        syncPendingMutations();
+      }
+    });
   }
 
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await _authTokenService.getToken();
-    return {
+  Future<void> syncPendingMutations({bool force = false}) async {
+    if (_ref.read(isSyncingProvider) && !force) {
+      _logger.info('SyncService: Sync already in progress, skipping...');
+      return;
+    }
+
+    final isOnline = _ref.read(connectivityProvider);
+    if (!isOnline) {
+      _logger.info('SyncService: Offline, skipping sync...');
+      return;
+    }
+
+    _ref.read(isSyncingProvider.notifier).state = true;
+    _logger.info('SyncService: Starting sync${force ? " (FORCED)" : ""}...');
+
+    try {
+      final mutations = await _syncRepo.getPendingMutations();
+      _logger.info('SyncService: Found ${mutations.length} pending mutations');
+
+      for (final mutation in mutations) {
+        if (!_ref.read(connectivityProvider)) {
+          _logger.warning('SyncService: Lost network connection, pausing sync');
+          break;
+        }
+
+        final retryCount = mutation['retry_count'] as int? ?? 0;
+
+        if (retryCount > 0 && !force) {
+          final delay = _calculateBackoff(retryCount);
+          _logger.info(
+            'SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}',
+          );
+          await Future.delayed(delay);
+        } else if (retryCount > 0 && force) {
+          _logger.info('SyncService: Forced sync, bypassing backoff for mutation ${mutation['id']}');
+        }
+
+        final success = await _processMutation(mutation);
+        if (success) {
+          await _syncRepo.removeMutation(mutation['id'] as int);
+          _logger.info(
+            'SyncService: Successfully synced mutation ${mutation['id']}',
+          );
+        } else {
+          // CRITICAL FIX: If a mutation fails, increment retry and STOP the loop.
+          // Do not attempt the rest of the queue in this cycle.
+          await _syncRepo.incrementRetryCount(mutation['id'] as int);
+          _logger.warning(
+            'SyncService: Mutation ${mutation['id']} failed. Stopping queue processing to prevent infinite hammering.',
+          );
+          break;
+        }
+      }
+
+      _lastSyncTime = DateTime.now();
+      _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTime;
+      _logger.info('SyncService: Sync completed at $_lastSyncTime');
+    } catch (e, st) {
+      _logger.error('SyncService: Sync failed', e, st);
+    } finally {
+      _ref.read(isSyncingProvider.notifier).state = false;
+      // Refresh the count provider
+      _ref.invalidate(syncQueueCountProvider);
+    }
+  }
+
+  Duration _calculateBackoff(int retryCount) {
+    final baseSeconds = 5;
+    final maxSeconds = 300;
+    final seconds = (baseSeconds * (1 << retryCount)).clamp(1, maxSeconds);
+    return Duration(seconds: seconds);
+  }
+
+  Future<bool> _processMutation(Map<String, dynamic> mutation) async {
+    final entityType = mutation['entity_type'] as String;
+    final action = mutation['action'] as String;
+    final entityId = mutation['entity_id'] as String;
+    final payload =
+        jsonDecode(mutation['payload_json'] as String) as Map<String, dynamic>;
+
+    try {
+      _logger.info('Syncing $entityType:$action for ID: $entityId');
+      
+      switch (entityType) {
+        case 'book':
+          return await _syncBookMutation(action, entityId, payload);
+        case 'journal':
+          return await _syncJournalMutation(action, entityId, payload);
+        case 'srs':
+          return await _syncSrsMutation(action, entityId, payload);
+        case 'vocabulary':
+          return await _syncVocabMutation(action, entityId, payload);
+        default:
+          _logger.warning('SyncService: Unknown entity type: $entityType');
+          return true;
+      }
+    } catch (e) {
+      _logger.error('SyncService: Error processing mutation', e);
+      return false;
+    }
+  }
+
+  Future<bool> _syncBookMutation(
+    String action,
+    String bookId,
+    Map<String, dynamic> payload,
+  ) async {
+    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
+    final token = await tokenService.getToken();
+    final headers = {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
+
+    if (action == 'update_progress') {
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$bookId/progress'),
+        headers: headers,
+        body: jsonEncode({
+          'currentCfi': payload['currentCfi'],
+          'progressPct': payload['progressPct'],
+        }),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } else if (action == 'delete') {
+      final response = await http.delete(
+        Uri.parse('${AppConstants.baseUrl}/api/books/$bookId'),
+        headers: headers,
+      );
+      return response.statusCode == 200 || response.statusCode == 204;
+    }
+
+    return true;
   }
 
-  Future<Map<String, String>> getVocabulary(String language) async {
-    final isOnline = _ref.read(connectivityProvider);
+  Future<bool> _syncJournalMutation(
+    String action,
+    String journalId,
+    Map<String, dynamic> payload,
+  ) async {
+    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
+    final token = await tokenService.getToken();
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
 
-    if (isOnline) {
-      try {
-        final response = await http.get(
-          Uri.parse(
-            '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language',
-          ),
-          headers: await _getHeaders(),
-        );
+    if (action == 'create') {
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/journal'),
+        headers: headers,
+        body: jsonEncode({
+          'id': journalId,
+          'title': payload['title'],
+          'content': payload['content'],
+          'targetLanguage': payload['targetLanguage'],
+          'moduleId': payload['moduleId'],
+          'mode': payload['mode'],
+        }),
+      );
 
-        if (response.statusCode == 200) {
-          final Map<String, dynamic> data = jsonDecode(response.body);
-
-          for (final entry in data.entries) {
-            await _db.insertVocabulary({
-              'word': entry.key.toLowerCase(),
-              'status': entry.value.toString().toLowerCase(),
-              'language': language,
-              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-            });
-          }
-
-          return data.map(
-            (key, value) =>
-                MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
-          );
-        }
-      } catch (e, st) {
-        _logger.warning(
-          'VocabularyService: Failed to fetch from backend',
-          e,
-          st,
-        );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return true;
       }
+    } else if (action == 'analyze') {
+      _logger.info('SyncService: Triggering analysis for journal $journalId');
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/analyze'),
+        headers: headers,
+        body: jsonEncode({'journalId': journalId}),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
     }
 
-    return _getLocalVocabulary();
+    return true;
   }
 
-  Future<Map<String, String>> _getLocalVocabulary() async {
-    final items = await _db.getAllVocabularies();
-    final result = <String, String>{};
-    for (final item in items) {
-      result[item['word'] as String] = item['status'] as String;
-    }
-    return result;
-  }
+  Future<bool> _syncSrsMutation(
+    String action,
+    String itemId,
+    Map<String, dynamic> payload,
+  ) async {
+    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
+    final token = await tokenService.getToken();
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
 
-  Future<void> updateStatus(String word, String status, String language) async {
-    _logger.info(
-      'VocabularyService: Updating status for "$word" to "$status" locally',
-    );
-
-    await _db.insertVocabulary({
-      'word': word.toLowerCase(),
-      'status': status.toLowerCase(),
-      'language': language,
-      'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await _syncRepo.enqueueVocabUpdate(
-      word.toLowerCase(),
-      status.toLowerCase(),
-    );
-
-    _logger.info('VocabularyService: Status update queued for sync');
-  }
-
-  Future<void> markBatchKnown(List<String> words, String language) async {
-    _logger.info(
-      'VocabularyService: Marking ${words.length} words as known locally',
-    );
-
-    for (final word in words) {
-      await _db.insertVocabulary({
-        'word': word.toLowerCase(),
-        'status': 'known',
-        'language': language,
-        'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-      });
-
-      await _syncRepo.enqueueVocabUpdate(word.toLowerCase(), 'known');
+    if (action == 'review') {
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/srs/$itemId/review'),
+        headers: headers,
+        body: jsonEncode({'nextReviewDate': payload['nextReviewDate']}),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
     }
 
-    _logger.info('VocabularyService: Batch update queued for sync');
+    return true;
   }
 
-  Future<void> deleteWord(String word, String language) async {
-    _logger.info('VocabularyService: Deleting word "$word" locally');
-    await _db.deleteVocabulary(word.toLowerCase());
+  Future<bool> _syncVocabMutation(
+    String action,
+    String word,
+    Map<String, dynamic> payload,
+  ) async {
+    final tokenService = _ref.read(tokenServiceProvider(TokenType.auth));
+    final token = await tokenService.getToken();
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+
+    if (action == 'batch_update') {
+      final words = payload['words'] as List<dynamic>;
+      final targetLanguage = payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
+      final status = (payload['status'] as String).toUpperCase();
+
+      final response = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
+        headers: headers,
+        body: jsonEncode({
+          'words': words.map((w) => w.toString()).toList(),
+          'targetLanguage': targetLanguage,
+          'status': status,
+        }),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } else if (action == 'update') {
+      final targetLanguage = payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
+      final status = (payload['status'] as String).toUpperCase();
+
+      final response = await http.put(
+        Uri.parse('${AppConstants.baseUrl}/api/vocabulary'),
+        headers: headers,
+        body: jsonEncode({
+          'word': word,
+          'targetLanguage': targetLanguage,
+          'status': status,
+        }),
+      );
+      return response.statusCode >= 200 && response.statusCode < 300;
+    }
+
+    return true;
   }
 
-  Stream<Map<String, String>> watchVocabulary() {
-    return _db.watchAllVocabularies().map((items) {
-      final result = <String, String>{};
-      for (final item in items) {
-        result[item['word'] as String] = item['status'] as String;
-      }
-      return result;
-    });
-  }
+  DateTime? get lastSyncTime => _lastSyncTime;
 }
 
-final vocabularyServiceProvider = Provider(
-  (ref) => VocabularyService(
-    ref.watch(tokenServiceProvider(TokenType.auth)),
-    ref.watch(databaseProvider),
-    ref.watch(syncRepositoryProvider),
-    ref,
-  ),
-);
+final syncServiceProvider = Provider<SyncService>((ref) {
+  final syncRepo = ref.watch(syncRepositoryProvider);
+  final logger = ref.watch(loggerProvider);
+  final service = SyncService(syncRepo, ref, logger);
+  service.startListening();
+  return service;
+});
+
+final syncQueueCountProvider = FutureProvider<int>((ref) async {
+  final syncRepo = ref.watch(syncRepositoryProvider);
+  return await syncRepo.getPendingCount();
+});
+
+final lastSyncTimeProvider = StateProvider<DateTime?>((ref) => null);
+
+final isSyncingProvider = StateProvider<bool>((ref) => false);
 </file>
 
 <file path="lib/ui/screens/journal_editor_screen.dart">
@@ -13819,6 +13234,194 @@ class _ActivityTile extends StatelessWidget {
 }
 </file>
 
+<file path="lib/ui/screens/progress_screen.dart">
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
+import '../../providers/analytics_provider.dart';
+import '../widgets/analytics_components.dart';
+import '../../providers/user_provider.dart';
+
+class ProgressScreen extends ConsumerWidget {
+  const ProgressScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final analyticsAsync = ref.watch(analyticsDataProvider);
+    final goalProgressAsync = ref.watch(goalProgressProvider);
+    final heatmapAsync = ref.watch(activityHeatmapProvider);
+    final userProfile = ref.watch(userProfileProvider).value;
+
+    return GlassScaffold(
+      title: 'Analytics',
+      subtitle: 'Your fluency timeline',
+      showBackButton: true,
+      body: analyticsAsync.when(
+        loading: () => const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+          ),
+        ),
+        error: (e, _) => SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(
+              "Error: $e",
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ),
+        data: (analytics) {
+          final hasData = analytics.totalEntries > 0;
+
+          if (!hasData) {
+            return SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: GlassCard(
+                  padding: 32,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.show_chart,
+                        size: 60,
+                        color: Colors.white24,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        "No Progress Yet",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        "Write your first journal entry to start tracking.",
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                      const SizedBox(height: 24),
+                      LiquidButton(
+                        text: "Start Writing",
+                        onTap: () {} /* Nav to journal */,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return SliverList(
+            delegate: SliverChildListDelegate(
+              [
+                // 1. Dashboard Summary
+                Row(
+                  children: [
+                    Expanded(
+                      child: DashboardSummaryCard(
+                        label: "Total Entries",
+                        value: analytics.totalEntries.toString(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DashboardSummaryCard(
+                        label: "Avg. Score",
+                        value: "${analytics.averageScore.toStringAsFixed(1)}%",
+                      ),
+                    ),
+                  ],
+              ),
+                const SizedBox(height: 12),
+                if (userProfile != null)
+                  DashboardSummaryCard(
+                    label: "Streak",
+                    value: "${userProfile.currentStreak} Days",
+                    subValue: "Longest: ${userProfile.longestStreak}",
+                  ),
+              
+                const SizedBox(height: 24),
+
+                // 2. Weekly Goal & Study Time
+                if (goalProgressAsync.hasValue)
+                  GoalProgressWidget(progress: goalProgressAsync.value!),
+
+                const SizedBox(height: 12),
+
+                GlassCard(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Time Studied Today",
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            "Includes writing & review",
+                            style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        "${(analytics.studyTimeToday / 60).round()} min",
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // 3. Proficiency Chart (PRO only logic can be added here)
+                ProficiencyLineChart(
+                  history: analytics.proficiencyOverTime,
+                  prediction: analytics.predictedProficiencyOverTime,
+                ),
+
+                const SizedBox(height: 24),
+
+                // 4. SRS Forecast
+                SrsForecastWidget(counts: analytics.dueCounts),
+
+                const SizedBox(height: 24),
+
+                // 5. Heatmap
+                if (heatmapAsync.hasValue)
+                  SimpleHeatmap(data: heatmapAsync.value!),
+
+                const SizedBox(height: 40),
+              ].animate(interval: 100.ms).fadeIn().slideY(begin: 0.1, end: 0),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+</file>
+
 <file path="lib/ui/screens/study_screen.dart">
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -14534,115 +14137,703 @@ final aiServiceProvider = Provider(
 );
 </file>
 
-<file path="lib/ui/widgets/glass_scaffold.dart">
+<file path="lib/ui/screens/profile_screen.dart">
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../../providers/connectivity_provider.dart';
+import '../../services/sync_service.dart';
+import '../../models/user_profile.dart';
+import '../../theme/liquid_theme.dart';
+import '../../utils/constants.dart';
+import '../widgets/liquid_components.dart';
+import '../widgets/glass_scaffold.dart';
 
-class GlassScaffold extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final Widget body;
-  final Widget? floatingActionButton;
-  final bool? showBackButton;
-  final VoidCallback? onBackPressed;
-  final Future<void> Function()? onRefresh;
+class ProfileScreen extends ConsumerStatefulWidget {
+  const ProfileScreen({super.key});
 
-  const GlassScaffold({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.body,
-    this.floatingActionButton,
-    this.showBackButton,
-    this.onBackPressed,
-    this.onRefresh,
-  });
+  @override
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  Future<void> _launchURL(String urlString) async {
+    debugPrint("Launching URL: $urlString");
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width > 800;
-    final canPop = showBackButton ?? context.canPop();
-    final topPadding = MediaQuery.of(context).padding.top + 20;
+    final profileAsync = ref.watch(userProfileProvider);
 
-    final scrollView = CustomScrollView(
-      physics: onRefresh != null ? const AlwaysScrollableScrollPhysics() : null,
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              isDesktop ? 100 : 24,
-              topPadding,
-              24,
-              20,
+    return GlassScaffold(
+      title: 'Settings',
+      subtitle: 'Manage your profile and preferences',
+      showBackButton: true,
+      body: profileAsync.when(
+        loading: () => const SliverToBoxAdapter(
+          child: Center(child: CircularProgressIndicator(color: Colors.white)),
+        ),
+        error: (e, _) => SliverToBoxAdapter(child: Text("Error: $e")),
+        data: (profile) {
+          return SliverList(
+            delegate: SliverChildListDelegate([
+              const _SectionHeader(title: "Appearance"),
+              const _ThemeSwitcher(),
+
+              const SizedBox(height: 24),
+              const _SectionHeader(title: "Profile"),
+              _ProfileForm(profile: profile),
+
+              const SizedBox(height: 24),
+              const _SectionHeader(title: "Goals"),
+              _GoalsForm(profile: profile),
+
+              const SizedBox(height: 24),
+              const _SectionHeader(title: "Subscription"),
+              _SubscriptionSection(profile: profile, onManage: _launchURL),
+
+              const SizedBox(height: 24),
+              const _SectionHeader(title: "Data & Onboarding"),
+              _DataSection(
+                onReset: () async {
+                  await ref
+                      .read(userProfileProvider.notifier)
+                      .resetOnboarding();
+                },
+                onExport: () =>
+                    _launchURL('${AppConstants.baseUrl}/api/user/export'),
+              ),
+
+              const SizedBox(height: 24),
+              const _SectionHeader(title: "Sync Status"),
+              const _SyncStatusSection(),
+
+              const SizedBox(height: 24),
+              const _SectionHeader(title: "Account"),
+              _AccountSection(
+                onLogout: () => ref.read(authProvider.notifier).logout(),
+              ),
+
+              const SizedBox(height: 40),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        title.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.white54,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeSwitcher extends ConsumerWidget {
+  const _ThemeSwitcher();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentMode = ref.watch(themeProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return GlassCard(
+      padding: 16,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : Colors.black.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                if (canPop)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: GestureDetector(
-                      onTap: () {
-                        if (onBackPressed != null) {
-                          onBackPressed!();
-                        } else if (context.canPop()) {
-                          context.pop();
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_ios_new,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  ),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                _buildThemeOption(
+                  ref,
+                  "Light",
+                  ThemeMode.light,
+                  currentMode == ThemeMode.light,
+                  isDark,
                 ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
+                _buildThemeOption(
+                  ref,
+                  "Dark",
+                  ThemeMode.dark,
+                  currentMode == ThemeMode.dark,
+                  isDark,
+                ),
+                _buildThemeOption(
+                  ref,
+                  "System",
+                  ThemeMode.system,
+                  currentMode == ThemeMode.system,
+                  isDark,
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeOption(
+    WidgetRef ref,
+    String label,
+    ThemeMode mode,
+    bool isActive,
+    bool isDark,
+  ) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => ref.read(themeProvider.notifier).setTheme(mode),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? LiquidTheme.primaryAccent : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              color: isActive
+                  ? Colors.white
+                  : (isDark ? Colors.white38 : Colors.black54),
+            ),
+          ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          sliver: body,
+      ),
+    );
+  }
+}
+
+class _ProfileForm extends ConsumerWidget {
+  final UserProfile profile;
+  const _ProfileForm({required this.profile});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(userProfileProvider.notifier);
+
+    final availableLanguages = AppConstants.supportedLanguages;
+    final userLanguages = {
+      ...profile.languageProfiles.map((lp) => lp.language),
+      profile.defaultTargetLanguage,
+    }.toList();
+
+    return GlassCard(
+      child: Column(
+        children: [
+          _ReadOnlyRow(label: "Email", value: profile.email),
+          const SizedBox(height: 16),
+
+          LiquidDropdown<String>(
+            label: "Native Language",
+            value: profile.nativeLanguage ?? "english",
+            items: availableLanguages.map((l) => l['value']!).toList(),
+            onChanged: (val) => notifier.updateInfo(nativeLanguage: val),
+          ),
+          const SizedBox(height: 16),
+
+          LiquidDropdown<String>(
+            label: "Target Language",
+            value: profile.defaultTargetLanguage,
+            items: userLanguages,
+            onChanged: (val) => notifier.updateInfo(targetLanguage: val),
+          ),
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => const _AddLanguageDialog(),
+                );
+              },
+              child: const Text(
+                "Add Language",
+                style: TextStyle(color: LiquidTheme.primaryAccent),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+          LiquidDropdown<String>(
+            label: "Writing Style",
+            value: profile.writingStyle ?? "Casual",
+            items: AppConstants.writingStyles,
+            onChanged: (val) => notifier.updateInfo(writingStyle: val),
+          ),
+          const SizedBox(height: 16),
+          LiquidDropdown<String>(
+            label: "Writing Purpose",
+            value: profile.writingPurpose ?? "Personal",
+            items: AppConstants.writingPurposes,
+            onChanged: (val) => notifier.updateInfo(writingPurpose: val),
+          ),
+          const SizedBox(height: 16),
+          LiquidDropdown<String>(
+            label: "Proficiency",
+            value: profile.selfAssessedLevel ?? "Beginner",
+            items: AppConstants.proficiencyLevels,
+            onChanged: (val) => notifier.updateInfo(selfAssessedLevel: val),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GoalsForm extends ConsumerStatefulWidget {
+  final UserProfile profile;
+  const _GoalsForm({required this.profile});
+
+  @override
+  ConsumerState<_GoalsForm> createState() => _GoalsFormState();
+}
+
+class _GoalsFormState extends ConsumerState<_GoalsForm> {
+  late TextEditingController _dailyGoalController;
+  late TextEditingController _maxNewController;
+  late TextEditingController _maxReviewController;
+  int _weeklyActivities = 3;
+
+  @override
+  void initState() {
+    super.initState();
+    final g = widget.profile.goals;
+    _weeklyActivities = g?.weeklyActivities ?? 3;
+    _dailyGoalController = TextEditingController(
+      text: (g?.dailyStudyGoalInMinutes ?? 15).toString(),
+    );
+    _maxNewController = TextEditingController(
+      text: (g?.maxNewPerDay ?? 20).toString(),
+    );
+    _maxReviewController = TextEditingController(
+      text: (g?.maxReviewsPerDay ?? 50).toString(),
+    );
+  }
+
+  void _saveGoals() {
+    final newGoals = UserGoals(
+      weeklyActivities: _weeklyActivities,
+      dailyStudyGoalInMinutes: int.tryParse(_dailyGoalController.text) ?? 15,
+      maxNewPerDay: int.tryParse(_maxNewController.text) ?? 20,
+      maxReviewsPerDay: int.tryParse(_maxReviewController.text) ?? 50,
+    );
+    ref.read(userProfileProvider.notifier).updateGoals(newGoals);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Goals saved!")));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LiquidDropdown<int>(
+            label: "Weekly Activities Goal",
+            value: _weeklyActivities,
+            items: const [3, 5, 7, 10],
+            onChanged: (val) => setState(() => _weeklyActivities = val!),
+          ),
+          const SizedBox(height: 16),
+          GlassInput(
+            controller: _dailyGoalController,
+            hint: "Daily Study Goal (mins)",
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: GlassInput(
+                  controller: _maxNewController,
+                  hint: "Max New Cards",
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: GlassInput(
+                  controller: _maxReviewController,
+                  hint: "Max Reviews",
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          LiquidButton(text: "Save Goals", onTap: _saveGoals),
+        ],
+      ),
+    );
+  }
+}
+
+class _SubscriptionSection extends ConsumerWidget {
+  final UserProfile profile;
+  final Function(String) onManage;
+  const _SubscriptionSection({required this.profile, required this.onManage});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isPro = profile.subscriptionTier != "FREE";
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Current Plan: ${profile.subscriptionTier}",
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (isPro) ...[
+            Text(
+              "Status: ${profile.subscriptionStatus}",
+              style: const TextStyle(color: Colors.white70),
+            ),
+            if (profile.subscriptionPeriodEnd != null)
+              Text(
+                "Renews: ${profile.subscriptionPeriodEnd.toString().split(' ')[0]}",
+                style: const TextStyle(color: Colors.white70),
+              ),
+            const SizedBox(height: 16),
+            LiquidButton(
+              text: "Manage Subscription",
+              onTap: () async {
+                final url = await ref
+                    .read(userProfileProvider.notifier)
+                    .getManageSubscriptionUrl();
+                if (url != null) onManage(url);
+              },
+            ),
+          ] else ...[
+            const Text(
+              "Upgrade to Pro for unlimited features.",
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            LiquidButton(
+              text: "Upgrade Now",
+              onTap: () {
+                /* Nav to pricing */
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DataSection extends StatelessWidget {
+  final VoidCallback onReset;
+  final VoidCallback onExport;
+  const _DataSection({required this.onReset, required this.onExport});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      child: Column(
+        children: [
+          _ActionRow(
+            label: "Export My Data",
+            icon: Icons.download,
+            onTap: onExport,
+          ),
+          const Divider(color: Colors.white10),
+          _ActionRow(
+            label: "Restart Onboarding",
+            icon: Icons.refresh,
+            onTap: onReset,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountSection extends StatelessWidget {
+  final VoidCallback onLogout;
+  const _AccountSection({required this.onLogout});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      child: Column(
+        children: [
+          _ActionRow(label: "Log Out", icon: Icons.logout, onTap: onLogout),
+          const Divider(color: Colors.white10),
+          _ActionRow(
+            label: "Delete Account",
+            icon: Icons.delete_forever,
+            color: Colors.redAccent,
+            onTap: () {},
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReadOnlyRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _ReadOnlyRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white54, fontSize: 12),
         ),
-        // Spacer for Bottom Navigation Bar
-        const SliverToBoxAdapter(child: SizedBox(height: 120)),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 16)),
       ],
     );
+  }
+}
 
-    return Scaffold(
+class _ActionRow extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color? color;
+
+  const _ActionRow({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color ?? Colors.white70),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: color ?? Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            const Icon(Icons.chevron_right, color: Colors.white24, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddLanguageDialog extends ConsumerStatefulWidget {
+  const _AddLanguageDialog();
+  @override
+  ConsumerState<_AddLanguageDialog> createState() => _AddLanguageDialogState();
+}
+
+class _AddLanguageDialogState extends ConsumerState<_AddLanguageDialog> {
+  String? _selectedLanguage;
+  @override
+  Widget build(BuildContext context) {
+    final profile = ref.read(userProfileProvider).value!;
+    final existingLangs = {
+      ...profile.languageProfiles.map((lp) => lp.language),
+      if (profile.defaultTargetLanguage.isNotEmpty)
+        profile.defaultTargetLanguage,
+    };
+    final availableToAdd = AppConstants.supportedLanguages
+        .where((l) => !existingLangs.contains(l['value']))
+        .toList();
+
+    return Dialog(
       backgroundColor: Colors.transparent,
-      resizeToAvoidBottomInset: false,
-      floatingActionButton: floatingActionButton,
-      body: onRefresh != null
-          ? RefreshIndicator(
-              onRefresh: onRefresh!,
-              color: const Color(0xFF6C63FF),
-              backgroundColor: const Color(0xFF1A1A1A),
-              child: scrollView,
-            )
-          : scrollView,
+      child: GlassCard(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Add New Language",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (availableToAdd.isEmpty)
+              const Text(
+                "All languages added!",
+                style: TextStyle(color: Colors.white54),
+              )
+            else
+              LiquidDropdown<String>(
+                label: "Select Language",
+                value: _selectedLanguage ?? availableToAdd.first['value']!,
+                items: availableToAdd.map((l) => l['value']!).toList(),
+                onChanged: (val) => setState(() => _selectedLanguage = val),
+              ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    "Cancel",
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                LiquidButton(
+                  text: "Add",
+                  onTap: () {
+                    if (_selectedLanguage != null) {
+                      ref
+                          .read(userProfileProvider.notifier)
+                          .addLanguage(_selectedLanguage!);
+                      Navigator.pop(context);
+                    }
+                  },
+                ).animate(target: _selectedLanguage != null ? 1 : 0.5),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SyncStatusSection extends ConsumerWidget {
+  const _SyncStatusSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isOnline = ref.watch(connectivityProvider);
+    final syncQueueCount = ref.watch(syncQueueCountProvider);
+    final lastSyncTime = ref.watch(lastSyncTimeProvider);
+    final isSyncing = ref.watch(isSyncingProvider);
+
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isOnline ? Icons.cloud_done : Icons.cloud_off,
+                color: isOnline ? Colors.greenAccent : Colors.orange,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                isOnline ? "Online" : "Offline",
+                style: TextStyle(
+                  color: isOnline ? Colors.greenAccent : Colors.orange,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          syncQueueCount.when(
+            data: (count) => Row(
+              children: [
+                const Icon(Icons.sync, color: Colors.white54, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  isSyncing ? "Syncing $count changes..." : "Pending changes: $count",
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+            loading: () => const Text(
+              "Checking sync queue...",
+              style: TextStyle(color: Colors.white38),
+            ),
+            error: (_, _) => const Text(
+              "Unable to check sync status",
+              style: TextStyle(color: Colors.white38),
+            ),
+          ),
+          const SizedBox(height: 8),
+          lastSyncTime != null
+              ? Row(
+                  children: [
+                    const Icon(
+                      Icons.access_time,
+                      color: Colors.white38,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Last synced: ${DateFormat.yMd().add_jm().format(lastSyncTime)}",
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                )
+              : const Text(
+                  "Never synced",
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+          if (isOnline)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: LiquidButton(
+                text: isSyncing ? "Syncing..." : "Sync Now",
+                isLoading: isSyncing,
+                onTap: () => isSyncing
+                    ? null
+                    : ref.read(syncServiceProvider).syncPendingMutations(force: true),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -15555,412 +15746,387 @@ final srsServiceProvider = Provider(
 );
 </file>
 
-<file path="lib/ui/widgets/liquid_components.dart">
-// lib/ui/widgets/liquid_components.dart
-import 'dart:ui';
+<file path="lib/services/vocabulary_service.dart">
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'token_service.dart';
+import '../utils/constants.dart';
+import '../database/app_database.dart';
+import '../database/repositories/sync_repository.dart';
+import '../providers/connectivity_provider.dart';
+import 'logger_service.dart';
+import 'sync_service.dart';
+
+class VocabularyCounts {
+  final int total;
+  final int known;
+  final int learning;
+  final int unknown;
+
+  VocabularyCounts({
+    required this.total,
+    required this.known,
+    required this.learning,
+    required this.unknown,
+  });
+}
+
+class VocabularyPageResult {
+  final Map<String, String> items;
+  final int totalCount;
+  final int totalPages;
+  final int currentPage;
+  final VocabularyCounts counts;
+
+  VocabularyPageResult({
+    required this.items,
+    required this.totalCount,
+    required this.totalPages,
+    required this.currentPage,
+    required this.counts,
+  });
+}
+
+class VocabularyService {
+  final TokenService _authTokenService;
+  final AppDatabase _db;
+  final SyncRepository _syncRepo;
+  final Ref _ref;
+  late final LoggerService _logger;
+
+  VocabularyService(
+    this._authTokenService,
+    this._db,
+    this._syncRepo,
+    this._ref,
+  ) {
+    _logger = _ref.read(loggerProvider);
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await _authTokenService.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<Map<String, String>> getVocabulary(String language) async {
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (isOnline) {
+      try {
+        final response = await http.get(
+          Uri.parse(
+            '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language',
+          ),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> data = jsonDecode(response.body);
+
+          for (final entry in data.entries) {
+            await _db.insertVocabulary({
+              'word': entry.key.toLowerCase(),
+              'status': entry.value.toString().toLowerCase(),
+              'language': language,
+              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+            });
+          }
+
+          return data.map(
+            (key, value) =>
+                MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
+          );
+        }
+      } catch (e, st) {
+        _logger.warning(
+          'VocabularyService: Failed to fetch from backend',
+          e,
+          st,
+        );
+      }
+    }
+
+    return _getLocalVocabulary();
+  }
+
+  Future<Map<String, String>> _getLocalVocabulary() async {
+    final items = await _db.getAllVocabularies();
+    final result = <String, String>{};
+    for (final item in items) {
+      result[item['word'] as String] = item['status'] as String;
+    }
+    return result;
+  }
+
+  Future<VocabularyPageResult> getVocabularyPage(String language, {int page = 1, int limit = 50, String? status}) async {
+    final isOnline = _ref.read(connectivityProvider);
+
+    if (isOnline) {
+      try {
+        var url = '${AppConstants.baseUrl}/api/vocabulary?targetLanguage=$language&page=$page&limit=$limit';
+        if (status != null) {
+          url += '&status=$status';
+        }
+        
+        final response = await http.get(
+          Uri.parse(url),
+          headers: await _getHeaders(),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final items = data['items'] as Map<String, dynamic>;
+          final pagination = data['pagination'] as Map<String, dynamic>;
+          final counts = data['counts'] as Map<String, dynamic>;
+
+          for (final entry in items.entries) {
+            await _db.insertVocabulary({
+              'word': entry.key.toLowerCase(),
+              'status': entry.value.toString().toLowerCase(),
+              'language': language,
+              'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+            });
+          }
+
+          return VocabularyPageResult(
+            items: items.map((key, value) => MapEntry(key.toLowerCase(), value.toString().toLowerCase())),
+            totalCount: pagination['totalCount'] as int,
+            totalPages: pagination['totalPages'] as int,
+            currentPage: pagination['page'] as int,
+            counts: VocabularyCounts(
+              total: counts['total'] as int,
+              known: counts['known'] as int,
+              learning: counts['learning'] as int,
+              unknown: counts['unknown'] as int,
+            ),
+          );
+        }
+      } catch (e, st) {
+        _logger.warning('VocabularyService: Failed to fetch paginated vocabulary', e, st);
+      }
+    }
+
+    return _getLocalVocabularyPage(language);
+  }
+
+  Future<VocabularyPageResult> _getLocalVocabularyPage(String language) async {
+    final items = await _db.getAllVocabularies();
+    final result = <String, String>{};
+    int known = 0, learning = 0, unknown = 0;
+    
+    for (final item in items) {
+      final word = item['word'] as String;
+      final status = item['status'] as String;
+      result[word] = status;
+      if (status == 'known') known++;
+      else if (status == 'learning') learning++;
+      else unknown++;
+    }
+
+    return VocabularyPageResult(
+      items: result,
+      totalCount: items.length,
+      totalPages: 1,
+      currentPage: 1,
+      counts: VocabularyCounts(
+        total: items.length,
+        known: known,
+        learning: learning,
+        unknown: unknown,
+      ),
+    );
+  }
+
+  Future<void> updateStatus(String word, String status, String language) async {
+    _logger.info(
+      'VocabularyService: Updating status for "$word" to "$status" locally',
+    );
+
+    await _db.insertVocabulary({
+      'word': word.toLowerCase(),
+      'status': status.toLowerCase(),
+      'language': language,
+      'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    await _syncRepo.enqueueVocabUpdate(
+      word.toLowerCase(),
+      status,
+      language,
+    );
+
+    _logger.info('VocabularyService: Status update queued for sync');
+
+    if (_ref.read(connectivityProvider)) {
+      _logger.info('VocabularyService: Online, triggering immediate sync...');
+      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
+    }
+  }
+
+  Future<void> markBatchKnown(List<String> words, String language) async {
+    _logger.info(
+      'VocabularyService: Marking ${words.length} words as known locally',
+    );
+
+    final lowerWords = words.map((w) => w.toLowerCase()).toList();
+    
+    for (final word in lowerWords) {
+      await _db.insertVocabulary({
+        'word': word,
+        'status': 'known',
+        'language': language,
+        'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+      });
+    }
+
+    await _syncRepo.enqueueVocabBatchUpdate(lowerWords, 'known', language);
+
+    _logger.info('VocabularyService: Batch update queued for sync');
+
+    if (_ref.read(connectivityProvider)) {
+      _logger.info('VocabularyService: Online, triggering immediate sync...');
+      _ref.read(syncServiceProvider).syncPendingMutations(force: true);
+    }
+  }
+
+  Future<void> deleteWord(String word, String language) async {
+    _logger.info('VocabularyService: Deleting word "$word" locally');
+    await _db.deleteVocabulary(word.toLowerCase());
+  }
+
+  Stream<Map<String, String>> watchVocabulary() {
+    return _db.watchAllVocabularies().map((items) {
+      final result = <String, String>{};
+      for (final item in items) {
+        result[item['word'] as String] = item['status'] as String;
+      }
+      return result;
+    });
+  }
+}
+
+final vocabularyServiceProvider = Provider(
+  (ref) => VocabularyService(
+    ref.watch(tokenServiceProvider(TokenType.auth)),
+    ref.watch(databaseProvider),
+    ref.watch(syncRepositoryProvider),
+    ref,
+  ),
+);
+</file>
+
+<file path="lib/ui/widgets/glass_scaffold.dart">
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import '../../theme/liquid_theme.dart';
+import 'package:go_router/go_router.dart';
 
-// Logo Widget
-class AppLogo extends StatelessWidget {
-  final bool small;
-  final double? width;
+class GlassScaffold extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final bool? showBackButton;
+  final VoidCallback? onBackPressed;
+  final Future<void> Function()? onRefresh;
 
-  const AppLogo({super.key, this.small = false, this.width});
-
-  @override
-  Widget build(BuildContext context) {
-    return SvgPicture.asset(
-      small ? 'app_logo_small.svg' : 'app_logo.svg',
-      width: width ?? (small ? 40 : 120),
-      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-    );
-  }
-}
-
-// 1. The Static "Liquid" Background
-class LiquidBackground extends StatelessWidget {
-  final Widget child;
-  const LiquidBackground({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF16181F) : const Color(0xFFF3F3F3),
-        gradient: RadialGradient(
-          center: const Alignment(0.0, -0.5),
-          radius: 1.5,
-          colors: isDark
-              ? [const Color(0xFF21242D), const Color(0xFF16181F)]
-              : [const Color(0xFFFFFFFF), const Color(0xFFF3F3F3)],
-        ),
-      ),
-      child: child,
-    );
-  }
-}
-
-// 2. The High-Performance Glass Card
-class GlassCard extends StatelessWidget {
-  final Widget child;
-  final double padding;
-  final double borderRadius;
-
-  const GlassCard({
+  const GlassScaffold({
     super.key,
-    required this.child,
-    this.padding = 20.0,
-    this.borderRadius = 24.0,
+    required this.title,
+    required this.subtitle,
+    required this.body,
+    this.floatingActionButton,
+    this.showBackButton,
+    this.onBackPressed,
+    this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(32.0), // More rounded pill-style
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: EdgeInsets.all(padding),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32.0),
-            border: Border.all(
-              color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
-              width: 1.5,
+    final isDesktop = MediaQuery.of(context).size.width > 800;
+    final canPop = showBackButton ?? context.canPop();
+    final topPadding = MediaQuery.of(context).padding.top + 20;
+
+    final scrollView = CustomScrollView(
+      physics: onRefresh != null ? const AlwaysScrollableScrollPhysics() : null,
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              isDesktop ? 100 : 24,
+              topPadding,
+              24,
+              20,
             ),
-            color: isDark ? const Color(0xFF21242D).withOpacity(0.8) : Colors.white.withOpacity(0.8),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-// 3. Neumorphic/Glass Input Field
-class GlassInput extends StatelessWidget {
-  final String hint;
-  final bool isPassword;
-  final TextEditingController controller;
-  final ValueChanged<String>? onChanged;
-
-  const GlassInput({
-    super.key,
-    required this.hint,
-    required this.controller,
-    this.isPassword = false,
-    this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D0E12), // Recessed dark background
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: TextField(
-        controller: controller,
-        obscureText: isPassword,
-        onChanged: onChanged,
-        style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: isDark ? Colors.white.withOpacity(0.4) : Colors.black.withOpacity(0.4)),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 16,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// 4. Primary Liquid Button
-class LiquidButton extends StatelessWidget {
-  final String text;
-  final VoidCallback onTap;
-  final bool isLoading;
-
-  const LiquidButton({
-    super.key,
-    required this.text,
-    required this.onTap,
-    this.isLoading = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isLoading ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: double.infinity,
-        height: 54,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(27), // Full pill
-          color: LiquidTheme.primaryAccent,
-          boxShadow: [
-            BoxShadow(
-              color: LiquidTheme.primaryAccent.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Center(
-          child: isLoading
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (canPop)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: GestureDetector(
+                      onTap: () {
+                        if (onBackPressed != null) {
+                          onBackPressed!();
+                        } else if (context.canPop()) {
+                          context.pop();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
                   ),
-                )
-              : Text(
-                  text,
+                Text(
+                  title,
                   style: const TextStyle(
+                    fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    fontSize: 16,
                     color: Colors.white,
                   ),
                 ),
-        ),
-      ),
-    );
-  }
-}
-
-// 5. Liquid Dropdown Selection
-class LiquidDropdown<T> extends StatelessWidget {
-  final String label;
-  final T value;
-  final List<T> items;
-  final ValueChanged<T?> onChanged;
-
-  const LiquidDropdown({
-    super.key,
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bool valueExists = items.contains(value);
-    final T effectiveValue = valueExists ? value : items.first;
-
-    return GlassCard(
-      padding: 12,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white38,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 4),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<T>(
-              isExpanded: true,
-              value: effectiveValue,
-              dropdownColor: const Color(0xFF0A0A0A),
-              borderRadius: BorderRadius.circular(12),
-              icon: const Icon(
-                Icons.keyboard_arrow_down,
-                color: Colors.white24,
-              ),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-              items: items.map((T val) {
-                return DropdownMenuItem<T>(
-                  value: val,
-                  child: Text(val.toString()),
-                );
-              }).toList(),
-              onChanged: onChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-</file>
-
-<file path="lib/ui/widgets/liquid_navigation.dart">
-// lib/ui/widgets/liquid_navigation.dart
-import 'dart:ui';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import '../../theme/liquid_theme.dart';
-
-class LiquidNavigation extends StatelessWidget {
-  final StatefulNavigationShell navigationShell;
-
-  const LiquidNavigation({super.key, required this.navigationShell});
-
-  final List<({IconData icon, String label})> _items = const [
-    (icon: LucideIcons.map, label: 'Path'),           // Index 0
-    (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
-    (icon: LucideIcons.library, label: 'Library'),    // Index 2
-    (icon: LucideIcons.barChart2, label: 'Progress'), // Index 3
-    (icon: LucideIcons.user, label: 'Profile'),       // Index 4
-    (icon: LucideIcons.languages, label: 'Translator'), // Index 5
-   
-  ];
-
-  void _onTap(BuildContext context, int index) {
-    if (index < navigationShell.route.branches.length) {
-      navigationShell.goBranch(
-        index,
-        initialLocation: index == navigationShell.currentIndex,
-      );
-    } 
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final currentIndex = navigationShell.currentIndex;
-    final width = MediaQuery.of(context).size.width;
-    final isDesktop = width > 800;
-
-    return isDesktop
-        ? _buildSideRail(context, currentIndex)
-        : _buildBottomBar(context, currentIndex);
-  }
-
-  Widget _buildBottomBar(BuildContext context, int currentIndex) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 30, left: 20, right: 20),
-        height: 70,
-        decoration: _glassDecoration(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(35),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _items.asMap().entries.map((entry) {
-                return _NavItem(
-                  icon: entry.value.icon,
-                  label: entry.value.label,
-                  isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(context, entry.key),
-                );
-              }).toList(),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildSideRail(BuildContext context, int currentIndex) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(left: 30),
-        width: 80,
-        height: 500,
-        decoration: _glassDecoration(),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(40),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: _items.asMap().entries.map((entry) {
-                return _NavItem(
-                  icon: entry.value.icon,
-                  label: entry.value.label,
-                  isActive: currentIndex == entry.key,
-                  onTap: () => _onTap(context, entry.key),
-                  isVertical: true,
-                );
-              }).toList(),
-            ),
-          ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverToBoxAdapter(child: body),
         ),
-      ),
-    );
-  }
-
-  BoxDecoration _glassDecoration() {
-    return BoxDecoration(
-      color: const Color(0xFF1A1C24).withOpacity(0.9), // Match image nav bar
-      borderRadius: BorderRadius.circular(40),
-      border: Border.all(color: Colors.white.withOpacity(0.05), width: 1),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.5),
-          blurRadius: 30,
-          offset: const Offset(0, 10),
-        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],
     );
-  }
-}
 
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-  final bool isVertical;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-    this.isVertical = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: isActive
-            ? BoxDecoration(
-                color: const Color(0xFF0D0E12), // Dark inset pill
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: LiquidTheme.primaryAccent.withOpacity(0.5), width: 1),
-              )
-            : const BoxDecoration(color: Colors.transparent),
-        child: Icon(
-          icon,
-          color: isActive ? LiquidTheme.primaryAccent : Colors.white.withOpacity(0.4),
-          size: 24,
-        ),
-      ),
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D1117),
+      resizeToAvoidBottomInset: false,
+      floatingActionButton: floatingActionButton,
+      body: onRefresh != null
+          ? RefreshIndicator(
+              onRefresh: onRefresh!,
+              color: const Color(0xFF6C63FF),
+              backgroundColor: const Color(0xFF1A1A1A),
+              child: scrollView,
+            )
+          : scrollView,
     );
   }
 }
@@ -16703,6 +16869,474 @@ class UserService {
 final userServiceProvider = Provider(
   (ref) => UserService(ref, ref.watch(tokenServiceProvider(TokenType.auth))),
 );
+</file>
+
+<file path="lib/ui/widgets/liquid_components.dart">
+// lib/ui/widgets/liquid_components.dart
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import '../../theme/liquid_theme.dart';
+
+// Logo Widget
+class AppLogo extends StatelessWidget {
+  final bool small;
+  final double? width;
+
+  const AppLogo({super.key, this.small = false, this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    return SvgPicture.asset(
+      small ? 'app_logo_small.svg' : 'app_logo.svg',
+      width: width ?? (small ? 40 : 120),
+      colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+    );
+  }
+}
+
+  // 1. The Static "Liquid" Background
+  class LiquidBackground extends StatelessWidget {
+    final Widget child;
+    const LiquidBackground({super.key, required this.child});
+
+    @override
+    Widget build(BuildContext context) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F111A) : const Color(0xFFF3F3F3),
+          gradient: RadialGradient(
+            center: const Alignment(-0.5, -0.5),
+            radius: 2.0,
+            colors: isDark
+                ?[const Color(0xFF2C3248), const Color(0xFF0F111A)]
+                :[const Color(0xFFFFFFFF), const Color(0xFFE2E8F0)],
+          ),
+        ),
+        child: child,
+      );
+    }
+  }
+
+  // 2. The High-Performance Glass Card
+  class GlassCard extends StatelessWidget {
+    final Widget child;
+    final double padding;
+    final double borderRadius;
+
+    const GlassCard({
+      super.key,
+      required this.child,
+      this.padding = 20.0,
+      this.borderRadius = 24.0,
+    });
+
+    @override
+    Widget build(BuildContext context) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: Container(
+            padding: EdgeInsets.all(padding),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: Border.all(
+                color: isDark ? Colors.white.withOpacity(0.2) : Colors.black.withOpacity(0.1),
+                width: 1.0,
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark ?[
+                  Colors.white.withOpacity(0.15),
+                  Colors.white.withOpacity(0.05),
+                ] :[
+                  Colors.white.withOpacity(0.6),
+                  Colors.white.withOpacity(0.3),
+                ],
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      );
+    }
+  }
+
+  // 3. Neumorphic/Glass Input Field
+  class GlassInput extends StatelessWidget {
+    final String hint;
+    final bool isPassword;
+    final TextEditingController controller;
+    final ValueChanged<String>? onChanged;
+
+    const GlassInput({
+      super.key,
+      required this.hint,
+      required this.controller,
+      this.isPassword = false,
+      this.onChanged,
+    });
+
+    @override
+    Widget build(BuildContext context) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black.withOpacity(0.4) : Colors.white.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.1),
+                  width: 1.0,
+                ),
+              ),
+              child: TextField(
+                controller: controller,
+                obscureText: isPassword,
+                onChanged: onChanged,
+                style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                decoration: InputDecoration(
+                  hintText: hint,
+                  hintStyle: TextStyle(color: isDark ? Colors.white.withOpacity(0.4) : Colors.black.withOpacity(0.4)),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  // 4. Primary Liquid Button
+  class LiquidButton extends StatelessWidget {
+    final String text;
+    final VoidCallback onTap;
+    final bool isLoading;
+
+    const LiquidButton({
+      super.key,
+      required this.text,
+      required this.onTap,
+      this.isLoading = false,
+    });
+
+    @override
+    Widget build(BuildContext context) {
+      return GestureDetector(
+        onTap: isLoading ? null : onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: double.infinity,
+          height: 54,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(27),
+            color: LiquidTheme.primaryAccent,
+            border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.0),
+            boxShadow:[
+              BoxShadow(
+                color: LiquidTheme.primaryAccent.withOpacity(0.4),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Center(
+            child: isLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    text,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+          ),
+        ),
+      );
+    }
+  }
+
+// 5. Liquid Dropdown Selection
+class LiquidDropdown<T> extends StatelessWidget {
+  final String label;
+  final T value;
+  final List<T> items;
+  final ValueChanged<T?> onChanged;
+
+  const LiquidDropdown({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool valueExists = items.contains(value);
+    final T effectiveValue = valueExists ? value : items.first;
+
+    return GlassCard(
+      padding: 12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white38,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 4),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              isExpanded: true,
+              value: effectiveValue,
+              dropdownColor: const Color(0xFF0A0A0A),
+              borderRadius: BorderRadius.circular(12),
+              icon: const Icon(
+                Icons.keyboard_arrow_down,
+                color: Colors.white24,
+              ),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+              items: items.map((T val) {
+                return DropdownMenuItem<T>(
+                  value: val,
+                  child: Text(val.toString()),
+                );
+              }).toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+</file>
+
+<file path="lib/ui/widgets/liquid_navigation.dart">
+// lib/ui/widgets/liquid_navigation.dart
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+
+class LiquidNavigation extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
+
+  LiquidNavigation({super.key, required this.navigationShell});
+
+  final List<({IconData icon, String label})> _mainItems = const [
+    (icon: LucideIcons.map, label: 'Path'),           // Index 0
+    (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
+    (icon: LucideIcons.library, label: 'Library'),    // Index 2
+    (icon: LucideIcons.languages, label: 'Translator'), // Index 3
+  ];
+
+  void _onTap(BuildContext context, int index) {
+    if (index < navigationShell.route.branches.length) {
+      navigationShell.goBranch(
+        index,
+        initialLocation: index == navigationShell.currentIndex,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentIndex = navigationShell.currentIndex;
+    final width = MediaQuery.of(context).size.width;
+    final isDesktop = width > 800;
+
+    return isDesktop
+        ? _buildSideRail(context, currentIndex)
+        : _buildBottomBar(context, currentIndex);
+  }
+
+  Widget _buildBottomBar(BuildContext context, int currentIndex) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 30, left: 16, right: 16),
+        height: 85,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(100),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: _glassDecoration(),
+              child: Row(
+                children: [
+                  ..._mainItems.asMap().entries.map((entry) {
+                    return Expanded(
+                      child: _NavItem(
+                        icon: entry.value.icon,
+                        label: entry.value.label,
+                        isActive: currentIndex == entry.key,
+                        onTap: () => _onTap(context, entry.key),
+                      ),
+                    );
+                  }),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.more_horiz,
+                      label: 'More',
+                      isActive: currentIndex == 6,
+                      onTap: () => _onTap(context, 6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSideRail(BuildContext context, int currentIndex) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(left: 30),
+        width: 90,
+        height: 550,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(45),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: _glassDecoration(),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ..._mainItems.asMap().entries.map((entry) {
+                    return _NavItem(
+                      icon: entry.value.icon,
+                      label: entry.value.label,
+                      isActive: currentIndex == entry.key,
+                      onTap: () => _onTap(context, entry.key),
+                      isVertical: true,
+                    );
+                  }),
+                  _NavItem(
+                    icon: Icons.more_horiz,
+                    label: 'More',
+                    isActive: currentIndex == 6,
+                    onTap: () => _onTap(context, 6),
+                    isVertical: true,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration _glassDecoration() {
+    return BoxDecoration(
+      color: Colors.white.withOpacity(0.05), // Frost tint
+      border: Border.all(color: Colors.white.withOpacity(0.25), width: 1.5), // Specular rim light
+      borderRadius: BorderRadius.circular(100),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+  final bool isVertical;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+    this.isVertical = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        color: Colors.transparent,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutExpo,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(
+              color: isActive ? Colors.white.withOpacity(0.15) : Colors.transparent,
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: isActive ? Colors.white : Colors.white.withOpacity(0.7),
+                  size: 26,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.visible,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : Colors.white.withOpacity(0.7),
+                    fontSize: 10,
+                    letterSpacing: -0.2,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 </file>
 
 <file path="lib/main.dart">
@@ -17968,6 +18602,7 @@ import '../ui/screens/library_screen.dart';
 import '../ui/screens/book_reader_screen.dart';
 import '../ui/screens/vocabulary_screen.dart';
 import '../ui/screens/srs_items_screen.dart';
+import '../ui/screens/more_screen.dart';
 
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -18158,7 +18793,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 3: Progress
+          // Branch 3: Progress (hidden in nav, accessed via More)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -18167,7 +18802,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Branch 4: Profile
+          // Branch 4: Profile (hidden in nav, accessed via More)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -18176,7 +18811,6 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-
           // Branch 5: Translator
           StatefulShellBranch(
             routes: [
@@ -18187,21 +18821,38 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+          // Branch 6: More
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/more',
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const MoreScreen(), state),
+              ),
+            ],
+          ),
         ],
       ),
     ],
   );
 });
 
-// Helper for sleek 2026 transitions
+// Helper for iOS-style transitions
 CustomTransitionPage _buildFadePage(Widget child, GoRouterState state) {
   return CustomTransitionPage(
     key: ValueKey(state.uri.toString()),
     child: child,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return FadeTransition(opacity: animation, child: child);
+      const begin = Offset(1.0, 0.0);
+      const end = Offset.zero;
+      const curve = Curves.easeInOut;
+      var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+      return SlideTransition(
+        position: animation.drive(tween),
+        child: child,
+      );
     },
-    transitionDuration: const Duration(milliseconds: 400),
+    transitionDuration: const Duration(milliseconds: 300),
   );
 }
 
