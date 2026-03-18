@@ -16,6 +16,7 @@ class JournalRepository {
   final SyncRepository _syncRepo;
   late final LoggerService _logger;
   final _uuid = const Uuid();
+  static final Map<String, WritingAids> _aidsCache = {};
 
   JournalRepository(
     this._ref,
@@ -27,47 +28,51 @@ class JournalRepository {
   }
 
   Future<List<JournalEntry>> getHistory(String targetLanguage) async {
-    final isOnline = _ref.read(connectivityProvider);
+    _syncHistoryInBackground(targetLanguage);
+    return _localDataSource.getAllJournals();
+  }
 
-    if (isOnline) {
+  void _syncHistoryInBackground(String targetLanguage) {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
       try {
         final remoteData = await _remoteDataSource.getHistory(targetLanguage);
         for (final item in remoteData) {
           await _localDataSource.upsertFromRemote(item);
         }
-        return remoteData.map((e) => JournalEntry.fromJson(e)).toList();
-      } catch (e, st) {
-        _logger.warning(
-          'JournalRepository: Failed to fetch from backend',
-          e,
-          st,
+        _logger.info(
+          'JournalRepository: Background sync complete, ${remoteData.length} entries upserted',
         );
+      } catch (e, st) {
+        _logger.warning('JournalRepository: Background sync failed', e, st);
       }
-    }
-
-    return _localDataSource.getAllJournals();
+    });
   }
 
   Future<JournalEntry> getEntry(String id) async {
-    final isOnline = _ref.read(connectivityProvider);
+    _syncEntryInBackground(id);
+    final local = await _localDataSource.getJournalById(id);
+    if (local != null) return local;
+    throw Exception('Journal entry not found');
+  }
 
-    if (isOnline) {
+  void _syncEntryInBackground(String id) {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
       try {
         final data = await _remoteDataSource.getEntry(id);
         await _localDataSource.upsertFromRemote(data);
-        return JournalEntry.fromJson(data);
+        _logger.info(
+          'JournalRepository: Background sync complete for entry $id',
+        );
       } catch (e, st) {
         _logger.warning(
-          'JournalRepository: Failed to fetch entry $id from backend',
+          'JournalRepository: Background sync failed for entry $id',
           e,
           st,
         );
       }
-    }
-
-    final local = await _localDataSource.getJournalById(id);
-    if (local != null) return local;
-    throw Exception('Journal entry not found');
+    });
   }
 
   Future<JournalEntry> createEntry(
@@ -230,11 +235,20 @@ class JournalRepository {
     String topic,
     String targetLanguage,
   ) async {
+    final cacheKey = 'aids_${topic}_$targetLanguage';
+    
+    if (_aidsCache.containsKey(cacheKey)) {
+      return _aidsCache[cacheKey]!;
+    }
+    
     if (!_ref.read(connectivityProvider)) {
       throw Exception('Writing aids require internet connection');
     }
+    
     final data = await _remoteDataSource.getWritingAids(topic, targetLanguage);
-    return WritingAids.fromJson(data);
+    final result = WritingAids.fromJson(data);
+    _aidsCache[cacheKey] = result;
+    return result;
   }
 
   Stream<List<JournalEntry>> watchJournals() {

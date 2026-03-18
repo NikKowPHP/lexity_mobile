@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class AppDatabase {
   static Database? _database;
   static const String _dbName = 'lexity.db';
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
 
   final Map<String, StreamController<List<Map<String, dynamic>>>> _controllers =
       {};
@@ -60,6 +60,11 @@ class AppDatabase {
     return await openDatabase(
       path,
       version: _dbVersion,
+      onOpen: (db) async {
+        await db.rawQuery('PRAGMA journal_mode = WAL');
+        await db.rawQuery('PRAGMA synchronous = NORMAL');
+        await db.rawQuery('PRAGMA busy_timeout = 5000');
+      },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -105,12 +110,29 @@ class AppDatabase {
           )
         ''');
       }
+
+      if (oldVersion < 5) {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS sync_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT
+          )
+        ''');
+      }
     } catch (e) {
       // Ignore errors
     }
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE translation_cache (
+        cache_key TEXT PRIMARY KEY,
+        data_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+
     await db.execute('''
       CREATE TABLE users (
         id TEXT PRIMARY KEY,
@@ -216,6 +238,13 @@ class AppDatabase {
         activities_json TEXT,
         completed_at INTEGER,
         last_synced_at INTEGER
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE sync_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT
       )
     ''');
   }
@@ -353,11 +382,7 @@ class AppDatabase {
     final db = await database;
     final batch = db.batch();
     for (final item in items) {
-      batch.insert(
-        'books',
-        item,
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      batch.insert('books', item, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
     _notify('books');
@@ -607,9 +632,17 @@ class AppDatabase {
     return result;
   }
 
-  Future<List<Map<String, dynamic>>> getPendingMutations() async {
+  Future<List<Map<String, dynamic>>> getPendingMutations({
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final db = await database;
-    return await db.query('sync_queue', orderBy: 'created_at ASC');
+    return await db.query(
+      'sync_queue',
+      orderBy: 'created_at ASC',
+      limit: limit,
+      offset: offset,
+    );
   }
 
   Stream<List<Map<String, dynamic>>> watchPendingMutations() async* {
@@ -699,6 +732,23 @@ class AppDatabase {
     }
   }
 
+  // Translation Cache
+  Future<void> cacheTranslation(String key, Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert('translation_cache', {
+      'cache_key': key,
+      'data_json': jsonEncode(data),
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<Map<String, dynamic>?> getCachedTranslation(String key) async {
+    final db = await database;
+    final results = await db.query('translation_cache', where: 'cache_key = ?', whereArgs: [key]);
+    if (results.isEmpty) return null;
+    return jsonDecode(results.first['data_json'] as String);
+  }
+
   // Learning Modules Cache
   Future<void> cacheLearningModules(
     String language,
@@ -773,6 +823,27 @@ class AppDatabase {
       return [];
     }
   }
+
+  // Sync Metadata
+  Future<String?> getLastSyncTimestamp() async {
+    final db = await database;
+    final results = await db.query(
+      'sync_metadata',
+      where: 'key = ?',
+      whereArgs: ['last_synced_at'],
+    );
+    return results.isNotEmpty ? results.first['value'] as String? : null;
+  }
+
+  Future<void> updateLastSyncTimestamp(String timestamp) async {
+    final db = await database;
+    await db.insert('sync_metadata', {
+      'key': 'last_synced_at',
+      'value': timestamp,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<Database> getRawDatabase() async => await database;
 
   Future<void> close() async {
     for (final controller in _controllers.values) {

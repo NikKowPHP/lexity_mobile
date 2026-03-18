@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite/sqflite.dart';
+import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
+import '../data/datasources/remote/sync_remote_datasource.dart';
 import '../providers/connectivity_provider.dart';
 import '../services/logger_service.dart';
-import '../providers/user_provider.dart';
 import '../network/api_client.dart';
 
 class SyncService {
@@ -12,10 +15,23 @@ class SyncService {
   final ApiClient _client;
   final Ref _ref;
   final LoggerService _logger;
+  final AppDatabase _db;
+  final SyncRemoteDataSource _syncRemote;
   DateTime? _lastSyncTime;
   bool _syncLock = false;
 
-  SyncService(this._syncRepo, this._client, this._ref, this._logger);
+  static const int _batchSize = 50;
+  static const int _maxConcurrentBatches = 3;
+  static const int _maxRetries = 5;
+
+  SyncService(
+    this._syncRepo,
+    this._client,
+    this._ref,
+    this._logger,
+    this._db,
+    this._syncRemote,
+  );
 
   void startListening() {
     _ref.listen<bool>(connectivityProvider, (previous, next) {
@@ -42,114 +58,45 @@ class SyncService {
     _ref.read(isSyncingProvider.notifier).state = true;
     _logger.info('SyncService: Starting sync${force ? " (FORCED)" : ""}...');
 
-    List<int> successfullyProcessedIds = [];
-
     try {
-      // Compact the queue before processing to eliminate redundant mutations
       await _syncRepo.compactSyncQueue();
       _logger.info('SyncService: Queue compacted');
 
-      final mutations = await _syncRepo.getPendingMutations();
-      _logger.info('SyncService: Found ${mutations.length} pending mutations after compaction');
+      final totalCount = await _syncRepo.getPendingCount();
+      _logger.info(
+        'SyncService: Found $totalCount pending mutations after compaction',
+      );
 
-      if (mutations.isEmpty) {
+      if (totalCount == 0) {
         return;
       }
 
-      // Group mutations by entity_type, action, and relevant payload fields
-      final groups = _groupMutations(mutations);
-      _logger.info('SyncService: Grouped into ${groups.length} batches');
+      final batchCount = (totalCount / _batchSize).ceil();
+      final batches = <Future<void>>[];
 
-      bool stopProcessing = false;
-
-      // Process each group in order
-      for (final groupEntry in groups.entries) {
-        if (stopProcessing) break;
-
-        final key = groupEntry.key;
-        final groupMutations = groupEntry.value;
-        final entityType = key.entityType;
-        final action = key.action;
-
-        _logger.info('SyncService: Processing group $entityType:$action with ${groupMutations.length} items');
-
-        // Determine if this group should be batched
-        final shouldBatch = (entityType == 'vocabulary' && action == 'update') ||
-                           (entityType == 'srs' && action == 'review');
-
-        if (shouldBatch) {
-          // Try batch processing
-          final batchSuccess = await _processBatch(entityType, action, groupMutations);
-          if (batchSuccess) {
-            final batchIds = groupMutations.map((m) => m['id'] as int).toList();
-            successfullyProcessedIds.addAll(batchIds);
-            _logger.info('SyncService: Batch succeeded for $entityType:$action, processed ${batchIds.length} items');
-          } else {
-            _logger.warning('SyncService: Batch failed for $entityType:$action, falling back to individual processing');
-            // Fallback: process each mutation individually
-            for (final mutation in groupMutations) {
-              if (!_ref.read(connectivityProvider)) {
-                _logger.warning('SyncService: Lost network connection, pausing sync');
-                stopProcessing = true;
-                break;
-              }
-
-              final retryCount = mutation['retry_count'] as int? ?? 0;
-              if (retryCount > 0 && !force) {
-                final delay = _calculateBackoff(retryCount);
-                _logger.info('SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}');
-                await Future.delayed(delay);
-              }
-
-              final success = await _processMutation(mutation);
-              if (success) {
-                successfullyProcessedIds.add(mutation['id'] as int);
-              } else {
-                await _syncRepo.incrementRetryCount(mutation['id'] as int);
-                _logger.warning('SyncService: Individual mutation ${mutation['id']} failed after batch fallback. Stopping queue processing.');
-                stopProcessing = true;
-                break;
-              }
-            }
-          }
-        } else {
-          // Non-batchable: process individually
-          for (final mutation in groupMutations) {
-            if (!_ref.read(connectivityProvider)) {
-              _logger.warning('SyncService: Lost network connection, pausing sync');
-              stopProcessing = true;
-              break;
-            }
-
-            final retryCount = mutation['retry_count'] as int? ?? 0;
-            if (retryCount > 0 && !force) {
-              final delay = _calculateBackoff(retryCount);
-              _logger.info('SyncService: Applying backoff of ${delay.inSeconds}s for mutation ${mutation['id']}');
-              await Future.delayed(delay);
-            }
-
-            final success = await _processMutation(mutation);
-            if (success) {
-              successfullyProcessedIds.add(mutation['id'] as int);
-            } else {
-              await _syncRepo.incrementRetryCount(mutation['id'] as int);
-              _logger.warning('SyncService: Mutation ${mutation['id']} failed. Stopping queue processing to prevent infinite hammering.');
-              stopProcessing = true;
-              break;
-            }
-          }
-        }
+      for (int i = 0; i < batchCount && i < _maxConcurrentBatches; i++) {
+        final offset = i * _batchSize;
+        batches.add(_processBulkBatch(offset));
       }
 
-      // Bulk delete processed mutations
-      if (successfullyProcessedIds.isNotEmpty) {
-        await _syncRepo.removeMutations(successfullyProcessedIds);
-        _logger.info('SyncService: Removed ${successfullyProcessedIds.length} processed mutations from queue');
+      await Future.wait(batches);
+
+      final remainingCount = await _syncRepo.getPendingCount();
+      if (remainingCount > 0 && _ref.read(connectivityProvider)) {
+        _logger.info(
+          'SyncService: $remainingCount items remaining, scheduling next batch',
+        );
+        Future.delayed(const Duration(milliseconds: 100), () {
+          syncPendingMutations();
+        });
+        return;
       }
 
       _lastSyncTime = DateTime.now();
       _ref.read(lastSyncTimeProvider.notifier).state = _lastSyncTime;
       _logger.info('SyncService: Sync completed at $_lastSyncTime');
+    } on DioException catch (e) {
+      _logger.error('SyncService: Network error during bulk sync', e);
     } catch (e, st) {
       _logger.error('SyncService: Sync failed', e, st);
     } finally {
@@ -159,270 +106,245 @@ class SyncService {
     }
   }
 
-  Duration _calculateBackoff(int retryCount) {
-    final baseSeconds = 5;
-    final maxSeconds = 300;
-    final seconds = (baseSeconds * (1 << retryCount)).clamp(1, maxSeconds);
-    return Duration(seconds: seconds);
+  Future<void> _processBulkBatch(int offset) async {
+    _logger.info('SyncService: Processing bulk batch at offset $offset');
+
+    final mutations = await _syncRepo.getPendingMutations(
+      limit: _batchSize,
+      offset: offset,
+    );
+    if (mutations.isEmpty) {
+      return;
+    }
+
+    _logger.info(
+      'SyncService: Fetched ${mutations.length} ${mutations} mutations for bulk processing',
+    );
+
+    final ops = await Isolate.run(() => _prepareBulkPayload(mutations));
+
+    final options = Options(
+      sendTimeout: const Duration(seconds: 60),
+      receiveTimeout: const Duration(seconds: 60),
+    );
+
+    final response = await _client.post(
+      '/api/sync/bulk',
+      data: {'ops': ops},
+      options: options,
+    );
+
+    await _handleBulkResponse(response, mutations);
   }
 
-  // Group mutations by entity_type, action, and payload characteristics
-  Map<_GroupKey, List<Map<String, dynamic>>> _groupMutations(List<Map<String, dynamic>> mutations) {
-    final groups = <_GroupKey, List<Map<String, dynamic>>>{};
-    for (final mutation in mutations) {
-      final entityType = mutation['entity_type'] as String;
-      final action = mutation['action'] as String;
-      String? subKey;
-      
-      // For vocabulary updates, group by status to ensure uniform batch payloads
-      if (entityType == 'vocabulary' && action == 'update') {
-        final payload = jsonDecode(mutation['payload_json'] as String) as Map<String, dynamic>;
-        subKey = payload['status'] as String?;
+  static List<Map<String, dynamic>> _prepareBulkPayload(
+    List<Map<String, dynamic>> mutations,
+  ) {
+    return mutations.map((item) {
+      final timestampMs = int.parse(item['created_at'].toString());
+      final timestamp = DateTime.fromMillisecondsSinceEpoch(
+        timestampMs,
+      ).toUtc().toIso8601String();
+      return {
+        'cid': item['id'].toString(),
+        'type': item['entity_type'],
+        'action': item['action'],
+        'payload': jsonDecode(item['payload_json'] as String),
+        'timestamp': timestamp,
+      };
+    }).toList();
+  }
+
+  Future<void> _handleBulkResponse(
+    Response response,
+    List<Map<String, dynamic>> mutations,
+  ) async {
+    final results = response.data['results'] as List<dynamic>;
+    final successIds = <int>[];
+    final failedIds = <MapEntry<int, String?>>[];
+
+    for (final result in results) {
+      final cid = int.parse(result['cid'].toString());
+      final status = result['status'] as int;
+      final error = result['error'] as String?;
+
+      if (status >= 200 && status < 300) {
+        successIds.add(cid);
+      } else {
+        failedIds.add(MapEntry(cid, error));
       }
-      
-      final key = _GroupKey(entityType, action, subKey);
-      groups.putIfAbsent(key, () => []).add(mutation);
     }
-    return groups;
-  }
 
-  // Process a batch of mutations with a single API call
-  Future<bool> _processBatch(String entityType, String action, List<Map<String, dynamic>> mutations) async {
-    _logger.info('Batch Sync: $entityType:$action with ${mutations.length} items');
-    try {
-      switch (entityType) {
-        case 'vocabulary':
-          if (action == 'update') {
-            // All mutations in this group have the same status (due to grouping)
-            final firstPayload = jsonDecode(mutations.first['payload_json'] as String) as Map<String, dynamic>;
-            final status = firstPayload['status'] as String;
-            final targetLanguage = firstPayload['targetLanguage'] as String? ?? _ref.read(activeLanguageProvider);
-            final words = mutations.map((m) => m['entity_id'] as String).toList();
-            
-            // Extended timeout for batch requests
-            final options = Options(
-              sendTimeout: const Duration(seconds: 60),
-              receiveTimeout: const Duration(seconds: 60),
-            );
-            
-            final response = await _client.post(
-              '/api/vocabulary',
-              data: {
-                'words': words,
-                'targetLanguage': targetLanguage,
-                'status': status,
-              },
-              options: options,
-            );
-            final statusCode = response.statusCode;
-            return statusCode != null && statusCode >= 200 && statusCode < 300;
-          }
-          return true; // other actions not batchable
-          
-        case 'srs':
-          if (action == 'review') {
-            final reviews = mutations.map((m) {
-              final payload = jsonDecode(m['payload_json'] as String) as Map<String, dynamic>;
-              return {
-                'id': m['entity_id'],
-                'date': payload['nextReviewDate'],
-              };
-            }).toList();
-            
-            // Extended timeout for batch requests
-            final options = Options(
-              sendTimeout: const Duration(seconds: 60),
-              receiveTimeout: const Duration(seconds: 60),
-            );
-            
-            final response = await _client.post(
-              '/api/srs/batch-review',
-              data: {'reviews': reviews},
-              options: options,
-            );
-            final statusCode = response.statusCode;
-            return statusCode != null && statusCode >= 200 && statusCode < 300;
-          }
-          return true;
-          
-        default:
-          // For other types, treat as success to avoid infinite loops
-          return true;
+    if (successIds.isNotEmpty) {
+      await _syncRepo.removeMutations(successIds);
+      _logger.info(
+        'SyncService: Removed ${successIds.length} successful mutations from queue',
+      );
+    }
+
+    for (final failed in failedIds) {
+      final cid = failed.key;
+      final error = failed.value;
+      final mutation = mutations.firstWhere(
+        (m) => m['id'] == cid,
+        orElse: () => {},
+      );
+      final retryCount = mutation['retry_count'] as int? ?? 0;
+
+      if (retryCount >= _maxRetries) {
+        _logger.error(
+          'SyncService: Mutation $cid exceeded max retries ($_maxRetries). Dropping. Error: $error',
+        );
+        await _syncRepo.removeMutation(cid);
+      } else {
+        await _syncRepo.incrementRetryCount(cid);
+        _logger.warning(
+          'SyncService: Mutation $cid failed (status ${response.statusCode}), '
+          'retry count: ${retryCount + 1}. Error: $error',
+        );
       }
-    } catch (e) {
-      _logger.error('SyncService: Batch processing error for $entityType:$action', e);
-      return false;
     }
-  }
-
-  Future<bool> _processMutation(Map<String, dynamic> mutation) async {
-    final entityType = mutation['entity_type'] as String;
-    final action = mutation['action'] as String;
-    final entityId = mutation['entity_id'] as String;
-    final payload =
-        jsonDecode(mutation['payload_json'] as String) as Map<String, dynamic>;
-
-    try {
-      _logger.info('Syncing $entityType:$action for ID: $entityId');
-
-      switch (entityType) {
-        case 'book':
-          return await _syncBookMutation(action, entityId, payload);
-        case 'journal':
-          return await _syncJournalMutation(action, entityId, payload);
-        case 'srs':
-          return await _syncSrsMutation(action, entityId, payload);
-        case 'vocabulary':
-          return await _syncVocabMutation(action, entityId, payload);
-        default:
-          _logger.warning('SyncService: Unknown entity type: $entityType');
-          return true;
-      }
-    } catch (e) {
-      _logger.error('SyncService: Error processing mutation', e);
-      return false;
-    }
-  }
-
-  Future<bool> _syncBookMutation(
-    String action,
-    String bookId,
-    Map<String, dynamic> payload,
-  ) async {
-    if (action == 'update_progress') {
-      final response = await _client.put(
-        '/api/books/$bookId/progress',
-        data: {
-          'currentCfi': payload['currentCfi'],
-          'progressPct': payload['progressPct'],
-        },
-      );
-      final status = response.statusCode;
-      return status != null && status >= 200 && status < 300;
-    } else if (action == 'delete') {
-      final response = await _client.delete('/api/books/$bookId');
-      final status = response.statusCode;
-      return status != null && (status == 200 || status == 204);
-    }
-
-    return true;
-  }
-
-  Future<bool> _syncJournalMutation(
-    String action,
-    String journalId,
-    Map<String, dynamic> payload,
-  ) async {
-    if (action == 'create') {
-      final response = await _client.post(
-        '/api/journal',
-        data: {
-          'id': journalId,
-          'title': payload['title'],
-          'content': payload['content'],
-          'targetLanguage': payload['targetLanguage'],
-          'moduleId': payload['moduleId'],
-          'mode': payload['mode'],
-        },
-      );
-      final status = response.statusCode;
-      return status != null && status >= 200 && status < 300;
-    } else if (action == 'analyze') {
-      _logger.info('SyncService: Triggering analysis for journal $journalId');
-      final response = await _client.post(
-        '/api/analyze',
-        data: {'journalId': journalId},
-      );
-      final status = response.statusCode;
-      return status != null && status >= 200 && status < 300;
-    }
-
-    return true;
-  }
-
-  Future<bool> _syncSrsMutation(
-    String action,
-    String itemId,
-    Map<String, dynamic> payload,
-  ) async {
-    if (action == 'review') {
-      final response = await _client.put(
-        '/api/srs/$itemId/review',
-        data: {'nextReviewDate': payload['nextReviewDate']},
-      );
-      final status = response.statusCode;
-      return status != null && status >= 200 && status < 300;
-    }
-
-    return true;
-  }
-
-  Future<bool> _syncVocabMutation(
-    String action,
-    String word,
-    Map<String, dynamic> payload,
-  ) async {
-    final targetLanguage =
-        payload['targetLanguage'] ?? _ref.read(activeLanguageProvider);
-
-    if (action == 'batch_update') {
-      final words = payload['words'] as List<dynamic>;
-      final statusStr = payload['status'] as String;
-
-      final response = await _client.post(
-        '/api/vocabulary',
-        data: {
-          'words': words.map((w) => w.toString()).toList(),
-          'targetLanguage': targetLanguage,
-          'status': statusStr.toUpperCase(),
-        },
-      );
-      final status = response.statusCode;
-      return status != null && status >= 200 && status < 300;
-    } else if (action == 'update') {
-      final statusStr = payload['status'] as String;
-
-      final response = await _client.put(
-        '/api/vocabulary',
-        data: {
-          'word': word,
-          'targetLanguage': targetLanguage,
-          'status': statusStr.toUpperCase(),
-        },
-      );
-      final status = response.statusCode;
-      return status != null && status >= 200 && status < 300;
-    }
-
-    return true;
   }
 
   DateTime? get lastSyncTime => _lastSyncTime;
-}
 
-class _GroupKey {
-  final String entityType;
-  final String action;
-  final String? subKey;
+  Future<void> performDeltaSync() async {
+    if (!_ref.read(connectivityProvider)) return;
 
-  _GroupKey(this.entityType, this.action, [this.subKey]);
+    try {
+      final lastSync = await _db.getLastSyncTimestamp();
+      final delta = await _syncRemote.fetchDelta(lastSync);
 
-  @override
-  bool operator ==(Object other) =>
-      other is _GroupKey &&
-      other.entityType == entityType &&
-      other.action == action &&
-      other.subKey == subKey;
+      if (delta.changes.isEmpty) {
+        await _db.updateLastSyncTimestamp(delta.syncTimestamp);
+        _logger.info('SyncService: No remote changes found.');
+        return;
+      }
 
-  @override
-  int get hashCode => entityType.hashCode ^ action.hashCode ^ (subKey?.hashCode ?? 0);
+      // Offload transformation to Isolate to keep UI thread smooth
+      final processedChanges = await Isolate.run(
+        () => _processChanges(delta.changes),
+      );
+
+      final db = await _db.database;
+      await db.transaction((txn) async {
+        final batch = txn.batch();
+
+        for (final change in processedChanges) {
+          final table = change['table'] as String;
+          final type = change['type'] as String;
+          final data = change['data'] as Map<String, dynamic>;
+          final pkColumn = table == 'vocabularies' ? 'word' : 'id';
+
+          if (type == 'update') {
+            batch.insert(
+              table,
+              data,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          } else if (type == 'delete') {
+            batch.delete(
+              table,
+              where: '$pkColumn = ?',
+              whereArgs: [data[pkColumn]],
+            );
+          }
+        }
+
+        await batch.commit(noResult: true);
+        await _db.updateLastSyncTimestamp(delta.syncTimestamp);
+      });
+
+      _logger.info('SyncService: Applied ${delta.changes.length} changes.');
+
+      // Recursive call if server indicates more data (pagination)
+      if (delta.hasMore) {
+        await performDeltaSync();
+      }
+    } catch (e, st) {
+      _logger.error('SyncService: Incremental sync failed', e, st);
+    }
+  }
+
+  static List<Map<String, dynamic>> _processChanges(List<dynamic> changes) {
+    return changes.map((c) {
+      final entity = c['entity'] as String;
+      final type = c['type'] as String;
+      final rawData = c['data'] as Map<String, dynamic>;
+
+      String table;
+      Map<String, dynamic> mappedData;
+
+      switch (entity) {
+        case 'vocabulary':
+          table = 'vocabularies';
+          mappedData = {
+            'word': rawData['word'].toString().toLowerCase(),
+            'status': rawData['status'].toString().toLowerCase(),
+            'language': rawData['language'] ?? 'unknown',
+            'last_synced_at': DateTime.now().millisecondsSinceEpoch,
+          };
+          break;
+        case 'srs':
+          table = 'srs_items';
+          mappedData = {
+            'id': rawData['id'],
+            'front': rawData['frontContent'] ?? '',
+            'back': rawData['backContent'] ?? '',
+            'context': rawData['context'],
+            'type': rawData['type'] ?? 'TRANSLATION',
+            'next_review_date': DateTime.parse(
+              rawData['nextReviewDate'],
+            ).millisecondsSinceEpoch,
+          };
+          break;
+        case 'journal':
+          table = 'journals';
+          mappedData = {
+            'id': rawData['id'],
+            'content': rawData['content'] ?? '',
+            'title': rawData['topic']?['title'] ?? 'Free Write',
+            'created_at': DateTime.parse(
+              rawData['createdAt'],
+            ).millisecondsSinceEpoch,
+            'audio_url': rawData['audioUrl'],
+            'analysis_json': rawData['analysis'] != null
+                ? jsonEncode(rawData['analysis'])
+                : null,
+          };
+          break;
+        case 'book':
+          table = 'books';
+          mappedData = {
+            'id': rawData['id'],
+            'title': rawData['title'] ?? 'Unknown Title',
+            'author': rawData['author'],
+            'target_language': rawData['targetLanguage'] ?? 'spanish',
+            'storage_path': rawData['storagePath'] ?? '',
+            'cover_image_url': rawData['coverImageUrl'],
+            'current_cfi': rawData['currentCfi'],
+            'progress_pct': (rawData['progressPct'] ?? 0).toDouble(),
+            'created_at': DateTime.parse(
+              rawData['createdAt'],
+            ).millisecondsSinceEpoch,
+          };
+          break;
+        default:
+          throw Exception('Unknown entity type: $entity');
+      }
+
+      return {'table': table, 'type': type, 'data': mappedData};
+    }).toList();
+  }
 }
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final syncRepo = ref.watch(syncRepositoryProvider);
   final logger = ref.watch(loggerProvider);
   final client = ref.watch(apiClientProvider);
-  final service = SyncService(syncRepo, client, ref, logger);
+  final db = ref.watch(databaseProvider);
+  final syncRemote = ref.watch(syncRemoteDataSourceProvider);
+  final service = SyncService(syncRepo, client, ref, logger, db, syncRemote);
   service.startListening();
   return service;
 });
@@ -437,13 +359,15 @@ class LastSyncTimeNotifier extends Notifier<DateTime?> {
   DateTime? build() => null;
 }
 
-final lastSyncTimeProvider =
-    NotifierProvider<LastSyncTimeNotifier, DateTime?>(() => LastSyncTimeNotifier());
+final lastSyncTimeProvider = NotifierProvider<LastSyncTimeNotifier, DateTime?>(
+  () => LastSyncTimeNotifier(),
+);
 
 class IsSyncingNotifier extends Notifier<bool> {
   @override
   bool build() => false;
 }
 
-final isSyncingProvider =
-    NotifierProvider<IsSyncingNotifier, bool>(() => IsSyncingNotifier());
+final isSyncingProvider = NotifierProvider<IsSyncingNotifier, bool>(
+  () => IsSyncingNotifier(),
+);

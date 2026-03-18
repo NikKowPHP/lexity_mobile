@@ -23,50 +23,51 @@ class SrsRepository {
   }
 
   Future<List<SrsItem>> fetchDeck(String language) async {
-    final isOnline = _ref.read(connectivityProvider);
+    _syncDeckInBackground(language);
+    return _localDataSource.getDueItems();
+  }
 
-    if (isOnline) {
+  void _syncDeckInBackground(String language) {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
       try {
         final items = await _remoteDataSource.fetchDeck(language);
         for (final item in items) {
           await _localDataSource.upsertFromRemote(item.toJson());
         }
         _logger.info(
-          'SrsRepository: Deck fetched from backend, found ${items.length} items',
+          'SrsRepository: Background deck sync complete, ${items.length} items upserted',
         );
-        return items;
       } catch (e, st) {
-        _logger.warning(
-          'SrsRepository: Failed to fetch from backend, falling back to local',
-          e,
-          st,
-        );
+        _logger.warning('SrsRepository: Background deck sync failed', e, st);
       }
-    }
-
-    return _localDataSource.getDueItems();
+    });
   }
 
   Future<List<SrsItem>> fetchAllItems(String language) async {
-    final isOnline = _ref.read(connectivityProvider);
+    _syncAllItemsInBackground(language);
+    return _localDataSource.getAllItems();
+  }
 
-    if (isOnline) {
+  void _syncAllItemsInBackground(String language) {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
       try {
         final items = await _remoteDataSource.fetchAllItems(language);
         for (final item in items) {
           await _localDataSource.upsertFromRemote(item.toJson());
         }
-        return items;
+        _logger.info(
+          'SrsRepository: Background all-items sync complete, ${items.length} items upserted',
+        );
       } catch (e, st) {
         _logger.warning(
-          'SrsRepository: Failed to fetch all items from backend',
+          'SrsRepository: Background all-items sync failed',
           e,
           st,
         );
       }
-    }
-
-    return _localDataSource.getAllItems();
+    });
   }
 
   Future<void> reviewItem(String id, int quality) async {

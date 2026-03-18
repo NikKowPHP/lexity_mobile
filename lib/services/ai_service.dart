@@ -5,13 +5,15 @@ import '../models/translation_result.dart';
 import 'logger_service.dart';
 import '../providers/connectivity_provider.dart';
 import '../network/api_client.dart';
+import '../database/app_database.dart';
 
 class AIService {
   final Ref _ref;
-  late final LoggerService _logger;
   final ApiClient _client;
+  final AppDatabase _db;
+  late final LoggerService _logger;
 
-  AIService(this._ref, this._client) {
+  AIService(this._ref, this._client, this._db) {
     _logger = _ref.read(loggerProvider);
   }
 
@@ -88,8 +90,13 @@ class AIService {
       );
 
       if (!sourceDownloaded || !targetDownloaded) {
-        _logger.warning('AIService: ML Models not downloaded for offline use.');
-        return '[$targetLang translation unavailable (Models not downloaded)]';
+        final missingLangs = <String>[];
+        if (!sourceDownloaded) missingLangs.add(_getLanguageName(sourceCode));
+        if (!targetDownloaded) missingLangs.add(_getLanguageName(targetCode));
+        _logger.warning(
+          'AIService: ML Models not downloaded for: ${missingLangs.join(', ')}',
+        );
+        return 'Translation unavailable offline.\n\nTo translate without internet, please download the ${missingLangs.join(' and ')} language model in Settings.';
       }
 
       final translator = OnDeviceTranslator(
@@ -105,7 +112,7 @@ class AIService {
       return result;
     } catch (e) {
       _logger.warning('AIService: Offline ML translation setup failed: $e');
-      return '[$targetLang translation unavailable offline: "$text"]';
+      return 'Translation failed offline. Please connect to the internet for translations.';
     }
   }
 
@@ -136,6 +143,23 @@ class AIService {
       default:
         return TranslateLanguage.english;
     }
+  }
+
+  String _getLanguageName(String code) {
+    const Map<String, String> languageNames = {
+      'es': 'Spanish',
+      'fr': 'French',
+      'de': 'German',
+      'it': 'Italian',
+      'pt': 'Portuguese',
+      'zh': 'Chinese',
+      'ja': 'Japanese',
+      'ko': 'Korean',
+      'ru': 'Russian',
+      'ar': 'Arabic',
+      'en': 'English',
+    };
+    return languageNames[code] ?? code.toUpperCase();
   }
 
   String _mapToMlKitCode(String language) {
@@ -276,6 +300,54 @@ class AIService {
     };
   }
 
+  // NEW: Hybrid Stream Logic
+  Stream<Map<String, dynamic>> streamContextualTranslation({
+    required String selectedText,
+    required String context,
+    required String sourceLanguage,
+    required String targetLanguage,
+  }) async* {
+    final cacheKey = '${selectedText}_${context}_$targetLanguage'.hashCode
+        .toString();
+
+    // 1. Check Local Cache (Instant)
+    final cached = await _db.getCachedTranslation(cacheKey);
+    if (cached != null) {
+      yield {...cached, 'isFinal': true, 'source': 'cache'};
+      return;
+    }
+
+    // 2. Local ML Kit Preview (Phase 1: ~100ms)
+    final quickTranslation = await _getOfflineTranslation(
+      selectedText,
+      sourceLanguage,
+      targetLanguage,
+    );
+    yield {
+      'translation': quickTranslation,
+      'explanation': 'Lexi is analyzing nuance...',
+      'isFinal': false,
+      'source': 'mlkit',
+    };
+
+    // 3. Remote LLM Upgrade (Phase 2: ~1-2s)
+    if (_isOnline) {
+      try {
+        final remote = await contextualTranslate(
+          selectedText: selectedText,
+          context: context,
+          sourceLanguage: sourceLanguage,
+          targetLanguage: targetLanguage,
+          nativeLanguage: targetLanguage,
+        );
+        await _db.cacheTranslation(cacheKey, remote);
+        yield {...remote, 'isFinal': true, 'source': 'remote'};
+      } catch (e) {
+        _logger.error('Hybrid translation upgrade failed', e);
+      }
+    }
+  }
+
   Future<String> getTutorResponse({
     required String endpoint,
     required Map<String, dynamic> context,
@@ -360,5 +432,6 @@ class AIService {
 }
 
 final aiServiceProvider = Provider(
-  (ref) => AIService(ref, ref.watch(apiClientProvider)),
+  (ref) =>
+      AIService(ref, ref.watch(apiClientProvider), ref.watch(databaseProvider)),
 );

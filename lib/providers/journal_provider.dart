@@ -29,14 +29,17 @@ final journalHistoryStreamProvider =
 
 final journalHistoryProvider = journalHistoryStreamProvider;
 
-final journalDetailProvider = FutureProvider.autoDispose
-    .family<JournalEntry, String>((ref, id) async {
+final journalDetailProvider = StreamProvider.autoDispose
+    .family<JournalEntry, String>((ref, id) {
       final db = ref.watch(databaseProvider);
-      final journal = await db.getJournalById(id);
-      if (journal == null) {
-        throw Exception('Journal not found');
-      }
-      return _journalFromDb(journal);
+      final repo = ref.watch(journalRepositoryProvider);
+      // Trigger background sync without blocking the stream
+      repo.getEntry(id);
+      return db.watchAllJournals().map((journals) {
+        final map = journals.where((j) => j['id'] == id).firstOrNull;
+        if (map == null) throw Exception('Journal not found');
+        return _journalFromDb(map);
+      });
     });
 
 final suggestedTopicsProvider = FutureProvider.autoDispose<List<String>>((

@@ -23,35 +23,28 @@ class VocabularyRepository {
   }
 
   Future<Map<String, String>> getVocabulary(String language) async {
-    final localVocab = await _localDataSource.getVocabulary(language);
+    _syncVocabularyInBackground(language);
+    return _localDataSource.getVocabulary(language);
+  }
 
-    final isOnline = _ref.read(connectivityProvider);
-    if (!isOnline) {
-      return localVocab;
-    }
-
-    try {
-      final remoteVocab = await _remoteDataSource.getVocabulary(language);
-
-      for (final entry in remoteVocab.entries) {
-        await _localDataSource.upsertFromRemote({
-          'word': entry.key,
-          'status': entry.value,
-        }, language);
+  void _syncVocabularyInBackground(String language) {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
+      try {
+        final remoteVocab = await _remoteDataSource.getVocabulary(language);
+        for (final entry in remoteVocab.entries) {
+          await _localDataSource.upsertFromRemote({
+            'word': entry.key,
+            'status': entry.value,
+          }, language);
+        }
+        _logger.info(
+          'VocabularyRepository: Background sync complete, ${remoteVocab.length} words upserted',
+        );
+      } catch (e, st) {
+        _logger.warning('VocabularyRepository: Background sync failed', e, st);
       }
-
-      final mergedVocab = Map<String, String>.from(localVocab);
-      mergedVocab.addAll(remoteVocab);
-      return mergedVocab;
-    } catch (e, st) {
-      _logger.warning(
-        'VocabularyRepository: Failed to fetch from backend',
-        e,
-        st,
-      );
-    }
-
-    return localVocab;
+    });
   }
 
   Future<VocabularyPageResult> getVocabularyPage(
@@ -60,9 +53,23 @@ class VocabularyRepository {
     int limit = 50,
     String? status,
   }) async {
-    final isOnline = _ref.read(connectivityProvider);
+    _syncVocabularyPageInBackground(
+      language,
+      page: page,
+      limit: limit,
+      status: status,
+    );
+    return _getLocalVocabularyPage(language);
+  }
 
-    if (isOnline) {
+  void _syncVocabularyPageInBackground(
+    String language, {
+    int page = 1,
+    int limit = 50,
+    String? status,
+  }) {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
       try {
         final result = await _remoteDataSource.getVocabularyPage(
           language,
@@ -70,25 +77,23 @@ class VocabularyRepository {
           limit: limit,
           status: status,
         );
-
         for (final entry in result.items.entries) {
           await _localDataSource.upsertFromRemote({
             'word': entry.key,
             'status': entry.value,
           }, language);
         }
-
-        return result;
+        _logger.info(
+          'VocabularyRepository: Background page sync complete for page $page',
+        );
       } catch (e, st) {
         _logger.warning(
-          'VocabularyRepository: Failed to fetch paginated vocabulary',
+          'VocabularyRepository: Background page sync failed',
           e,
           st,
         );
       }
-    }
-
-    return _getLocalVocabularyPage(language);
+    });
   }
 
   Future<VocabularyPageResult> _getLocalVocabularyPage(String language) async {

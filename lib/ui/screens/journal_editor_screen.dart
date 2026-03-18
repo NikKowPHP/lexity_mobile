@@ -10,6 +10,7 @@ import '../../providers/path_provider.dart';
 import '../../services/ai_service.dart';
 import '../widgets/audio_recorder_widget.dart';
 import 'dart:async';
+import '../../data/repositories/journal_repository.dart';
 
 class JournalEditorScreen extends ConsumerStatefulWidget {
   final String? moduleId;
@@ -42,16 +43,28 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
     );
     _contentController = TextEditingController();
     _contentController.addListener(_resetStuckTimer);
+
+    // SPECULATIVE PRE-FETCH: Load Writing Aids immediately on entry
+    if (widget.initialTopic != null) {
+      ref.read(journalRepositoryProvider).getWritingAids(
+        widget.initialTopic!,
+        ref.read(activeLanguageProvider)
+      );
+    }
   }
 
   Timer? _stuckTimer;
   void _resetStuckTimer() {
     _stuckTimer?.cancel();
-    _stuckTimer = Timer(const Duration(seconds: 7), () async {
+    // Latency Hiding: Reduce wait to 4 seconds
+    _stuckTimer = Timer(const Duration(seconds: 4), () async {
       if (_contentController.text.isNotEmpty && mounted) {
+        // Show "Thinking" state in UI immediately
+        setState(() => _hints = ["Lexi is thinking..."]);
+        
         final suggestions = await ref.read(aiServiceProvider).generateStuckWriterSuggestions(
-          _titleController.text, 
-          _contentController.text, 
+          _titleController.text,
+          _contentController.text,
           ref.read(activeLanguageProvider)
         );
         _showNudge(suggestions);

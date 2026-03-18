@@ -11,16 +11,18 @@ final booksStreamProvider = StreamProvider.autoDispose<List<UserBook>>((ref) {
 
 final booksProvider = booksStreamProvider;
 
-final bookDetailProvider = FutureProvider.autoDispose.family<UserBook, String>((
+final bookDetailProvider = StreamProvider.autoDispose.family<UserBook, String>((
   ref,
   id,
-) async {
+) {
   final service = ref.watch(bookServiceProvider);
-  final book = await service.getBook(id);
-  if (book == null) {
-    throw Exception('Book not found');
-  }
-  return book;
+  // Trigger background sync without blocking the stream
+  service.getBook(id);
+  return service.watchBooks().map((books) {
+    final book = books.where((b) => b.id == id).firstOrNull;
+    if (book == null) throw Exception('Book not found');
+    return book;
+  });
 });
 
 class BookNotifier extends Notifier<AsyncValue<void>> {

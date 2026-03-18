@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/analytics.dart';
 import 'logger_service.dart';
@@ -29,7 +30,11 @@ class AnalyticsService {
       _logger.warning('AnalyticsService: Offline, trying cache');
       final cached = await _db.getCachedAnalytics(targetLanguage);
       if (cached != null) {
-        return AnalyticsData.fromJson(cached);
+        try {
+          return await Isolate.run(() => AnalyticsData.fromJson(cached));
+        } catch (_) {
+          return AnalyticsData.fromJson(cached);
+        }
       }
       throw Exception('No cached analytics available offline');
     }
@@ -44,16 +49,29 @@ class AnalyticsService {
       );
 
       if (response.statusCode == 200) {
-        final data = response.data;
-        await _db.cacheAnalytics(targetLanguage, data);
-        return AnalyticsData.fromJson(data);
+        final Map<String, dynamic> rawData = response.data;
+        await _db.cacheAnalytics(targetLanguage, rawData);
+        try {
+          return await Isolate.run(() => AnalyticsData.fromJson(rawData));
+        } catch (e, st) {
+          _logger.warning(
+            'AnalyticsService: fromJson isolate failed, falling back',
+            e,
+            st,
+          );
+          return AnalyticsData.fromJson(rawData);
+        }
       }
       throw Exception('Failed to load analytics');
     } catch (e) {
       _logger.warning('AnalyticsService: API failed, trying cache: $e');
       final cached = await _db.getCachedAnalytics(targetLanguage);
       if (cached != null) {
-        return AnalyticsData.fromJson(cached);
+        try {
+          return await Isolate.run(() => AnalyticsData.fromJson(cached));
+        } catch (_) {
+          return AnalyticsData.fromJson(cached);
+        }
       }
       rethrow;
     }

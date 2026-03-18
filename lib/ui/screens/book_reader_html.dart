@@ -21,11 +21,52 @@ const String bookReaderHtmlTemplate = """
   <script>
     let book;
     let rendition;
-    window.vocabMap = {}; // NEW: Global cache in JS
+    window.vocabMap = {};
     window.lastReportedText = "";
     window.currentTheme = null;
     window.currentThemeName = 'light';
     window.currentFontSize = 100;
+    window.portReady = false;
+
+    function throttle(func, limit) {
+      let inThrottle;
+      let lastArgs;
+      return function(...args) {
+        lastArgs = args;
+        if (!inThrottle) {
+          func.apply(this, args);
+          inThrottle = true;
+          setTimeout(() => { inThrottle = false; if (lastArgs) func.apply(this, lastArgs); }, limit);
+        }
+      };
+    }
+
+    function dispatchMessage(data) {
+      if (!data || !data.type) return;
+      switch (data.type) {
+        case 'UPDATE_THEME':
+          if (data.payload && window.applyTheme) {
+            window.applyTheme(data.payload.colors, data.payload.fontSize, data.payload.themeName);
+          }
+          break;
+        case 'SET_LOCATIONS':
+          if (data.payload && book && book.locations) {
+            try {
+              const locPayload = typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload;
+              book.locations.load(locPayload);
+              console.log("BookReader JS: Locations loaded via port. Count:", book.locations.length);
+            } catch (e) {
+              console.warn("BookReader JS: Failed to parse locations from port", e);
+            }
+          }
+          break;
+        case 'SHUTDOWN':
+          if (rendition) { rendition.destroy(); rendition = null; }
+          if (book) { book.destroy(); book = null; }
+          console.log("BookReader JS: Shutdown complete");
+          break;
+      }
+    }
 
     window.setReaderVisible = function(isVisible) {
       if (isVisible) document.body.classList.remove('loading');
@@ -53,8 +94,15 @@ const String bookReaderHtmlTemplate = """
             if (event.data === 'capture_port') {
                 window.vocabPort = event.ports[0];
                 window.vocabPort.onmessage = function(e) {
-                    if (e.data.type === 'vocab_delta') {
-                        window.applyVocabStyles(JSON.stringify(e.data.delta));
+                    if (e.data && e.data.type === 'vocab_delta') {
+                        window.applyVocabStyles(e.data.delta);
+                    } else if (e.data && e.data.type === 'PORT_READY') {
+                        window.portReady = true;
+                        if (window.vocabPort && window.vocabPort.flushQueue) {
+                            window.vocabPort.flushQueue();
+                        }
+                    } else {
+                        dispatchMessage(e.data);
                     }
                 };
             }
@@ -64,20 +112,25 @@ const String bookReaderHtmlTemplate = """
     window.applyVocabStyles = function(vocabMapJson) {
       if (!rendition) return;
       try {
-        const newEntries = JSON.parse(vocabMapJson);
+        const newEntries = typeof vocabMapJson === 'string' 
+          ? JSON.parse(vocabMapJson) 
+          : vocabMapJson;
         
         // Update our global cache so future pages use these styles
         Object.assign(window.vocabMap, newEntries);
         
-        // PERFORMANCE FIX: Only iterate over the DELTA words to avoid O(N) DOM scans
-        rendition.getContents().forEach(content => {
+        // PERFORMANCE FIX: Batch DOM updates in requestAnimationFrame
+        requestAnimationFrame(() => {
+          // Only iterate over the DELTA words to avoid O(N) DOM scans
+          rendition.getContents().forEach(content => {
             Object.keys(newEntries).forEach(function(word) {
-                var selector = '.lexity-word[data-word="' + word + '"]';
-                var spans = content.document.querySelectorAll(selector);
-                for (var i = 0; i < spans.length; i++) {
-                    spans[i].className = 'lexity-word ' + newEntries[word].toLowerCase();
-                }
+              var selector = '.lexity-word[data-word="' + word + '"]';
+              var spans = content.document.querySelectorAll(selector);
+              for (var i = 0; i < spans.length; i++) {
+                spans[i].className = 'lexity-word ' + newEntries[word].toLowerCase();
+              }
             });
+          });
         });
       } catch (e) {
         console.error("Error applying vocab styles:", e);
@@ -256,7 +309,6 @@ const String bookReaderHtmlTemplate = """
         const cfg = config || {};
         const url = cfg.url;
         const initialCfi = cfg.initialCfi || "";
-        const precomputedLocations = cfg.precomputedLocations ?? null;
         const themeColors = cfg.theme || null;
         const themeName = cfg.themeName || 'light';
         const fontSize = typeof cfg.fontSize === 'number' ? cfg.fontSize : 100;
@@ -284,14 +336,11 @@ const String bookReaderHtmlTemplate = """
         console.log("BookReader JS: Attempting to load EPUB from: " + url);
         console.log("BookReader JS: Received initialCfi: " + initialCfi);
         
-        // FIX: Add a small timeout to ensure the viewer container is fully painted in the DOM
         await new Promise(r => setTimeout(r, 100));
 
         book = ePub(url);
         
-        // NEW CODE START: Ensure book is ready before any location generation
         await book.ready;
-        // NEW CODE END
 
         book.opened.then(() => {
           console.log("BookReader JS: EPUB opened successfully");
@@ -306,15 +355,22 @@ const String bookReaderHtmlTemplate = """
           manager: "continuous" 
         });
 
-        // Force epub.js to allow scripts within its internal iframes.
         if (!rendition.settings.contents) {
             rendition.settings.contents = {};
         }
         rendition.settings.contents.allowScriptedContent = true;
         
+        const throttledReportProgress = throttle((resumeCfi, pct) => {
+          const sendProgress = () => callFlutter('onProgress', resumeCfi, pct);
+          if (typeof requestIdleCallback === 'function') {
+            requestIdleCallback(sendProgress, { timeout: 500 });
+          } else {
+            setTimeout(sendProgress, 0);
+          }
+        }, 1000);
+
         rendition.on("relocated", (location) => {
           if (location && location.start) {
-            // Prefer the end CFI when a spread is visible to avoid resuming one page back.
             const startCfi = location.start.cfi;
             const endCfi = location.end && location.end.cfi ? location.end.cfi : null;
             const resumeCfi = endCfi && endCfi !== startCfi ? endCfi : startCfi;
@@ -333,16 +389,7 @@ const String bookReaderHtmlTemplate = """
             }
             if (pct < 0) pct = 0;
             if (pct > 100) pct = 100;
-            console.log("[Lexity][Relocated]", {
-              startCfi,
-              endCfi,
-              resumeCfi,
-              progressCfi,
-              pct
-            });
-            callFlutter('onProgress', resumeCfi, pct);
-          } else {
-            console.warn("[Lexity][Relocated] Missing location/start", location);
+            throttledReportProgress(resumeCfi, pct);
           }
         });
 
@@ -481,42 +528,10 @@ const String bookReaderHtmlTemplate = """
           } 
         });
 
-        if (precomputedLocations && precomputedLocations.length > 5) {
-          // INSTANT: Load the locations generated by Next.js
-          let locPayload = precomputedLocations;
-          if (typeof precomputedLocations === "string") {
-            try {
-              locPayload = JSON.parse(precomputedLocations);
-            } catch (e) {
-              console.warn("BookReader JS: Failed to parse locations string, using raw string", e);
-              locPayload = precomputedLocations;
-            }
-          }
-          book.locations.load(locPayload);
-          console.log("BookReader JS: Locations loaded from server. Count:", book.locations.length);
-        } else {
-          console.log("BookReader JS: Locations missing. Generating...");
-          // Generate locations (1600 chars per section is our standard)
-          await book.locations.generate(1600);
-          const serialized = book.locations.save();
-          
-          // NEW CODE START: Validate that locations were actually generated
-          if (serialized && serialized !== "[]") {
-            console.log("BookReader JS: Locations generated. Sending to Flutter.");
-            callFlutter('onLocationsGenerated', serialized);
-          } else {
-            console.warn("BookReader JS: Generation returned empty locations.");
-          }
-          // NEW CODE END
-        }
-
-        console.log("BookReader JS: Book ready, now displaying at CFI: " + initialCfi);
-
         if (themeColors) {
           window.applyTheme(themeColors, fontSize, themeName);
         }
         
-        // Use promise-based display to ensure it completes
         await new Promise((resolve) => {
           const target = initialCfi && initialCfi.length > 0 ? initialCfi : undefined;
           rendition.display(target).then(() => {
@@ -525,8 +540,14 @@ const String bookReaderHtmlTemplate = """
           });
         });
         
-        // Wait for the display to fully settle before notifying Flutter
         await new Promise(r => setTimeout(r, 120));
+        
+        // Handle locations - wait for port handshake first if available
+        if (window.portReady) {
+          console.log("BookReader JS: Port ready, waiting for locations via port...");
+        } else {
+          console.log("BookReader JS: Port not ready yet, will generate if needed...");
+        }
         
         window.setReaderVisible(true);
         console.log("BookReader JS: Display completed, calling onReady");

@@ -37,17 +37,18 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     with WidgetsBindingObserver {
   InAppWebViewController? webViewController;
   WebMessagePort? _vocabPort;
+  Completer<void>? _portReadyCompleter;
   double _progress = 0.0;
   String? _lastCfi;
-  String? _currentCfi; // Track for page flips
+  String? _currentCfi;
   bool _isDownloading = false;
   bool _localFileReady = false;
   String _theme = 'light';
   double _fontSize = 100.0;
   List<dynamic> _toc = [];
   double _downloadProgress = 0.0;
-
   Timer? _progressDebounce;
+
   HttpServer? _localServer;
   int? _localPort;
 
@@ -73,6 +74,19 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     }[_theme]!;
   }
 
+  void _postToWeb(String type, dynamic payload) {
+    if (_vocabPort != null) {
+      try {
+        _vocabPort!.postMessage(
+          WebMessage(data: {'type': type, 'payload': payload}),
+        );
+      } catch (e) {
+        final logger = ref.read(loggerProvider);
+        logger.warning('BookReader: Failed to post message to web: $e');
+      }
+    }
+  }
+
   void _updateReaderStyles({bool force = false}) {
     final logger = ref.read(loggerProvider);
     if (!force && _appliedTheme == _theme && _appliedFontSize == _fontSize) {
@@ -85,11 +99,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     );
 
     final colors = _themeColors();
-
-    webViewController?.evaluateJavascript(
-      source:
-          "if (window.applyTheme) window.applyTheme(${jsonEncode(colors)}, $_fontSize, '$_theme');",
-    );
+    _postToWeb('UPDATE_THEME', {
+      'colors': colors,
+      'fontSize': _fontSize,
+      'themeName': _theme,
+    });
   }
 
   @override
@@ -247,10 +261,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
   void _handleImmediateSave() {
     if (!mounted || _lastCfi == null) return;
     if (!_canSaveToBackend) return;
-    if (_lastCfi == _lastSavedCfi) return; // Prevent duplicate network calls
+    if (_lastCfi == _lastSavedCfi) return;
 
     final logger = ref.read(loggerProvider);
-    _progressDebounce?.cancel();
     logger.info(
       'BookReader: Performing immediate progress save on exit/background. CFI: $_lastCfi',
     );
@@ -263,9 +276,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _handleImmediateSave(); // Catch-all guarantee
     _progressDebounce?.cancel();
+    _handleImmediateSave();
+    _postToWeb('SHUTDOWN', null);
     _vocabPort?.close().catchError((_) {});
+    _vocabPort = null;
     _localServer?.close(force: true);
     super.dispose();
   }
@@ -312,24 +327,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
       }
     });
 
-    ref.listen(vocabularyProvider, (previous, next) {
-      next.whenData((vocabMap) {
-        if (webViewController != null) {
-          final jsonStr = jsonEncode(vocabMap);
-          final jsString = jsonEncode(jsonStr);
-          webViewController?.evaluateJavascript(
-            source:
-                "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
-          );
-        }
-      });
-    });
-
     ref.listen(paginatedVocabularyProvider, (previous, next) {
       if (next.delta != null && _vocabPort != null) {
         _vocabPort!.postMessage(
           WebMessage(data: {'type': 'vocab_delta', 'delta': next.delta}),
         );
+        // Clear delta after sending to prevent duplicates
+        ref.read(paginatedVocabularyProvider.notifier).clearDelta();
       }
     });
 
@@ -488,10 +492,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                       webViewController = controller;
                       logger.info('BookReader: WebView created');
 
-                      // SETUP MESSAGE CHANNEL FOR VOCAB DELTAS
+                      _portReadyCompleter = Completer<void>();
+
                       final channel = await controller
                           .createWebMessageChannel();
                       _vocabPort = channel!.port1;
+
                       await controller.postWebMessage(
                         message: WebMessage(
                           data: 'capture_port',
@@ -506,6 +512,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
 
                           final cfi = args[0] as String;
                           final pct = (args[1] as num).toDouble();
+
+                          if (pct == 0 &&
+                              widget.initialProgress > 0 &&
+                              !_canSaveToBackend) {
+                            return;
+                          }
+
                           final acceptProgress =
                               _hasLocationsFromBackend ||
                               (pct >= 0 && pct < 100) ||
@@ -566,17 +579,18 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                             return;
                           }
 
-                          _progressDebounce?.cancel();
-                          _progressDebounce = Timer(
-                            const Duration(milliseconds: 1500),
-                            () {
-                              if (mounted && _lastCfi != _lastSavedCfi) {
-                                final progressToSave = acceptProgress
-                                    ? _progress
-                                    : _progress;
-                                logger.info(
-                                  'BookReader: Saving progress - CFI: $_lastCfi, Progress: $progressToSave% (acceptProgress: $acceptProgress)',
-                                );
+                          if (mounted && _lastCfi != _lastSavedCfi) {
+                            final progressToSave = acceptProgress
+                                ? _progress
+                                : _progress;
+                            logger.info(
+                              'BookReader: Saving progress - CFI: $_lastCfi, Progress: $progressToSave% (acceptProgress: $acceptProgress)',
+                            );
+                            _progressDebounce?.cancel();
+                            _progressDebounce = Timer(
+                              const Duration(milliseconds: 500),
+                              () {
+                                if (!mounted) return;
                                 ref
                                     .read(bookNotifierProvider.notifier)
                                     .updateProgress(
@@ -585,9 +599,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                                       progressToSave,
                                     );
                                 _lastSavedCfi = _lastCfi;
-                              }
-                            },
-                          );
+                              },
+                            );
+                          }
 
                           _updateReaderStyles();
                         },
@@ -618,9 +632,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
 
                       controller.addJavaScriptHandler(
                         handlerName: 'onReady',
-                        callback: (_) {
+                        callback: (_) async {
                           logger.info(
-                            'BookReader: onReady fired, enabling save',
+                            'BookReader: onReady fired, enabling save and sending vocabulary/locations',
                           );
                           if (mounted) {
                             setState(() {
@@ -630,6 +644,35 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                           }
 
                           _updateReaderStyles(force: true);
+
+                          if (!mounted) return;
+
+                          await _portReadyCompleter?.future;
+
+                          if (!mounted || _vocabPort == null) return;
+
+                          _postToWeb('PORT_READY', null);
+
+                          if (book.locations != null &&
+                              book.locations!.length > 5) {
+                            _postToWeb('SET_LOCATIONS', book.locations);
+                          }
+
+                          final vocabData = await ref
+                              .read(vocabularyProvider.notifier)
+                              .getVocabulary(book.targetLanguage);
+                          if (mounted &&
+                              _vocabPort != null &&
+                              vocabData.isNotEmpty) {
+                            _vocabPort!.postMessage(
+                              WebMessage(
+                                data: {
+                                  'type': 'vocab_delta',
+                                  'delta': vocabData,
+                                },
+                              ),
+                            );
+                          }
                         },
                       );
 
@@ -685,22 +728,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                       );
 
                       controller.addJavaScriptHandler(
-                        handlerName: 'onChapterReady',
-                        callback: (_) {
-                          // Ensure current vocab is sent to every new chapter as it loads
-                          final vocabData = ref.read(vocabularyProvider).value;
-                          if (vocabData != null) {
-                            final jsonStr = jsonEncode(vocabData);
-                            final jsString = jsonEncode(jsonStr);
-                            webViewController?.evaluateJavascript(
-                              source:
-                                  "if (window.applyVocabStyles) window.applyVocabStyles($jsString);",
-                            );
-                          }
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
                         handlerName: 'onTextSelected',
                         callback: (args) {
                           _showTranslationSheet(
@@ -748,29 +775,20 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                             ? (book.signedUrl ?? '')
                             : "http://localhost:$_localPort/books/${book.id}.epub";
 
-                        // NEW: Pass the locations string from the DB to the JS function
-                        final String locationsJson = book.locations ?? 'null';
-                        final vocabData = await ref
-                            .read(vocabularyProvider.notifier)
-                            .getVocabulary(book.targetLanguage);
-                        final String vocabJson = vocabData.isNotEmpty
-                            ? jsonEncode(vocabData)
-                            : 'null';
                         final colors = _themeColors();
 
                         logger.info(
-                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}, locations: ${book.locations != null ? "present (${book.locations!.length})" : "null"}, vocab: ${vocabData.isNotEmpty ? "present (${vocabData.length} words)" : "null"}',
+                          'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}',
                         );
                         final jsCall =
                             """
                           loadBook({
                             url: ${jsonEncode(bookUrl)},
                             initialCfi: ${jsonEncode(_lastCfi ?? '')},
-                            precomputedLocations: $locationsJson,
                             theme: ${jsonEncode(colors)},
                             themeName: ${jsonEncode(_theme)},
                             fontSize: $_fontSize,
-                            vocabMap: $vocabJson
+                            vocabMap: null
                           });
                         """;
                         await controller.evaluateJavascript(source: jsCall);
@@ -991,6 +1009,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
   void _triggerVocabReview(List<String> words) {
     if (!mounted || words.isEmpty) return;
 
+    final book = ref.read(bookDetailProvider(widget.bookId)).value;
+    if (book == null) return;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -1000,7 +1021,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
       ),
       builder: (context) => _VocabularyReviewSheet(
         words: words,
-        targetLanguage: ref.read(activeLanguageProvider),
+        targetLanguage: book.targetLanguage,
         webViewController: webViewController,
       ),
     );
@@ -1027,9 +1048,8 @@ class _TranslationBottomSheet extends ConsumerStatefulWidget {
 
 class _TranslationBottomSheetState
     extends ConsumerState<_TranslationBottomSheet> {
-  bool _isLoadingFast = true;
-  bool _isLoadingContext = false;
-  String? _fastTranslation;
+  StreamSubscription? _translationSub;
+  bool _isFinal = false;
   String? _contextualTranslation;
   String? _explanation;
   bool _isAdding = false;
@@ -1038,63 +1058,33 @@ class _TranslationBottomSheetState
   @override
   void initState() {
     super.initState();
-    _fetchFastTranslation();
+    _startHybridTranslation();
   }
 
-  Future<void> _fetchFastTranslation() async {
-    final logger = ref.read(loggerProvider);
-    try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.translate(
-        widget.selectedText,
-        widget.sourceLang,
-        widget.targetLang,
-      );
-      if (mounted) {
-        setState(() {
-          _fastTranslation = result;
-          _isLoadingFast = false;
+  void _startHybridTranslation() {
+    _translationSub = ref
+        .read(aiServiceProvider)
+        .streamContextualTranslation(
+          selectedText: widget.selectedText,
+          context: widget.contextText,
+          sourceLanguage: widget.sourceLang,
+          targetLanguage: widget.targetLang,
+        )
+        .listen((data) {
+          if (mounted) {
+            setState(() {
+              _contextualTranslation = data['translation'];
+              _explanation = data['explanation'];
+              _isFinal = data['isFinal'] ?? false;
+            });
+          }
         });
-      }
-    } catch (e, st) {
-      logger.error('BookReader: Fast translation failed', e, st);
-      if (mounted) {
-        setState(() {
-          _fastTranslation = "Failed to translate";
-          _isLoadingFast = false;
-        });
-      }
-    }
   }
 
-  Future<void> _fetchContextTranslation() async {
-    final logger = ref.read(loggerProvider);
-    logger.info('BookReader: Requesting context-aware translation');
-    setState(() => _isLoadingContext = true);
-    try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.contextualTranslate(
-        selectedText: widget.selectedText,
-        context: widget.contextText,
-        sourceLanguage: widget.sourceLang,
-        targetLanguage: widget.targetLang,
-        nativeLanguage: widget.targetLang,
-      );
-      if (mounted) {
-        setState(() {
-          _contextualTranslation = result['translation'];
-          _explanation = result['explanation'];
-          _isLoadingContext = false;
-        });
-      }
-    } catch (e, st) {
-      logger.error('BookReader: Context translation failed', e, st);
-      if (mounted) {
-        setState(() {
-          _isLoadingContext = false;
-        });
-      }
-    }
+  @override
+  void dispose() {
+    _translationSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _handleAddToDeck() async {
@@ -1103,7 +1093,7 @@ class _TranslationBottomSheetState
         .read(srsProvider.notifier)
         .addToDeckFromTranslation(
           front: widget.selectedText,
-          back: _contextualTranslation ?? _fastTranslation!,
+          back: _contextualTranslation!,
           language: widget.sourceLang,
           explanation: _explanation,
         );
@@ -1149,39 +1139,18 @@ class _TranslationBottomSheetState
           ),
           const SizedBox(height: 16),
 
-          if (_isLoadingFast)
-            const CircularProgressIndicator()
+          // Progress indicator while not final
+          if (!_isFinal)
+            const LinearProgressIndicator(
+              minHeight: 2,
+              color: LiquidTheme.primaryAccent,
+            )
           else
-            Text(
-              _fastTranslation ?? "",
-              style: const TextStyle(
-                fontSize: 18,
-                color: LiquidTheme.primaryAccent,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            const SizedBox(height: 2),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
 
-          if (_contextualTranslation == null && !_isLoadingContext)
-            OutlinedButton.icon(
-              onPressed: _fetchContextTranslation,
-              icon: const Icon(Icons.auto_awesome, color: Colors.white),
-              label: const Text(
-                "Deep Translate with Context",
-                style: TextStyle(color: Colors.white),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.white24),
-              ),
-            )
-          else if (_isLoadingContext)
-            const Center(
-              child: CircularProgressIndicator(
-                color: LiquidTheme.secondaryAccent,
-              ),
-            )
-          else ...[
+          if (_contextualTranslation != null)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -1206,8 +1175,16 @@ class _TranslationBottomSheetState
                   ),
                 ],
               ),
+            )
+          else
+            const SizedBox(
+              height: 100,
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: LiquidTheme.secondaryAccent,
+                ),
+              ),
             ),
-          ],
 
           const SizedBox(height: 24),
           SizedBox(
@@ -1220,7 +1197,7 @@ class _TranslationBottomSheetState
                 foregroundColor: _isAdded ? Colors.greenAccent : Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              onPressed: (_isLoadingFast || _isAdded || _isAdding)
+              onPressed: (!_isFinal || _isAdded || _isAdding)
                   ? null
                   : _handleAddToDeck,
               icon: _isAdding
@@ -1310,7 +1287,7 @@ class _VocabularyReviewSheetState
                 targetLanguage: widget.targetLanguage,
                 webViewController: widget.webViewController,
                 onMarkKnown: () {
-                  // 1. Update Remote + Provider state
+                  // Update Remote + Provider state (delta will be sent via port listener)
                   ref
                       .read(vocabularyProvider.notifier)
                       .updateWordStatus(
@@ -1318,18 +1295,11 @@ class _VocabularyReviewSheetState
                         'known',
                         widget.targetLanguage,
                       );
-
-                  // 2. Trigger JS to update the highlight color in the reader
-                  widget.webViewController?.evaluateJavascript(
-                    source:
-                        "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'known'}).replaceAll("'", "\\'")}');",
-                  );
-
-                  // 3. Remove from UI list
+                  // Remove from UI list
                   _removeWord(_pendingWords[i]);
                 },
                 onAddedToDeck: () {
-                  // Status will sync implicitly or can be updated directly
+                  // Update Remote + Provider state (delta will be sent via port listener)
                   ref
                       .read(vocabularyProvider.notifier)
                       .updateWordStatus(
@@ -1337,13 +1307,6 @@ class _VocabularyReviewSheetState
                         'learning',
                         widget.targetLanguage,
                       );
-
-                  // Update reader highlight via JS
-                  widget.webViewController?.evaluateJavascript(
-                    source:
-                        "window.applyVocabStyles('${jsonEncode({_pendingWords[i].toLowerCase(): 'learning'}).replaceAll("'", "\\'")}');",
-                  );
-
                   _removeWord(_pendingWords[i]);
                 },
               ),
@@ -1359,16 +1322,6 @@ class _VocabularyReviewSheetState
                     ref
                         .read(vocabularyProvider.notifier)
                         .markBatchKnown(_pendingWords, widget.targetLanguage);
-
-                    // Bulk update reader highlights
-                    final bulkHighlights = {
-                      for (var w in _pendingWords) w.toLowerCase(): 'known',
-                    };
-                    widget.webViewController?.evaluateJavascript(
-                      source:
-                          "window.applyVocabStyles('${jsonEncode(bulkHighlights).replaceAll("'", "\\'")}');",
-                    );
-
                     Navigator.pop(context);
                   },
                 ),

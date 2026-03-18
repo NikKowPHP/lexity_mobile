@@ -37,28 +37,25 @@ class BookRepository {
   }
 
   Future<List<UserBook>> getBooks() async {
-    final isOnline = _ref.read(connectivityProvider);
+    _syncBooksInBackground();
+    return _localDataSource.getAllBooks();
+  }
 
-    if (isOnline) {
+  void _syncBooksInBackground() {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
       try {
         final books = await _remoteDataSource.getBooks();
         for (final book in books) {
           await _localDataSource.upsertFromRemote(book as Map<String, dynamic>);
         }
         _logger.info(
-          'BookRepository: Successfully fetched ${books.length} books from backend',
+          'BookRepository: Background sync complete, ${books.length} books upserted',
         );
-        return books;
       } catch (e, st) {
-        _logger.warning(
-          'BookRepository: Failed to fetch from backend, falling back to local',
-          e,
-          st,
-        );
+        _logger.warning('BookRepository: Background sync failed', e, st);
       }
-    }
-
-    return _localDataSource.getAllBooks();
+    });
   }
 
   Future<List<UserBook>> syncBooks() async {
@@ -86,23 +83,25 @@ class BookRepository {
   }
 
   Future<UserBook?> getBook(String id) async {
-    final isOnline = _ref.read(connectivityProvider);
+    _syncBookInBackground(id);
+    return _localDataSource.getBookById(id);
+  }
 
-    if (isOnline) {
+  void _syncBookInBackground(String id) {
+    if (!_ref.read(connectivityProvider)) return;
+    Future(() async {
       try {
         final book = await _remoteDataSource.getBook(id);
         await _localDataSource.upsertFromRemote(book as Map<String, dynamic>);
-        return book;
+        _logger.info('BookRepository: Background sync complete for book $id');
       } catch (e, st) {
         _logger.warning(
-          'BookRepository: Failed to fetch book $id from backend',
+          'BookRepository: Background sync failed for book $id',
           e,
           st,
         );
       }
-    }
-
-    return _localDataSource.getBookById(id);
+    });
   }
 
   Future<void> updateProgress(String id, String cfi, double progressPct) async {

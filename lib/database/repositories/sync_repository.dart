@@ -21,8 +21,11 @@ class SyncRepository {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getPendingMutations() async {
-    return await _db.getPendingMutations();
+  Future<List<Map<String, dynamic>>> getPendingMutations({
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    return await _db.getPendingMutations(limit: limit, offset: offset);
   }
 
   Stream<List<Map<String, dynamic>>> watchPendingMutations() {
@@ -63,7 +66,11 @@ class SyncRepository {
       entityType: 'book',
       action: 'update_progress',
       entityId: bookId,
-      payload: {'currentCfi': cfi, 'progressPct': progressPct},
+      payload: {
+        'bookId': bookId,
+        'currentCfi': cfi,
+        'progressPct': progressPct,
+      },
     );
   }
 
@@ -105,21 +112,36 @@ class SyncRepository {
       entityType: 'srs',
       action: 'review',
       entityId: itemId,
-      payload: {'nextReviewDate': nextReviewDate.toIso8601String()},
+      payload: {
+        'itemId': itemId,
+        'nextReviewDate': nextReviewDate.toIso8601String(),
+      },
     );
   }
 
   // Vocabulary mutations
-  Future<void> enqueueVocabUpdate(String word, String status, String targetLanguage) async {
+  Future<void> enqueueVocabUpdate(
+    String word,
+    String status,
+    String targetLanguage,
+  ) async {
     await enqueueMutation(
       entityType: 'vocabulary',
       action: 'update',
       entityId: word,
-      payload: {'status': status.toUpperCase(), 'targetLanguage': targetLanguage},
+      payload: {
+        'word': word,
+        'status': status.toUpperCase(),
+        'targetLanguage': targetLanguage,
+      },
     );
   }
 
-  Future<void> enqueueVocabBatchUpdate(List<String> words, String status, String targetLanguage) async {
+  Future<void> enqueueVocabBatchUpdate(
+    List<String> words,
+    String status,
+    String targetLanguage,
+  ) async {
     await enqueueMutation(
       entityType: 'vocabulary',
       action: 'batch_update',

@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/app_database.dart';
 import '../database/repositories/sync_repository.dart';
@@ -73,10 +74,26 @@ class VocabularyService {
           });
         }
 
-        final backendVocab = data.map(
-          (key, value) =>
-              MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
-        );
+        Map<String, String> backendVocab;
+        try {
+          final Map<String, dynamic> rawData = data;
+          backendVocab = await Isolate.run(
+            () => rawData.map(
+              (key, value) =>
+                  MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
+            ),
+          );
+        } catch (e, st) {
+          _logger.warning(
+            'VocabularyService: getVocabulary isolate failed, falling back',
+            e,
+            st,
+          );
+          backendVocab = data.map(
+            (key, value) =>
+                MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
+          );
+        }
 
         final mergedVocab = Map<String, String>.from(localVocab);
         mergedVocab.addAll(backendVocab);
@@ -137,11 +154,29 @@ class VocabularyService {
             });
           }
 
-          return VocabularyPageResult(
-            items: items.map(
+          Map<String, String> mappedItems;
+          try {
+            final Map<String, dynamic> rawItems = items;
+            mappedItems = await Isolate.run(
+              () => rawItems.map(
+                (key, value) =>
+                    MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
+              ),
+            );
+          } catch (e, st) {
+            _logger.warning(
+              'VocabularyService: getVocabularyPage isolate failed, falling back',
+              e,
+              st,
+            );
+            mappedItems = items.map(
               (key, value) =>
                   MapEntry(key.toLowerCase(), value.toString().toLowerCase()),
-            ),
+            );
+          }
+
+          return VocabularyPageResult(
+            items: mappedItems,
             totalCount: pagination['totalCount'] as int,
             totalPages: pagination['totalPages'] as int,
             currentPage: pagination['page'] as int,

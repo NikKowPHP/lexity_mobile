@@ -47,7 +47,12 @@ class BookService {
             await _upsertBookLocal(item);
           }
 
-          return data.map((e) => UserBook.fromJson(e)).toList();
+          final List<dynamic> rawData = data;
+          return await Isolate.run(
+            () => rawData
+                .map((e) => UserBook.fromJson(e as Map<String, dynamic>))
+                .toList(),
+          );
         }
       } catch (e, st) {
         _logger.warning(
@@ -83,7 +88,12 @@ class BookService {
           await _upsertBookLocal(item);
         }
 
-        return data.map((e) => UserBook.fromJson(e)).toList();
+        final List<dynamic> rawData = data;
+        return await Isolate.run(
+          () => rawData
+              .map((e) => UserBook.fromJson(e as Map<String, dynamic>))
+              .toList(),
+        );
       } else {
         _logger.error(
           'BookService: Failed to sync books. Status: ${response.statusCode}',
@@ -226,10 +236,10 @@ class BookService {
 
     _logger.info('BookService: Extracting metadata and cover from EPUB');
     final bytes = await file.readAsBytes();
-    
+
     // OFFLOAD EPUB PARSING
     final epubBook = await Isolate.run(() => EpubReader.readBook(bytes));
-    
+
     final author = epubBook.author ?? "Unknown";
     final bookTitle = epubBook.title ?? title;
     final coverImage = epubBook.coverImage;
@@ -273,7 +283,9 @@ class BookService {
             }
 
             // OFFLOAD IMAGE ENCODING
-            final encodedCover = await Isolate.run(() => img.encodeJpg(coverImage));
+            final encodedCover = await Isolate.run(
+              () => img.encodeJpg(coverImage),
+            );
 
             final uploadRes = await http.put(
               Uri.parse(coverSignedUrl),
@@ -368,67 +380,62 @@ class BookService {
     try {
       _logger.info('BookService: Generating locations from EPUB chapters');
 
-      final locations = <Map<String, dynamic>>[];
       final chapters = epubBook.chapters;
-
       if (chapters.isEmpty) {
         _logger.warning('BookService: No chapters found in EPUB');
         return null;
       }
 
-      int totalChars = 0;
-      for (final chapter in chapters) {
-        final content = chapter.htmlContent ?? '';
-        totalChars += content.replaceAll(RegExp(r'\s+'), ' ').length;
-      }
+      // Extract only the HTML strings — EpubBook is not isolate-sendable
+      final chapterContents = chapters.map((c) => c.htmlContent ?? '').toList();
 
-      if (totalChars == 0) {
-        _logger.warning('BookService: No text content found in EPUB');
-        return null;
-      }
+      final result = await Isolate.run(() {
+        const charsPerLocation = 1600;
 
-      const charsPerLocation = 1600;
-      int currentChar = 0;
-      int spineIndex = 0;
-
-      for (final chapter in chapters) {
-        final content = chapter.htmlContent ?? '';
-        final plainText = content.replaceAll(RegExp(r'\s+'), ' ');
-
-        int offset = 0;
-        while (offset < plainText.length) {
-          final cfi = _generateCfi(spineIndex, offset);
-          final percentage = currentChar / totalChars;
-
-          locations.add({
-            'cfi': cfi,
-            'percentage': percentage,
-            'location': locations.length + 1,
-          });
-
-          offset += charsPerLocation;
-          currentChar += charsPerLocation;
-
-          if (currentChar > totalChars) break;
+        int totalChars = 0;
+        final plainTexts = chapterContents
+            .map((c) => c.replaceAll(RegExp(r'\s+'), ' '))
+            .toList();
+        for (final t in plainTexts) {
+          totalChars += t.length;
         }
-        spineIndex++;
-      }
 
-      if (locations.isEmpty) {
-        return null;
-      }
+        if (totalChars == 0) return null;
 
-      _logger.info('BookService: Generated ${locations.length} locations');
-      return jsonEncode(locations);
+        final locations = <Map<String, dynamic>>[];
+        int currentChar = 0;
+
+        for (int spineIndex = 0; spineIndex < plainTexts.length; spineIndex++) {
+          final plainText = plainTexts[spineIndex];
+          int offset = 0;
+          while (offset < plainText.length) {
+            final part = (offset ~/ 2) + 1;
+            final cfi = 'epubcfi(/6/$spineIndex/4/$part)';
+            locations.add({
+              'cfi': cfi,
+              'percentage': currentChar / totalChars,
+              'location': locations.length + 1,
+            });
+            offset += charsPerLocation;
+            currentChar += charsPerLocation;
+            if (currentChar > totalChars) break;
+          }
+        }
+
+        if (locations.isEmpty) return null;
+        return jsonEncode(locations);
+      });
+
+      if (result != null) {
+        _logger.info('BookService: Locations generated successfully');
+      } else {
+        _logger.warning('BookService: No text content found in EPUB');
+      }
+      return result;
     } catch (e, st) {
       _logger.error('BookService: Error generating locations', e, st);
       return null;
     }
-  }
-
-  String _generateCfi(int spineIndex, int offset) {
-    final part = (offset ~/ 2) + 1;
-    return 'epubcfi(/6/$spineIndex/4/$part)';
   }
 
   Future<void> _uploadBookOffline(
@@ -450,11 +457,11 @@ class BookService {
         final dir = await getApplicationDocumentsDirectory();
         final coverFilename = 'cover-$tempId.jpg';
         final coverFile = File('${dir.path}/$coverFilename');
-        
+
         // OFFLOAD IMAGE ENCODING
         final encoded = await Isolate.run(() => img.encodeJpg(coverImage));
         await coverFile.writeAsBytes(encoded);
-        
+
         coverLocalPath = coverFile.path;
       } catch (e) {
         _logger.warning('BookService: Failed to save cover locally', e);

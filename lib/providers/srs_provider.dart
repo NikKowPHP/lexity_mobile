@@ -45,6 +45,7 @@ class SrsNotifier extends Notifier<SrsState> {
   Future<void> loadDeck(String language) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
+      // fetchDeck now returns local data immediately and syncs in background
       final deck = await ref.read(srsRepositoryProvider).fetchDeck(language);
       state = state.copyWith(deck: deck, isLoading: false);
     } catch (e) {
@@ -55,6 +56,7 @@ class SrsNotifier extends Notifier<SrsState> {
   Future<void> loadAllItems(String language) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
+      // fetchAllItems now returns local data immediately and syncs in background
       final items = await ref
           .read(srsRepositoryProvider)
           .fetchAllItems(language);

@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/vocabulary_service.dart';
+import '../database/repositories/sync_repository.dart';
+import 'user_provider.dart';
 export '../services/vocabulary_service.dart' show VocabularyCounts;
 
 final vocabularyStreamProvider = StreamProvider<Map<String, String>>((ref) {
@@ -54,7 +56,8 @@ class VocabularyData {
 class VocabularyNotifier extends AsyncNotifier<Map<String, String>> {
   @override
   Future<Map<String, String>> build() async {
-    return await ref.read(vocabularyServiceProvider).getVocabulary('es');
+    final activeLang = ref.watch(activeLanguageProvider);
+    return await ref.read(vocabularyServiceProvider).getVocabulary(activeLang);
   }
 
   Stream<Map<String, String>> watchVocabulary() {
@@ -251,7 +254,11 @@ class PaginatedVocabularyNotifier extends Notifier<VocabularyData> {
     } catch (e) {
       final revertedItems = Map<String, String>.from(state.items)
         ..remove(wordLower);
-      state = state.copyWith(items: revertedItems, counts: state.counts, delta: null);
+      state = state.copyWith(
+        items: revertedItems,
+        counts: state.counts,
+        delta: null,
+      );
     }
   }
 
@@ -274,15 +281,34 @@ class PaginatedVocabularyNotifier extends Notifier<VocabularyData> {
           : state.counts.unknown,
     );
 
-    final delta = {wordLower: ''}; // Empty string indicates removal
+    final delta = {wordLower: ''};
     state = state.copyWith(items: newItems, counts: newCounts, delta: delta);
 
     try {
       await ref.read(vocabularyServiceProvider).deleteWord(wordLower, language);
+      await ref
+          .read(syncRepositoryProvider)
+          .enqueueMutation(
+            entityType: 'vocabulary',
+            action: 'delete',
+            entityId: wordLower,
+            payload: {'word': wordLower, 'targetLanguage': language},
+          );
     } catch (e) {
       final revertedItems = Map<String, String>.from(state.items)
         ..[wordLower] = removedStatus ?? '';
-      state = state.copyWith(items: revertedItems, counts: state.counts, delta: null);
+      state = state.copyWith(
+        items: revertedItems,
+        counts: state.counts,
+        delta: null,
+      );
+    }
+  }
+
+  // Clear the delta after it has been consumed to prevent duplicate sends
+  void clearDelta() {
+    if (state.delta != null) {
+      state = state.copyWith(delta: null);
     }
   }
 }

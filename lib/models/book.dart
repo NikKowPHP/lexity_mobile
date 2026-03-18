@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../utils/constants.dart';
 
 class UserBook {
@@ -39,10 +40,12 @@ class UserBook {
       currentCfi: json['currentCfi'],
       progressPct: (json['progressPct'] ?? 0).toDouble(),
       createdAt: DateTime.parse(json['createdAt']),
-      signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true 
-          ? '${AppConstants.baseUrl}${json['signedUrl']}' 
+      signedUrl: (json['signedUrl'] as String?)?.startsWith('/') == true
+          ? '${AppConstants.baseUrl}${json['signedUrl']}'
           : json['signedUrl'],
-      locations: json['locations'],
+      locations: json['locations'] is String
+          ? json['locations']
+          : (json['locations'] != null ? jsonEncode(json['locations']) : null),
     );
   }
 }

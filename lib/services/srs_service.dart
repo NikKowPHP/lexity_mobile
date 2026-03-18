@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/srs_item.dart';
 import '../database/app_database.dart';
@@ -213,7 +214,19 @@ class SrsService {
           for (final item in data) {
             await _upsertSrsItemLocal(item);
           }
-          return data.map((item) => SrsItem.fromJson(item)).toList();
+          final List<dynamic> rawData = data;
+          try {
+            return await Isolate.run(
+              () => rawData
+                  .map((item) => SrsItem.fromJson(item as Map<String, dynamic>))
+                  .toList(),
+            );
+          } catch (e, st) {
+            _logger.error('SrsService: fetchAllItems isolate failed', e, st);
+            return rawData
+                .map((item) => SrsItem.fromJson(item as Map<String, dynamic>))
+                .toList();
+          }
         }
       } catch (e, st) {
         _logger.warning(
