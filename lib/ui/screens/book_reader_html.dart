@@ -65,6 +65,28 @@ const String bookReaderHtmlTemplate = """
           if (book) { book.destroy(); book = null; }
           console.log("BookReader JS: Shutdown complete");
           break;
+        case 'command':
+          const cmd = data.payload && data.payload.cmd;
+          const cmdData = data.payload && data.payload.data;
+          switch (cmd) {
+            case 'loadBook':
+              if (cmdData && window.loadBook) {
+                window.loadBook(cmdData);
+              }
+              break;
+            case 'clearSelection':
+              if (typeof rendition !== 'undefined' && rendition) {
+                rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
+                window.lastReportedText = "";
+              }
+              break;
+            case 'displayHref':
+              if (cmdData && cmdData.href && typeof rendition !== 'undefined' && rendition) {
+                rendition.display(cmdData.href);
+              }
+              break;
+          }
+          break;
       }
     }
 

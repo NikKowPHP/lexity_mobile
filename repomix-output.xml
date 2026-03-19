@@ -2649,7 +2649,10 @@ class TokenRefreshInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    if (err.response?.statusCode == 401) {
+    // Don't intercept 401s for the refresh token endpoint itself to avoid loops
+    final isRefreshPath = err.requestOptions.path.contains('/api/auth/refresh');
+
+    if (err.response?.statusCode == 401 && !isRefreshPath) {
       _logger.info('TokenRefreshInterceptor: 401 detected, attempting refresh');
 
       if (_isRefreshing) {
@@ -16882,7 +16885,9 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> logout() async {
     _logger.info('AuthNotifier: logging out');
+    // Clear both tokens to prevent the "invalid token" loop
     await _authTokenService.clearToken();
+    await _refreshTokenService.clearToken();
     _cachedToken = null;
     state = state.copyWith(
       isAuthenticated: false,

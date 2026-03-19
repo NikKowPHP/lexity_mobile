@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/book.dart';
-import '../services/book_service.dart';
+import '../data/repositories/book_repository.dart';
 import '../services/logger_service.dart';
 
 final booksStreamProvider = StreamProvider.autoDispose<List<UserBook>>((ref) {
-  final service = ref.watch(bookServiceProvider);
+  final service = ref.watch(bookRepositoryProvider);
   return service.watchBooks();
 });
 
@@ -15,7 +15,7 @@ final bookDetailProvider = StreamProvider.autoDispose.family<UserBook, String>((
   ref,
   id,
 ) {
-  final service = ref.watch(bookServiceProvider);
+  final service = ref.watch(bookRepositoryProvider);
   // Trigger background sync without blocking the stream
   service.getBook(id);
   return service.watchBooks().map((books) {
@@ -39,7 +39,7 @@ class BookNotifier extends Notifier<AsyncValue<void>> {
     String targetLanguage,
     String title,
   ) async {
-    final service = ref.read(bookServiceProvider);
+    final service = ref.read(bookRepositoryProvider);
     _logger.info(
       'BookNotifier: Starting upload process for "$title" ($targetLanguage)',
     );
@@ -56,7 +56,7 @@ class BookNotifier extends Notifier<AsyncValue<void>> {
   }
 
   Future<void> deleteBook(String id) async {
-    final service = ref.read(bookServiceProvider);
+    final service = ref.read(bookRepositoryProvider);
     _logger.info('BookNotifier: Deleting book $id');
     try {
       await service.deleteBook(id);
@@ -67,7 +67,7 @@ class BookNotifier extends Notifier<AsyncValue<void>> {
   }
 
   Future<void> updateProgress(String id, String cfi, double progressPct) async {
-    final service = ref.read(bookServiceProvider);
+    final service = ref.read(bookRepositoryProvider);
     _logger.info('BookNotifier: Updating progress for $id to $progressPct%');
     try {
       await service.updateProgress(id, cfi, progressPct);
@@ -80,7 +80,7 @@ class BookNotifier extends Notifier<AsyncValue<void>> {
   }
 
   Future<void> updateLocations(String id, String locations) async {
-    final service = ref.read(bookServiceProvider);
+    final service = ref.read(bookRepositoryProvider);
     try {
       await service.updateLocations(id, locations);
       _logger.info('BookNotifier: Locations updated successfully for $id');
@@ -90,7 +90,7 @@ class BookNotifier extends Notifier<AsyncValue<void>> {
   }
 
   Future<void> refreshBooks() async {
-    final service = ref.read(bookServiceProvider);
+    final service = ref.read(bookRepositoryProvider);
     _logger.info('BookNotifier: Starting book refresh');
     state = const AsyncValue.loading();
     try {

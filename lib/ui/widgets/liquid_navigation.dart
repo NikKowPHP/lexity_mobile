@@ -10,10 +10,10 @@ class LiquidNavigation extends StatelessWidget {
   const LiquidNavigation({super.key, required this.navigationShell});
 
   final List<({IconData icon, String label})> _mainItems = const [
-    (icon: LucideIcons.map, label: 'Path'), // Index 0
-    (icon: LucideIcons.brainCircuit, label: 'Study'), // Index 1
-    (icon: LucideIcons.library, label: 'Library'), // Index 2
-    (icon: LucideIcons.languages, label: 'Translator'), // Index 3
+    (icon: LucideIcons.map, label: 'Path'),
+    (icon: LucideIcons.brainCircuit, label: 'Study'),
+    (icon: LucideIcons.library, label: 'Library'),
+    (icon: LucideIcons.languages, label: 'Translator'),
   ];
 
   void _onTap(BuildContext context, int index) {
@@ -30,92 +30,59 @@ class LiquidNavigation extends StatelessWidget {
     final currentIndex = navigationShell.currentIndex;
     final width = MediaQuery.of(context).size.width;
     final isDesktop = width > 800;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return isDesktop
-        ? _buildSideRail(context, currentIndex)
-        : _buildBottomBar(context, currentIndex);
+        ? _buildSideRail(context, currentIndex, isDark)
+        : _buildBottomBar(context, currentIndex, isDark);
   }
 
-  Widget _buildBottomBar(BuildContext context, int currentIndex) {
+  Widget _buildBottomBar(BuildContext context, int currentIndex, bool isDark) {
     return Align(
       alignment: Alignment.bottomCenter,
-      child: RepaintBoundary(
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 30, left: 16, right: 16),
-          height: 85,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(100),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: _glassDecoration(),
-                child: Row(
-                  children: [
-                    ..._mainItems.asMap().entries.map((entry) {
-                      return Expanded(
-                        child: _NavItem(
-                          icon: entry.value.icon,
-                          label: entry.value.label,
-                          isActive: currentIndex == entry.key,
-                          onTap: () => _onTap(context, entry.key),
-                        ),
-                      );
-                    }),
-                    Expanded(
-                      child: _NavItem(
-                        icon: Icons.more_horiz,
-                        label: 'More',
-                        isActive: currentIndex == 4,
-                        onTap: () => _onTap(context, 4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 34, left: 20, right: 20),
+        height: 80,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(40),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
+              blurRadius: 30,
+              offset: const Offset(0, 15),
             ),
-          ),
+          ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSideRail(BuildContext context, int currentIndex) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: RepaintBoundary(
-        child: Container(
-          margin: const EdgeInsets.only(left: 30),
-          width: 90,
-          height: 550,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(45),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: _glassDecoration(),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ..._mainItems.asMap().entries.map((entry) {
-                      return _NavItem(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 45, sigmaY: 45), // Increased blur
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: _glassDecoration(isDark),
+              child: Row(
+                children: [
+                  ..._mainItems.asMap().entries.map((entry) {
+                    return Expanded(
+                      child: _NavItem(
                         icon: entry.value.icon,
                         label: entry.value.label,
                         isActive: currentIndex == entry.key,
                         onTap: () => _onTap(context, entry.key),
-                        isVertical: true,
-                      );
-                    }),
-                    _NavItem(
+                        isDark: isDark,
+                      ),
+                    );
+                  }),
+                  Expanded(
+                    child: _NavItem(
                       icon: Icons.more_horiz,
                       label: 'More',
                       isActive: currentIndex == 4,
                       onTap: () => _onTap(context, 4),
-                      isVertical: true,
+                      isDark: isDark,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -124,14 +91,81 @@ class LiquidNavigation extends StatelessWidget {
     );
   }
 
-  BoxDecoration _glassDecoration() {
+  Widget _buildSideRail(BuildContext context, int currentIndex, bool isDark) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(left: 30),
+        width: 90,
+        height: 500,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(45),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
+              blurRadius: 30,
+              offset: const Offset(10, 0),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(45),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: _glassDecoration(isDark),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ..._mainItems.asMap().entries.map((entry) {
+                    return _NavItem(
+                      icon: entry.value.icon,
+                      label: entry.value.label,
+                      isActive: currentIndex == entry.key,
+                      onTap: () => _onTap(context, entry.key),
+                      isVertical: true,
+                      isDark: isDark,
+                    );
+                  }),
+                  _NavItem(
+                    icon: Icons.more_horiz,
+                    label: 'More',
+                    isActive: currentIndex == 4,
+                    onTap: () => _onTap(context, 4),
+                    isVertical: true,
+                    isDark: isDark,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration _glassDecoration(bool isDark) {
     return BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.05), // Frost tint
+      color: isDark
+          ? Colors.white.withOpacity(0.08)
+          : Colors.white.withOpacity(
+              0.6,
+            ), // Brighter in light mode for contrast
       border: Border.all(
-        color: Colors.white.withValues(alpha: 0.25),
+        color: isDark
+            ? Colors.white.withOpacity(0.15)
+            : Colors.white.withOpacity(0.8), // Vibrant rim light
         width: 1.5,
-      ), // Specular rim light
-      borderRadius: BorderRadius.circular(100),
+      ),
+      borderRadius: BorderRadius.circular(40),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: isDark
+            ? [Colors.white.withOpacity(0.1), Colors.white.withOpacity(0.02)]
+            : [Colors.white.withOpacity(0.4), Colors.white.withOpacity(0.1)],
+      ),
     );
   }
 }
@@ -142,6 +176,7 @@ class _NavItem extends StatelessWidget {
   final bool isActive;
   final VoidCallback onTap;
   final bool isVertical;
+  final bool isDark;
 
   const _NavItem({
     required this.icon,
@@ -149,53 +184,52 @@ class _NavItem extends StatelessWidget {
     required this.isActive,
     required this.onTap,
     this.isVertical = false,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
+    // FIX: Active items use primary accent, inactive use theme-aware grey/white
+    final activeColor = Theme.of(context).primaryColor;
+    final inactiveColor = isDark
+        ? Colors.white.withOpacity(0.5)
+        : Colors.black45;
+
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        color: Colors.transparent,
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutExpo,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? Colors.white.withValues(alpha: 0.15)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  color: isActive
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.7),
-                  size: 26,
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutExpo,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive
+                ? (isDark
+                      ? Colors.white.withOpacity(0.1)
+                      : Colors.white.withOpacity(0.5))
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? activeColor : inactiveColor,
+                  fontSize: 10,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                  letterSpacing: -0.2,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.visible,
-                  style: TextStyle(
-                    color: isActive
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.7),
-                    fontSize: 10,
-                    letterSpacing: -0.2,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

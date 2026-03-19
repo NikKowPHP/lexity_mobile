@@ -3,6 +3,11 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'daos/user_dao.dart';
+import 'daos/book_dao.dart';
+import 'daos/journal_dao.dart';
+import 'daos/srs_dao.dart';
+import 'daos/vocabulary_dao.dart';
 
 class AppDatabase {
   static Database? _database;
@@ -12,7 +17,23 @@ class AppDatabase {
   final Map<String, StreamController<List<Map<String, dynamic>>>> _controllers =
       {};
 
-  StreamController<List<Map<String, dynamic>>> _getController(String key) {
+  // DAOs
+  late final UserDao userDao;
+  late final BookDao bookDao;
+  late final JournalDao journalDao;
+  late final SrsDao srsDao;
+  late final VocabularyDao vocabularyDao;
+
+  AppDatabase() {
+    // Initialize DAOs
+    userDao = UserDao(this);
+    bookDao = BookDao(this);
+    journalDao = JournalDao(this);
+    srsDao = SrsDao(this);
+    vocabularyDao = VocabularyDao(this);
+  }
+
+  StreamController<List<Map<String, dynamic>>> getController(String key) {
     if (!_controllers.containsKey(key)) {
       _controllers[key] =
           StreamController<List<Map<String, dynamic>>>.broadcast();
@@ -20,10 +41,10 @@ class AppDatabase {
     return _controllers[key]!;
   }
 
-  void _notify(String key) async {
+  void notify(String key) async {
     final db = await database;
     final data = await db.query(_tableForKey(key));
-    _getController(key).add(data);
+    getController(key).add(data);
   }
 
   String _tableForKey(String key) {
@@ -267,329 +288,96 @@ class AppDatabase {
     ''');
   }
 
-  // Users
-  Future<int> insertUser(Map<String, dynamic> user) async {
-    final db = await database;
+  // Users - delegates to UserDao for backward compatibility
+  Future<int> insertUser(Map<String, dynamic> user) => userDao.insertUser(user);
 
-    final mappedUser = {
-      'id': user['id'],
-      'email': user['email'],
-      'native_language': user['nativeLanguage'],
-      'default_target_language': user['defaultTargetLanguage'],
-      'writing_style': user['writingStyle'],
-      'writing_purpose': user['writingPurpose'],
-      'self_assessed_level': user['selfAssessedLevel'],
-      'subscription_tier': user['subscriptionTier'],
-      'subscription_status': user['subscriptionStatus'],
-      'subscription_period_end': user['subscriptionPeriodEnd'] != null
-          ? DateTime.parse(user['subscriptionPeriodEnd']).millisecondsSinceEpoch
-          : null,
-      'language_profiles_json': user['languageProfiles'] != null
-          ? jsonEncode(user['languageProfiles'])
-          : '[]',
-      'goals_json': user['goals'] != null ? jsonEncode(user['goals']) : null,
-      'current_streak': user['currentStreak'] ?? 0,
-      'longest_streak': user['longestStreak'] ?? 0,
-      'onboarding_completed': user['onboardingCompleted'] == true ? 1 : 0,
-      'srs_count': user['srsCount'] ?? 0,
-      'last_synced_at': DateTime.now().millisecondsSinceEpoch,
-    };
+  Future<Map<String, dynamic>?> getUserById(String id) =>
+      userDao.getUserById(id);
 
-    final result = await db.insert(
-      'users',
-      mappedUser,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    _notify('users');
-    return result;
-  }
+  Future<List<Map<String, dynamic>>> getAllUsers() => userDao.getAllUsers();
 
-  Future<Map<String, dynamic>?> getUserById(String id) async {
-    final db = await database;
-    final results = await db.query('users', where: 'id = ?', whereArgs: [id]);
-    return results.isNotEmpty ? results.first : null;
-  }
+  Stream<List<Map<String, dynamic>>> watchAllUsers() => userDao.watchAllUsers();
 
-  Future<List<Map<String, dynamic>>> getAllUsers() async {
-    final db = await database;
-    final results = await db.query('users');
+  // Books - delegates to BookDao for backward compatibility
+  Future<int> insertBook(Map<String, dynamic> book) => bookDao.insertBook(book);
 
-    return results.map((row) {
-      return {
-        'id': row['id'],
-        'email': row['email'],
-        'nativeLanguage': row['native_language'],
-        'defaultTargetLanguage': row['default_target_language'],
-        'writingStyle': row['writing_style'],
-        'writingPurpose': row['writing_purpose'],
-        'selfAssessedLevel': row['self_assessed_level'],
-        'subscriptionTier': row['subscription_tier'],
-        'subscriptionStatus': row['subscription_status'],
-        'subscriptionPeriodEnd': row['subscription_period_end'] != null
-            ? DateTime.fromMillisecondsSinceEpoch(
-                row['subscription_period_end'] as int,
-              ).toIso8601String()
-            : null,
-        'languageProfiles': row['language_profiles_json'] != null
-            ? jsonDecode(row['language_profiles_json'] as String)
-            : [],
-        'goals': row['goals_json'] != null
-            ? jsonDecode(row['goals_json'] as String)
-            : null,
-        'currentStreak': row['current_streak'],
-        'longestStreak': row['longest_streak'],
-        'onboardingCompleted': row['onboarding_completed'] == 1,
-        'srsCount': row['srs_count'],
-      };
-    }).toList();
-  }
+  Future<Map<String, dynamic>?> getBookById(String id) =>
+      bookDao.getBookById(id);
 
-  Stream<List<Map<String, dynamic>>> watchAllUsers() async* {
-    yield await getAllUsers();
-    yield* _getController('users').stream;
-  }
+  Future<List<Map<String, dynamic>>> getAllBooks() => bookDao.getAllBooks();
 
-  // Books
-  Future<int> insertBook(Map<String, dynamic> book) async {
-    final db = await database;
-    final result = await db.insert(
-      'books',
-      book,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    _notify('books');
-    return result;
-  }
+  Stream<List<Map<String, dynamic>>> watchAllBooks() => bookDao.watchAllBooks();
 
-  Future<Map<String, dynamic>?> getBookById(String id) async {
-    final db = await database;
-    final results = await db.query('books', where: 'id = ?', whereArgs: [id]);
-    return results.isNotEmpty ? results.first : null;
-  }
+  Future<int> updateBookProgress(String id, String cfi, double progress) =>
+      bookDao.updateBookProgress(id, cfi, progress);
 
-  Future<List<Map<String, dynamic>>> getAllBooks() async {
-    final db = await database;
-    return await db.query('books');
-  }
+  Future<int> deleteBook(String id) => bookDao.deleteBook(id);
 
-  Stream<List<Map<String, dynamic>>> watchAllBooks() async* {
-    yield await getAllBooks();
-    yield* _getController('books').stream;
-  }
+  Future<void> insertBooksBatch(List<Map<String, dynamic>> items) =>
+      bookDao.insertBooksBatch(items);
 
-  Future<int> updateBookProgress(String id, String cfi, double progress) async {
-    final db = await database;
-    final result = await db.update(
-      'books',
-      {'current_cfi': cfi, 'progress_pct': progress},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    _notify('books');
-    return result;
-  }
+  // Journals - delegates to JournalDao for backward compatibility
+  Future<int> insertJournal(Map<String, dynamic> journal) =>
+      journalDao.insertJournal(journal);
 
-  Future<int> deleteBook(String id) async {
-    final db = await database;
-    final result = await db.delete('books', where: 'id = ?', whereArgs: [id]);
-    _notify('books');
-    return result;
-  }
+  Future<Map<String, dynamic>?> getJournalById(String id) =>
+      journalDao.getJournalById(id);
 
-  Future<void> insertBooksBatch(List<Map<String, dynamic>> items) async {
-    final db = await database;
-    final batch = db.batch();
-    for (final item in items) {
-      batch.insert('books', item, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
-    _notify('books');
-  }
+  Future<List<Map<String, dynamic>>> getAllJournals() =>
+      journalDao.getAllJournals();
 
-  // Journals
-  Future<int> insertJournal(Map<String, dynamic> journal) async {
-    final db = await database;
-    final result = await db.insert(
-      'journals',
-      journal,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    _notify('journals');
-    return result;
-  }
+  Stream<List<Map<String, dynamic>>> watchAllJournals() =>
+      journalDao.watchAllJournals();
 
-  Future<Map<String, dynamic>?> getJournalById(String id) async {
-    final db = await database;
-    final results = await db.query(
-      'journals',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    return results.isNotEmpty ? results.first : null;
-  }
+  Future<void> insertJournalsBatch(List<Map<String, dynamic>> items) =>
+      journalDao.insertJournalsBatch(items);
 
-  Future<List<Map<String, dynamic>>> getAllJournals() async {
-    final db = await database;
-    return await db.query('journals', orderBy: 'created_at DESC');
-  }
+  // SRS Items - delegates to SrsDao for backward compatibility
+  Future<int> insertSrsItem(Map<String, dynamic> item) =>
+      srsDao.insertSrsItem(item);
 
-  Stream<List<Map<String, dynamic>>> watchAllJournals() async* {
-    yield await getAllJournals();
-    yield* _getController('journals').stream;
-  }
+  Future<List<Map<String, dynamic>>> getAllSrsItems() =>
+      srsDao.getAllSrsItems();
 
-  // SRS Items
-  Future<int> insertSrsItem(Map<String, dynamic> item) async {
-    final db = await database;
-    final result = await db.insert(
-      'srs_items',
-      item,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    _notify('srs_items');
-    _notifyDueSrsItems();
-    return result;
-  }
+  Stream<List<Map<String, dynamic>>> watchAllSrsItems() =>
+      srsDao.watchAllSrsItems();
 
-  Future<List<Map<String, dynamic>>> getAllSrsItems() async {
-    final db = await database;
-    return await db.query('srs_items');
-  }
+  Future<List<Map<String, dynamic>>> getDueSrsItems() =>
+      srsDao.getDueSrsItems();
 
-  Stream<List<Map<String, dynamic>>> watchAllSrsItems() async* {
-    yield await getAllSrsItems();
-    yield* _getController('srs_items').stream;
-  }
+  Stream<List<Map<String, dynamic>>> watchDueSrsItems() =>
+      srsDao.watchDueSrsItems();
 
-  Future<List<Map<String, dynamic>>> getDueSrsItems() async {
-    final db = await database;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    return await db.query(
-      'srs_items',
-      where: 'next_review_date <= ?',
-      whereArgs: [now],
-    );
-  }
+  Future<int> updateSrsItemReviewDate(String id, DateTime nextReview) =>
+      srsDao.updateSrsItemReviewDate(id, nextReview);
 
-  void _notifyDueSrsItems() async {
-    final db = await database;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final data = await db.query(
-      'srs_items',
-      where: 'next_review_date <= ?',
-      whereArgs: [now],
-    );
-    _getController('due_srs_items').add(data);
-  }
+  Future<void> insertSrsBatch(List<Map<String, dynamic>> items) =>
+      srsDao.insertSrsBatch(items);
 
-  Stream<List<Map<String, dynamic>>> watchDueSrsItems() async* {
-    yield await getDueSrsItems();
-    yield* _getController('due_srs_items').stream;
-    yield* Stream.periodic(
-      const Duration(minutes: 1),
-    ).asyncMap((_) => getDueSrsItems());
-  }
+  // Vocabularies - delegates to VocabularyDao for backward compatibility
+  Future<int> insertVocabulary(Map<String, dynamic> vocab) =>
+      vocabularyDao.insertVocabulary(vocab);
 
-  Future<int> updateSrsItemReviewDate(String id, DateTime nextReview) async {
-    final db = await database;
-    final result = await db.update(
-      'srs_items',
-      {'next_review_date': nextReview.millisecondsSinceEpoch},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    _notify('srs_items');
-    _notifyDueSrsItems();
-    return result;
-  }
-
-  // Vocabularies
-  Future<int> insertVocabulary(Map<String, dynamic> vocab) async {
-    final db = await database;
-    final result = await db.insert(
-      'vocabularies',
-      vocab,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-    _notify('vocabularies');
-    return result;
-  }
-
-  Future<List<Map<String, dynamic>>> getAllVocabularies() async {
-    final db = await database;
-    return await db.query('vocabularies');
-  }
+  Future<List<Map<String, dynamic>>> getAllVocabularies() =>
+      vocabularyDao.getAllVocabularies();
 
   Future<List<Map<String, dynamic>>> getVocabulariesByLanguage(
     String language,
-  ) async {
-    final db = await database;
-    return await db.query(
-      'vocabularies',
-      where: 'language = ?',
-      whereArgs: [language],
-    );
-  }
+  ) => vocabularyDao.getVocabulariesByLanguage(language);
 
-  Stream<List<Map<String, dynamic>>> watchAllVocabularies() async* {
-    yield await getAllVocabularies();
-    yield* _getController('vocabularies').stream;
-  }
+  Stream<List<Map<String, dynamic>>> watchAllVocabularies() =>
+      vocabularyDao.watchAllVocabularies();
 
-  Future<int> deleteVocabulary(String word) async {
-    final db = await database;
-    final result = await db.delete(
-      'vocabularies',
-      where: 'word = ?',
-      whereArgs: [word],
-    );
-    _notify('vocabularies');
-    return result;
-  }
+  Future<int> deleteVocabulary(String word) =>
+      vocabularyDao.deleteVocabulary(word);
 
-  Future<void> insertVocabularyBatch(List<Map<String, dynamic>> items) async {
-    final db = await database;
-    final batch = db.batch();
-    for (final item in items) {
-      batch.insert(
-        'vocabularies',
-        item,
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
-    _notify('vocabularies');
-  }
+  Future<void> insertVocabularyBatch(List<Map<String, dynamic>> items) =>
+      vocabularyDao.insertVocabularyBatch(items);
 
-  Future<void> insertJournalsBatch(List<Map<String, dynamic>> items) async {
-    final db = await database;
-    final batch = db.batch();
-    for (final item in items) {
-      batch.insert(
-        'journals',
-        item,
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
-    _notify('journals');
-  }
+  Future<List<String>> getVocabularyLanguages() =>
+      vocabularyDao.getVocabularyLanguages();
 
-  Future<void> insertSrsBatch(List<Map<String, dynamic>> items) async {
-    final db = await database;
-    final batch = db.batch();
-    for (final item in items) {
-      batch.insert(
-        'srs_items',
-        item,
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
-    _notify('srs_items');
-    _notifyDueSrsItems();
-  }
-
+  // Sync Queue operations (remain inline as they are cross-cutting)
   Future<void> compactSyncQueue() async {
     final db = await database;
     await db.transaction((txn) async {
@@ -617,16 +405,7 @@ class AppDatabase {
         AND entity_type = 'vocabulary' AND action = 'update'
       ''');
     });
-    _notify('sync_queue');
-  }
-
-  Future<List<String>> getVocabularyLanguages() async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT DISTINCT language FROM vocabularies WHERE language IS NOT NULL AND language != ?',
-      ['unknown'],
-    );
-    return result.map((row) => row['language'] as String).toList();
+    notify('sync_queue');
   }
 
   // Sync Queue
@@ -646,7 +425,7 @@ class AppDatabase {
       ...mutation,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
-    _notify('sync_queue');
+    notify('sync_queue');
     return result;
   }
 
@@ -665,7 +444,7 @@ class AppDatabase {
 
   Stream<List<Map<String, dynamic>>> watchPendingMutations() async* {
     yield await getPendingMutations();
-    yield* _getController('sync_queue').stream;
+    yield* getController('sync_queue').stream;
   }
 
   Future<int> getPendingMutationsCount() async {
@@ -683,7 +462,7 @@ class AppDatabase {
       where: 'id = ?',
       whereArgs: [id],
     );
-    _notify('sync_queue');
+    notify('sync_queue');
     return result;
   }
 
@@ -696,7 +475,7 @@ class AppDatabase {
       where: 'id IN ($placeholders)',
       whereArgs: ids,
     );
-    _notify('sync_queue');
+    notify('sync_queue');
     return result;
   }
 
@@ -711,7 +490,7 @@ class AppDatabase {
   Future<void> clearSyncQueue() async {
     final db = await database;
     await db.delete('sync_queue');
-    _notify('sync_queue');
+    notify('sync_queue');
   }
 
   // Analytics Cache
@@ -913,6 +692,29 @@ class AppDatabase {
     final db = await database;
     await db.close();
     _database = null;
+  }
+
+  /// Clears all user-scoped data from the database.
+  /// Should be called on login to ensure a fresh state for the new user.
+  Future<void> clearAllUserData() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('users');
+      await txn.delete('books');
+      await txn.delete('journals');
+      await txn.delete('srs_items');
+      await txn.delete('vocabularies');
+      await txn.delete('sync_queue');
+      await txn.delete('analytics_cache');
+      await txn.delete('learning_modules');
+    });
+    // Notify all watchers to refresh
+    notify('users');
+    notify('books');
+    notify('journals');
+    notify('srs_items');
+    notify('vocabularies');
+    notify('sync_queue');
   }
 }
 

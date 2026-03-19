@@ -8,7 +8,7 @@ import '../../providers/book_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/logger_service.dart';
-import '../../services/book_service.dart';
+import '../../data/repositories/book_repository.dart';
 import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
@@ -279,7 +279,7 @@ class BookCoverImage extends ConsumerWidget {
     }
 
     // Use the BookService to get the stable proxy URL
-    final bookService = ref.watch(bookServiceProvider);
+    final bookService = ref.watch(bookRepositoryProvider);
     final coverUrl = bookService.getCoverProxyUrl(book.id);
 
     // Use cached token from authProvider instead of async disk read

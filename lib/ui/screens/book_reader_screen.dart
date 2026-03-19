@@ -1,13 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'package:lexity_mobile/providers/srs_provider.dart';
 import '../../models/book.dart';
 import '../../providers/book_provider.dart';
@@ -19,6 +15,10 @@ import '../../services/ai_service.dart';
 import '../widgets/liquid_components.dart';
 
 import 'book_reader_html.dart';
+import 'book_reader/reader_file_service.dart';
+import 'book_reader/reader_bridge_controller.dart';
+import 'book_reader/widgets/reader_settings_sheet.dart';
+import 'book_reader/widgets/reader_toc_sheet.dart';
 
 class BookReaderScreen extends ConsumerStatefulWidget {
   final String bookId;
@@ -35,8 +35,9 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     with WidgetsBindingObserver {
-  InAppWebViewController? webViewController;
-  WebMessagePort? _vocabPort;
+  late final ReaderFileService _fileService;
+  late final ReaderBridgeController _bridgeController;
+
   Completer<void>? _portReadyCompleter;
   double _progress = 0.0;
   String? _lastCfi;
@@ -49,7 +50,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
   double _downloadProgress = 0.0;
   Timer? _progressDebounce;
 
-  HttpServer? _localServer;
   int? _localPort;
 
   bool _isInitialized = false;
@@ -74,48 +74,28 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     }[_theme]!;
   }
 
-  void _postToWeb(String type, dynamic payload) {
-    if (_vocabPort != null) {
-      try {
-        _vocabPort!.postMessage(
-          WebMessage(data: {'type': type, 'payload': payload}),
-        );
-      } catch (e) {
-        final logger = ref.read(loggerProvider);
-        logger.warning('BookReader: Failed to post message to web: $e');
-      }
-    }
-  }
-
-  void _updateReaderStyles({bool force = false}) {
-    final logger = ref.read(loggerProvider);
-    if (!force && _appliedTheme == _theme && _appliedFontSize == _fontSize) {
-      return;
-    }
-    _appliedTheme = _theme;
-    _appliedFontSize = _fontSize;
-    logger.debug(
-      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%, lastCfi: $_lastCfi, currentCfi: $_currentCfi, lastSavedCfi: $_lastSavedCfi, initialCfiOnReady: $_initialCfiOnReady)',
-    );
-
-    final colors = _themeColors();
-    _postToWeb('UPDATE_THEME', {
-      'colors': colors,
-      'fontSize': _fontSize,
-      'themeName': _theme,
-    });
-  }
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _fileService = ReaderFileService(ref);
+    _bridgeController = ReaderBridgeController(ref);
+    _setupBridgeCallbacks();
     if (!kIsWeb) {
       _startLocalServer();
     } else {
-      // On Web, we don't use a local server. Set a dummy port to pass the initialization check.
       _localPort = 0;
     }
+  }
+
+  void _setupBridgeCallbacks() {
+    _bridgeController.onProgress = _handleProgress;
+    _bridgeController.onToc = _handleToc;
+    _bridgeController.onReady = _handleReaderReady;
+    _bridgeController.onWordTap = _handleWordTap;
+    _bridgeController.onTextSelected = _handleTextSelected;
+    _bridgeController.onParagraphTranslate = _handleParagraphTranslate;
+    _bridgeController.onLocationsGenerated = _handleLocationsGenerated;
   }
 
   Future<void> _startLocalServer() async {
@@ -126,64 +106,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     }
     logger.info('BookReader: Initializing local file server');
     try {
-      _localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      _localPort = await _fileService.start();
       if (mounted) {
-        setState(() => _localPort = _localServer!.port);
         logger.info('BookReader: Local server bound to port $_localPort');
       }
-
-      _localServer!.listen((HttpRequest request) async {
-        request.response.headers.add('Access-Control-Allow-Origin', '*');
-        request.response.headers.add(
-          'Access-Control-Allow-Methods',
-          'GET, OPTIONS',
-        );
-        request.response.headers.add('Access-Control-Allow-Headers', '*');
-
-        if (request.method == 'OPTIONS') {
-          request.response.statusCode = 200;
-          await request.response.close();
-          return;
-        }
-
-        // NEW CODE START: Serve the reader HTML at the root to avoid initialData bugs on Linux
-        if (request.uri.path == '/') {
-          request.response.headers.contentType = ContentType.html;
-
-          // NEW: Get current vocab and inject it dynamically into the server response
-          final currentVocab = ref.read(vocabularyProvider).value ?? {};
-          final String injectedHtml = bookReaderHtmlTemplate.replaceFirst(
-            'window.vocabMap = {};',
-            'window.vocabMap = ${jsonEncode(currentVocab)};',
-          );
-
-          request.response.write(injectedHtml);
-          await request.response.close();
-          return;
-        }
-        // NEW CODE END
-        if (request.uri.path.startsWith('/books/')) {
-          final bookId = request.uri.pathSegments.last.replaceAll('.epub', '');
-          final dir = await getApplicationDocumentsDirectory();
-          final file = File('${dir.path}/books/$bookId.epub');
-
-          if (await file.exists()) {
-            logger.debug('BookReader: Serving local EPUB file for $bookId');
-            final length = await file.length();
-            request.response.contentLength = length;
-            request.response.headers.contentType = ContentType(
-              'application',
-              'epub+zip',
-              charset: 'utf-8',
-            );
-            await request.response.addStream(file.openRead());
-            await request.response.close();
-            return;
-          }
-        }
-        request.response.statusCode = 404;
-        await request.response.close();
-      });
     } catch (e, st) {
       logger.error('BookReader: Local server startup error', e, st);
     }
@@ -199,63 +125,205 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     }
 
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final booksDir = Directory('${dir.path}/books');
-      if (!await booksDir.exists()) await booksDir.create(recursive: true);
-
-      final file = File('${booksDir.path}/${book.id}.epub');
-      if (await file.exists()) {
-        logger.info('BookReader: Book "${book.title}" found locally');
-        if (mounted) setState(() => _localFileReady = true);
-        return;
-      }
-
-      logger.info(
-        'BookReader: Book not found locally, starting download for "${book.title}"',
-      );
-      if (book.signedUrl == null) {
-        logger.error('BookReader: Missing signedUrl for book ${book.id}');
-        throw Exception("No download URL provided");
-      }
-
-      setState(() {
-        _isDownloading = true;
-        _downloadProgress = 0.0;
-      });
-
-      final request = http.Request('GET', Uri.parse(book.signedUrl!));
-      final response = await request.send();
-      final total = response.contentLength ?? 0;
-      int received = 0;
-      final bytes = <int>[];
-
-      response.stream.listen(
-        (chunk) {
-          bytes.addAll(chunk);
-          received += chunk.length;
-          if (total > 0 && mounted) {
-            setState(() => _downloadProgress = received / total);
-          }
-        },
-        onDone: () async {
-          await file.writeAsBytes(bytes);
-          logger.info('BookReader: Download complete for "${book.title}"');
-          if (mounted) {
-            setState(() {
-              _isDownloading = false;
-              _localFileReady = true;
-            });
-          }
-        },
-        onError: (e, st) {
-          logger.error('BookReader: Download stream error', e, st);
-          if (mounted) setState(() => _isDownloading = false);
-        },
+      await _fileService.ensureBookDownloaded(
+        bookId: book.id,
+        signedUrl: book.signedUrl,
+        bookTitle: book.title,
+        isDownloading: _isDownloading,
+        localFileReady: _localFileReady,
+        setIsDownloading: (v) => setState(() => _isDownloading = v),
+        setDownloadProgress: (v) => setState(() => _downloadProgress = v),
+        setLocalFileReady: (v) => setState(() => _localFileReady = v),
       );
     } catch (e, st) {
       logger.error('BookReader: Download setup failed', e, st);
       if (mounted) setState(() => _isDownloading = false);
     }
+  }
+
+  void _handleProgress(String cfi, double pct) {
+    if (!mounted) return;
+    final logger = ref.read(loggerProvider);
+
+    if (pct == 0 && widget.initialProgress > 0 && !_canSaveToBackend) {
+      return;
+    }
+
+    final acceptProgress =
+        _hasLocationsFromBackend ||
+        (pct >= 0 && pct < 100) ||
+        (_progress >= 95 && pct >= 100);
+
+    logger.info(
+      'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, acceptProgress: $acceptProgress, hasLocations: $_hasLocationsFromBackend, canSave: $_canSaveToBackend, initialCfiOnReady: $_initialCfiOnReady, lastSavedCfi: $_lastSavedCfi',
+    );
+
+    // Detect Page Flip (CFI changed)
+    if (_currentCfi != null && _currentCfi != cfi) {
+      logger.info(
+        'BookReader: Page flip detected from $_currentCfi to $cfi, requesting visible words',
+      );
+      _bridgeController.getVisibleUnknownWords().then((wordsObj) {
+        if (wordsObj.isNotEmpty) {
+          _triggerVocabReview(wordsObj);
+        }
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _lastCfi = cfi;
+        _currentCfi = cfi;
+        if (acceptProgress) {
+          _progress = pct;
+        }
+      });
+    }
+
+    // Ensure we don't push progress to the backend during initial setup
+    if (!_canSaveToBackend) return;
+
+    // Only save if user has moved to a different position from initial
+    if (_initialCfiOnReady != null && cfi == _initialCfiOnReady) {
+      logger.info('BookReader: Skipping save - at initial position: $cfi');
+      return;
+    }
+
+    if (mounted && _lastCfi != _lastSavedCfi) {
+      final progressToSave = acceptProgress ? _progress : _progress;
+      logger.info(
+        'BookReader: Saving progress - CFI: $_lastCfi, Progress: $progressToSave% (acceptProgress: $acceptProgress)',
+      );
+      _progressDebounce?.cancel();
+      _progressDebounce = Timer(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
+        ref
+            .read(bookNotifierProvider.notifier)
+            .updateProgress(widget.bookId, _lastCfi!, progressToSave);
+        _lastSavedCfi = _lastCfi;
+      });
+    }
+
+    _updateReaderStyles();
+  }
+
+  void _handleToc(List<dynamic> toc) {
+    if (mounted) setState(() => _toc = toc);
+  }
+
+  void _handleReaderReady() async {
+    final logger = ref.read(loggerProvider);
+    final book = ref.read(bookDetailProvider(widget.bookId)).value;
+    if (book == null) return;
+
+    logger.info(
+      'BookReader: onReady fired, enabling save and sending vocabulary/locations',
+    );
+    if (mounted) {
+      setState(() {
+        _canSaveToBackend = true;
+        _readerReady = true;
+      });
+    }
+
+    _updateReaderStyles(force: true);
+
+    if (!mounted) return;
+
+    await _portReadyCompleter?.future;
+
+    _bridgeController.signalPortReady();
+
+    if (book.locations != null && book.locations!.length > 5) {
+      _bridgeController.sendLocations(book.locations!);
+    }
+
+    final vocabData = await ref
+        .read(vocabularyProvider.notifier)
+        .getVocabulary(book.targetLanguage);
+    if (mounted &&
+        _bridgeController.vocabPort != null &&
+        vocabData.isNotEmpty) {
+      _bridgeController.sendVocabDelta(vocabData);
+    }
+  }
+
+  void _handleWordTap(String word, String contextText) {
+    // 1. Handle vocabulary update for unknown words
+    final currentStatus = ref
+        .read(vocabularyProvider)
+        .value?[word.toLowerCase()];
+    if (currentStatus == null || currentStatus.toLowerCase() == 'unknown') {
+      final book = ref.read(bookDetailProvider(widget.bookId)).value;
+      if (book != null) {
+        ref
+            .read(vocabularyProvider.notifier)
+            .updateWordStatus(word, 'known', book.targetLanguage);
+      }
+    }
+
+    // 2. Open the translation sheet
+    final book = ref.read(bookDetailProvider(widget.bookId)).value;
+    final profile = ref.read(userProfileProvider).value;
+
+    if (book != null && profile != null) {
+      _showTranslationSheet(
+        context,
+        selectedText: word,
+        contextText: contextText,
+        sourceLang: book.targetLanguage,
+        nativeLang: profile.nativeLanguage ?? 'english',
+      );
+    }
+  }
+
+  void _handleTextSelected(String selectedText, String contextText) {
+    final book = ref.read(bookDetailProvider(widget.bookId)).value;
+    final profile = ref.read(userProfileProvider).value;
+    if (book != null && profile != null) {
+      _showTranslationSheet(
+        context,
+        selectedText: selectedText,
+        contextText: contextText,
+        sourceLang: book.targetLanguage,
+        nativeLang: profile.nativeLanguage ?? 'english',
+      );
+    }
+  }
+
+  void _handleParagraphTranslate(String text) {
+    final book = ref.read(bookDetailProvider(widget.bookId)).value;
+    final profile = ref.read(userProfileProvider).value;
+    if (book != null && profile != null) {
+      _showTranslationSheet(
+        context,
+        selectedText: text,
+        contextText: text,
+        sourceLang: book.targetLanguage,
+        nativeLang: profile.nativeLanguage ?? 'english',
+      );
+    }
+  }
+
+  void _handleLocationsGenerated(String locationsJson) {
+    ref
+        .read(bookNotifierProvider.notifier)
+        .updateLocations(widget.bookId, locationsJson);
+  }
+
+  void _updateReaderStyles({bool force = false}) {
+    final logger = ref.read(loggerProvider);
+    if (!force && _appliedTheme == _theme && _appliedFontSize == _fontSize) {
+      return;
+    }
+    _appliedTheme = _theme;
+    _appliedFontSize = _fontSize;
+    logger.debug(
+      'BookReader: Updating styles (Theme: $_theme, Size: $_fontSize%, lastCfi: $_lastCfi, currentCfi: $_currentCfi, lastSavedCfi: $_lastSavedCfi, initialCfiOnReady: $_initialCfiOnReady)',
+    );
+
+    final colors = _themeColors();
+    _bridgeController.updateTheme(colors, _fontSize, _theme);
   }
 
   void _handleImmediateSave() {
@@ -278,10 +346,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     WidgetsBinding.instance.removeObserver(this);
     _progressDebounce?.cancel();
     _handleImmediateSave();
-    _postToWeb('SHUTDOWN', null);
-    _vocabPort?.close().catchError((_) {});
-    _vocabPort = null;
-    _localServer?.close(force: true);
+    _bridgeController.shutdown();
+    _bridgeController.closePort();
+    _fileService.stop();
+    _bridgeController.dispose();
     super.dispose();
   }
 
@@ -297,7 +365,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
   @override
   Widget build(BuildContext context) {
     final bookAsync = ref.watch(bookDetailProvider(widget.bookId));
-    final profileAsync = ref.watch(userProfileProvider);
     final logger = ref.read(loggerProvider);
 
     bookAsync.whenData((book) {
@@ -309,10 +376,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
         setState(() {
           _progress = book.progressPct;
           _lastCfi = book.currentCfi;
-          _lastSavedCfi =
-              book.currentCfi; // Sync state to avoid over-saving initial load
-          _initialCfiOnReady =
-              book.currentCfi; // Set initial CFI to compare against
+          _lastSavedCfi = book.currentCfi;
+          _initialCfiOnReady = book.currentCfi;
           _hasLocationsFromBackend = book.locations != null;
         });
         _ensureBookDownloaded(book);
@@ -328,11 +393,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
     });
 
     ref.listen(paginatedVocabularyProvider, (previous, next) {
-      if (next.delta != null && _vocabPort != null) {
-        _vocabPort!.postMessage(
-          WebMessage(data: {'type': 'vocab_delta', 'delta': next.delta}),
-        );
-        // Clear delta after sending to prevent duplicates
+      if (next.delta != null && _bridgeController.vocabPort != null) {
+        _bridgeController.sendVocabDelta(next.delta!);
         ref.read(paginatedVocabularyProvider.notifier).clearDelta();
       }
     });
@@ -366,12 +428,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
               if (context.canPop()) {
                 context.pop();
               } else {
-                context.go('/library'); // Fallback for deep-linked reader
+                context.go('/library');
               }
             },
           ),
           actions: [
-            // NEW: MARK PAGE KNOWN BUTTON
             IconButton(
               icon: const Icon(
                 Icons.check_circle_outline,
@@ -380,32 +441,25 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
               onPressed: () async {
                 final book = bookAsync.value;
                 if (book == null) return;
-                final wordsObj = await webViewController?.evaluateJavascript(
-                  source: "window.getVisibleUnknownWords();",
-                );
-                if (wordsObj != null && wordsObj is List) {
-                  final words = wordsObj.map((e) => e.toString()).toList();
-                  if (words.isNotEmpty) {
-                    ref
-                        .read(vocabularyProvider.notifier)
-                        .markBatchKnown(words, book.targetLanguage);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            "Marked ${words.length} words as known",
-                          ),
-                        ),
-                      );
-                    }
-                  } else {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("No unknown words on this page."),
-                        ),
-                      );
-                    }
+                final words = await _bridgeController.getVisibleUnknownWords();
+                if (words.isNotEmpty) {
+                  ref
+                      .read(vocabularyProvider.notifier)
+                      .markBatchKnown(words, book.targetLanguage);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Marked ${words.length} words as known"),
+                      ),
+                    );
+                  }
+                } else {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("No unknown words on this page."),
+                      ),
+                    );
                   }
                 }
               },
@@ -458,13 +512,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                   }
 
                   return InAppWebView(
-                    // FIX: On Web, use initialData. On Mobile, use the Proxy Server.
                     initialData: kIsWeb
                         ? InAppWebViewInitialData(
                             data: bookReaderHtmlTemplate,
-                            baseUrl: WebUri(
-                              "/",
-                            ), // Grants a proper origin context vs "null"
+                            baseUrl: WebUri("/"),
                           )
                         : null,
                     initialUrlRequest: !kIsWeb
@@ -481,7 +532,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                       allowFileAccessFromFileURLs: true,
                       mixedContentMode:
                           MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-                      // NEW CODE: Fix potential compositor issues on Linux/GTK
                       transparentBackground: true,
                       safeBrowsingEnabled: false,
                       allowContentAccess: true,
@@ -489,282 +539,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                       javaScriptCanOpenWindowsAutomatically: true,
                     ),
                     onWebViewCreated: (controller) async {
-                      webViewController = controller;
+                      await _bridgeController.initialize(
+                        controller: controller,
+                      );
                       logger.info('BookReader: WebView created');
 
                       _portReadyCompleter = Completer<void>();
-
-                      final channel = await controller
-                          .createWebMessageChannel();
-                      _vocabPort = channel!.port1;
-
-                      await controller.postWebMessage(
-                        message: WebMessage(
-                          data: 'capture_port',
-                          ports: [channel.port2],
-                        ),
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onProgress',
-                        callback: (args) {
-                          if (!mounted) return;
-
-                          final cfi = args[0] as String;
-                          final pct = (args[1] as num).toDouble();
-
-                          if (pct == 0 &&
-                              widget.initialProgress > 0 &&
-                              !_canSaveToBackend) {
-                            return;
-                          }
-
-                          final acceptProgress =
-                              _hasLocationsFromBackend ||
-                              (pct >= 0 && pct < 100) ||
-                              (_progress >= 95 && pct >= 100);
-
-                          logger.info(
-                            'BookReader: onProgress received - CFI: $cfi, Progress: $pct%, acceptProgress: $acceptProgress, hasLocations: $_hasLocationsFromBackend, canSave: $_canSaveToBackend, initialCfiOnReady: $_initialCfiOnReady, lastSavedCfi: $_lastSavedCfi',
-                          );
-
-                          // Detect Page Flip (CFI changed)
-                          if (_currentCfi != null && _currentCfi != cfi) {
-                            logger.info(
-                              'BookReader: Page flip detected from $_currentCfi to $cfi, requesting visible words',
-                            );
-                            // Get words that WERE visible on the page we just left
-                            webViewController
-                                ?.evaluateJavascript(
-                                  source: "window.getVisibleUnknownWords();",
-                                )
-                                .then((wordsObj) {
-                                  if (wordsObj != null && wordsObj is List) {
-                                    final words = wordsObj
-                                        .map((e) => e.toString())
-                                        .toList();
-                                    logger.info(
-                                      'BookReader: Visible unknown words returned: ${words.length}',
-                                    );
-                                    if (words.isNotEmpty) {
-                                      _triggerVocabReview(words);
-                                    }
-                                  } else {
-                                    logger.info(
-                                      'BookReader: Visible unknown words returned: none/invalid',
-                                    );
-                                  }
-                                });
-                          }
-
-                          if (mounted) {
-                            setState(() {
-                              _lastCfi = cfi;
-                              _currentCfi = cfi;
-                              if (acceptProgress) {
-                                _progress = pct;
-                              }
-                            });
-                          }
-
-                          // Ensure we don't push progress to the backend during initial setup
-                          if (!_canSaveToBackend) return;
-
-                          // Only save if user has moved to a different position from initial
-                          if (_initialCfiOnReady != null &&
-                              cfi == _initialCfiOnReady) {
-                            logger.info(
-                              'BookReader: Skipping save - at initial position: $cfi',
-                            );
-                            return;
-                          }
-
-                          if (mounted && _lastCfi != _lastSavedCfi) {
-                            final progressToSave = acceptProgress
-                                ? _progress
-                                : _progress;
-                            logger.info(
-                              'BookReader: Saving progress - CFI: $_lastCfi, Progress: $progressToSave% (acceptProgress: $acceptProgress)',
-                            );
-                            _progressDebounce?.cancel();
-                            _progressDebounce = Timer(
-                              const Duration(milliseconds: 500),
-                              () {
-                                if (!mounted) return;
-                                ref
-                                    .read(bookNotifierProvider.notifier)
-                                    .updateProgress(
-                                      widget.bookId,
-                                      _lastCfi!,
-                                      progressToSave,
-                                    );
-                                _lastSavedCfi = _lastCfi;
-                              },
-                            );
-                          }
-
-                          _updateReaderStyles();
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onToc',
-                        callback: (args) {
-                          final tocData = args[0] as List<dynamic>;
-                          if (mounted) setState(() => _toc = tocData);
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onParagraphTranslate',
-                        callback: (args) {
-                          final text = args[0].toString();
-                          _showTranslationSheet(
-                            context,
-                            selectedText: text,
-                            contextText: text,
-                            sourceLang: book.targetLanguage,
-                            nativeLang:
-                                profileAsync.value?.nativeLanguage ?? 'english',
-                          );
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onReady',
-                        callback: (_) async {
-                          logger.info(
-                            'BookReader: onReady fired, enabling save and sending vocabulary/locations',
-                          );
-                          if (mounted) {
-                            setState(() {
-                              _canSaveToBackend = true;
-                              _readerReady = true;
-                            });
-                          }
-
-                          _updateReaderStyles(force: true);
-
-                          if (!mounted) return;
-
-                          await _portReadyCompleter?.future;
-
-                          if (!mounted || _vocabPort == null) return;
-
-                          _postToWeb('PORT_READY', null);
-
-                          if (book.locations != null &&
-                              book.locations!.length > 5) {
-                            _postToWeb('SET_LOCATIONS', book.locations);
-                          }
-
-                          final vocabData = await ref
-                              .read(vocabularyProvider.notifier)
-                              .getVocabulary(book.targetLanguage);
-                          if (mounted &&
-                              _vocabPort != null &&
-                              vocabData.isNotEmpty) {
-                            _vocabPort!.postMessage(
-                              WebMessage(
-                                data: {
-                                  'type': 'vocab_delta',
-                                  'delta': vocabData,
-                                },
-                              ),
-                            );
-                          }
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onWordTap',
-                        callback: (args) {
-                          final word = args[0] as String;
-                          final contextText = args[3] as String;
-
-                          // 1. Handle vocabulary update for unknown words
-                          final currentStatus = ref
-                              .read(vocabularyProvider)
-                              .value?[word.toLowerCase()];
-                          if (currentStatus == null ||
-                              currentStatus.toLowerCase() == 'unknown') {
-                            final book = ref
-                                .read(bookDetailProvider(widget.bookId))
-                                .value;
-                            if (book != null) {
-                              ref
-                                  .read(vocabularyProvider.notifier)
-                                  .updateWordStatus(
-                                    word,
-                                    'known',
-                                    book.targetLanguage,
-                                  );
-                            }
-                          }
-
-                          // 2. Open the existing bottom sheet instead of a tooltip
-                          final book = ref
-                              .read(bookDetailProvider(widget.bookId))
-                              .value;
-                          final profile = ref.read(userProfileProvider).value;
-
-                          if (book != null && profile != null) {
-                            _showTranslationSheet(
-                              context,
-                              selectedText: word,
-                              contextText: contextText,
-                              sourceLang: book.targetLanguage,
-                              nativeLang: profile.nativeLanguage ?? 'english',
-                            );
-                          }
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onBackgroundTap',
-                        callback: (_) {
-                          // No action needed for background tap
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onTextSelected',
-                        callback: (args) {
-                          _showTranslationSheet(
-                            context,
-                            selectedText: args[0].toString(),
-                            contextText: args[1].toString(),
-                            sourceLang: book.targetLanguage,
-                            nativeLang:
-                                profileAsync.value?.nativeLanguage ?? 'english',
-                          );
-                        },
-                      );
-
-                      controller.addJavaScriptHandler(
-                        handlerName: 'onLocationsGenerated',
-                        callback: (args) {
-                          final String locationsJson = args[0] as String;
-
-                          // NEW CODE START: Prevent syncing empty arrays
-                          if (locationsJson == "[]" || locationsJson.isEmpty) {
-                            logger.warning(
-                              'BookReader: Received empty locations from JS, skipping sync.',
-                            );
-                            return;
-                          }
-                          // NEW CODE END
-
-                          logger.info(
-                            'BookReader: Received generated locations from JS. Size: ${locationsJson.length}',
-                          );
-
-                          // Call the notifier to save this to the backend
-                          ref
-                              .read(bookNotifierProvider.notifier)
-                              .updateLocations(widget.bookId, locationsJson);
-                        },
-                      );
                     },
                     onLoadStop: (controller, _) async {
                       if (kIsWeb || _localPort != null) {
@@ -780,18 +560,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
                         logger.info(
                           'BookReader: Calling loadBook with CFI: ${_lastCfi ?? ""}',
                         );
-                        final jsCall =
-                            """
-                          loadBook({
-                            url: ${jsonEncode(bookUrl)},
-                            initialCfi: ${jsonEncode(_lastCfi ?? '')},
-                            theme: ${jsonEncode(colors)},
-                            themeName: ${jsonEncode(_theme)},
-                            fontSize: $_fontSize,
-                            vocabMap: null
-                          });
-                        """;
-                        await controller.evaluateJavascript(source: jsCall);
+                        _bridgeController.loadBook(
+                          bookUrl: bookUrl,
+                          initialCfi: _lastCfi ?? '',
+                          colors: colors,
+                          themeName: _theme,
+                          fontSize: _fontSize,
+                        );
                       }
                     },
                   );
@@ -820,157 +595,27 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
   }
 
   void _showChapterBrowser(BuildContext context) {
-    showModalBottomSheet(
+    ReaderTocSheet.show(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.4,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text(
-                "Table of Contents",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const Divider(color: Colors.white10),
-            Expanded(
-              child: ListView.separated(
-                controller: scrollController,
-                itemCount: _toc.length,
-                separatorBuilder: (context, index) =>
-                    const Divider(color: Colors.white10, height: 1),
-                itemBuilder: (context, index) {
-                  final chapter = _toc[index];
-                  final int level = chapter['level'] ?? 0;
-
-                  return ListTile(
-                    contentPadding: EdgeInsets.only(
-                      left: 16.0 + (level * 16.0),
-                      right: 16.0,
-                    ),
-                    title: Text(
-                      chapter['label'].toString().trim(),
-                      style: TextStyle(
-                        color: level == 0 ? Colors.white : Colors.white70,
-                        fontWeight: level == 0
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        fontSize: level == 0 ? 15 : 14,
-                      ),
-                    ),
-                    trailing: const Icon(
-                      Icons.chevron_right,
-                      color: Colors.white24,
-                      size: 16,
-                    ),
-                    onTap: () {
-                      final href = chapter['href'].toString();
-                      webViewController?.evaluateJavascript(
-                        source: "rendition.display('$href');",
-                      );
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+      toc: _toc,
+      onChapterSelected: (href) {
+        _bridgeController.displayHref(href);
+      },
     );
   }
 
   void _showSettings(BuildContext context) {
-    showModalBottomSheet(
+    ReaderSettingsSheet.show(
       context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "Appearance",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['light', 'dark', 'sepia']
-                    .map(
-                      (t) => GestureDetector(
-                        onTap: () {
-                          setState(() => _theme = t);
-                          setModalState(() {});
-                          _updateReaderStyles();
-                        },
-                        child: Container(
-                          width: 60,
-                          height: 60,
-                          decoration: BoxDecoration(
-                            color: t == 'light'
-                                ? Colors.white
-                                : (t == 'sepia'
-                                      ? const Color(0xFFf4ecd8)
-                                      : const Color(0xFF333333)),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: _theme == t
-                                  ? LiquidTheme.primaryAccent
-                                  : Colors.transparent,
-                              width: 3,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  const Icon(Icons.text_fields, size: 16),
-                  Expanded(
-                    child: Slider(
-                      value: _fontSize,
-                      min: 80,
-                      max: 200,
-                      onChanged: (v) {
-                        setState(() => _fontSize = v);
-                        setModalState(() {});
-                      },
-                      onChangeEnd: (v) {
-                        _updateReaderStyles();
-                      },
-                    ),
-                  ),
-                  const Icon(Icons.text_fields, size: 24),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+      currentTheme: _theme,
+      currentFontSize: _fontSize,
+      onSettingsChanged: (theme, fontSize) {
+        setState(() {
+          _theme = theme;
+          _fontSize = fontSize;
+        });
+        _updateReaderStyles();
+      },
     );
   }
 
@@ -996,14 +641,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
       ),
     );
 
-    webViewController?.evaluateJavascript(
-      source: """
-      if (typeof rendition !== 'undefined' && rendition) {
-        rendition.getContents().forEach(c => c.window.getSelection().removeAllRanges());
-        window.lastReportedText = "";
-      }
-    """,
-    );
+    _bridgeController.clearSelection();
   }
 
   void _triggerVocabReview(List<String> words) {
@@ -1022,7 +660,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen>
       builder: (context) => _VocabularyReviewSheet(
         words: words,
         targetLanguage: book.targetLanguage,
-        webViewController: webViewController,
+        webViewController: _bridgeController.controller,
       ),
     );
   }
@@ -1103,7 +741,6 @@ class _TranslationBottomSheetState
         _isAdding = false;
         if (success) {
           _isAdded = true;
-          // NEW: Trigger local vocab update so the word color changes in the background
           ref
               .read(vocabularyProvider.notifier)
               .updateWordStatus(
@@ -1139,7 +776,6 @@ class _TranslationBottomSheetState
           ),
           const SizedBox(height: 16),
 
-          // Progress indicator while not final
           if (!_isFinal)
             const LinearProgressIndicator(
               minHeight: 2,
@@ -1287,7 +923,6 @@ class _VocabularyReviewSheetState
                 targetLanguage: widget.targetLanguage,
                 webViewController: widget.webViewController,
                 onMarkKnown: () {
-                  // Update Remote + Provider state (delta will be sent via port listener)
                   ref
                       .read(vocabularyProvider.notifier)
                       .updateWordStatus(
@@ -1295,11 +930,9 @@ class _VocabularyReviewSheetState
                         'known',
                         widget.targetLanguage,
                       );
-                  // Remove from UI list
                   _removeWord(_pendingWords[i]);
                 },
                 onAddedToDeck: () {
-                  // Update Remote + Provider state (delta will be sent via port listener)
                   ref
                       .read(vocabularyProvider.notifier)
                       .updateWordStatus(

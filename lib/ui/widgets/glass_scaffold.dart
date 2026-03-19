@@ -1,3 +1,4 @@
+// lib/ui/widgets/glass_scaffold.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -27,6 +28,16 @@ class GlassScaffold extends StatelessWidget {
     final canPop = showBackButton ?? context.canPop();
     final topPadding = MediaQuery.of(context).padding.top + 20;
 
+    // Theme aware colors for iOS look
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final subtitleColor = isDark
+        ? Colors.white.withOpacity(0.6)
+        : Colors.black54;
+    final btnBgColor = isDark
+        ? Colors.white.withOpacity(0.1)
+        : Colors.black.withOpacity(0.05);
+
     final scrollView = CustomScrollView(
       physics: onRefresh != null ? const AlwaysScrollableScrollPhysics() : null,
       slivers: [
@@ -55,12 +66,12 @@ class GlassScaffold extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
+                          color: btnBgColor,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.arrow_back_ios_new,
-                          color: Colors.white,
+                          color: textColor,
                           size: 18,
                         ),
                       ),
@@ -68,18 +79,17 @@ class GlassScaffold extends StatelessWidget {
                   ),
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight:
+                        FontWeight.w900, // Heavy weight like iOS headings
+                    letterSpacing: -0.8,
+                    color: textColor,
                   ),
                 ),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
+                  style: TextStyle(fontSize: 16, color: subtitleColor),
                 ),
               ],
             ),
@@ -94,14 +104,15 @@ class GlassScaffold extends StatelessWidget {
     );
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor:
+          Colors.transparent, // Fix: Let the LiquidBackground show through!
       resizeToAvoidBottomInset: false,
       floatingActionButton: floatingActionButton,
       body: onRefresh != null
           ? RefreshIndicator(
               onRefresh: onRefresh!,
               color: const Color(0xFF6C63FF),
-              backgroundColor: const Color(0xFF1A1A1A),
+              backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
               child: scrollView,
             )
           : scrollView,

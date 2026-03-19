@@ -21,6 +21,10 @@ class DashboardSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? Colors.white54 : Colors.black54;
+    final valueColor = isDark ? Colors.white : Colors.black87;
+
     return GestureDetector(
       onTap: onTap,
       child: GlassCard(
@@ -30,15 +34,21 @@ class DashboardSummaryCard extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: TextStyle(
+                color: labelColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
+              style: TextStyle(
+                color: valueColor,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
               ),
             ),
             if (subValue != null)
@@ -47,6 +57,7 @@ class DashboardSummaryCard extends StatelessWidget {
                 style: const TextStyle(
                   color: LiquidTheme.primaryAccent,
                   fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
           ],
@@ -63,15 +74,17 @@ class SrsForecastWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return GlassCard(
       isStatic: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             "Review Forecast",
             style: TextStyle(
-              color: Colors.white70,
+              color: isDark ? Colors.white70 : Colors.black54,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -79,9 +92,21 @@ class SrsForecastWidget extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _ForecastItem(label: "Today", value: counts.today),
-              _ForecastItem(label: "Tomorrow", value: counts.tomorrow),
-              _ForecastItem(label: "This Week", value: counts.week),
+              _ForecastItem(
+                label: "Today",
+                value: counts.today,
+                isDark: isDark,
+              ),
+              _ForecastItem(
+                label: "Tomorrow",
+                value: counts.tomorrow,
+                isDark: isDark,
+              ),
+              _ForecastItem(
+                label: "This Week",
+                value: counts.week,
+                isDark: isDark,
+              ),
             ],
           ),
         ],
@@ -93,8 +118,13 @@ class SrsForecastWidget extends StatelessWidget {
 class _ForecastItem extends StatelessWidget {
   final String label;
   final int value;
+  final bool isDark;
 
-  const _ForecastItem({required this.label, required this.value});
+  const _ForecastItem({
+    required this.label,
+    required this.value,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -102,8 +132,8 @@ class _ForecastItem extends StatelessWidget {
       children: [
         Text(
           value.toString(),
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -111,7 +141,10 @@ class _ForecastItem extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(color: Colors.white38, fontSize: 12),
+          style: TextStyle(
+            color: isDark ? Colors.white38 : Colors.black38,
+            fontSize: 12,
+          ),
         ),
       ],
     );
@@ -125,6 +158,7 @@ class GoalProgressWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final percent = (progress.goal > 0)
         ? (progress.completedActivities / progress.goal).clamp(0.0, 1.0)
         : 0.0;
@@ -137,23 +171,26 @@ class GoalProgressWidget extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 "Weekly Goal",
                 style: TextStyle(
-                  color: Colors.white70,
+                  color: isDark ? Colors.white70 : Colors.black54,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Text(
                 "${progress.completedActivities} / ${progress.goal}",
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(
+                  color: isDark ? Colors.white54 : Colors.black45,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           LinearProgressIndicator(
             value: percent,
-            backgroundColor: Colors.white10,
+            backgroundColor: isDark ? Colors.white10 : Colors.black12,
             color: percent >= 1.0
                 ? Colors.greenAccent
                 : LiquidTheme.primaryAccent,
@@ -168,16 +205,19 @@ class GoalProgressWidget extends StatelessWidget {
                 icon: Icons.check_circle_outline,
                 count: progress.breakdown.modules,
                 label: "Modules",
+                isDark: isDark,
               ),
               _ActivityIcon(
                 icon: Icons.edit_note,
                 count: progress.breakdown.journals,
                 label: "Journals",
+                isDark: isDark,
               ),
               _ActivityIcon(
                 icon: Icons.psychology,
                 count: progress.breakdown.sessions,
                 label: "Sessions",
+                isDark: isDark,
               ),
             ],
           ),
@@ -191,23 +231,25 @@ class _ActivityIcon extends StatelessWidget {
   final IconData icon;
   final int count;
   final String label;
+  final bool isDark;
 
   const _ActivityIcon({
     required this.icon,
     required this.count,
     required this.label,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: Colors.white54),
+        Icon(icon, size: 14, color: isDark ? Colors.white54 : Colors.black45),
         const SizedBox(width: 4),
         Text(
           "$count",
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
@@ -229,6 +271,7 @@ class ProficiencyLineChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final allPoints = [...history, ...prediction];
     if (allPoints.isEmpty) return const SizedBox();
 
@@ -255,10 +298,10 @@ class ProficiencyLineChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             "Proficiency Over Time",
             style: TextStyle(
-              color: Colors.white70,
+              color: isDark ? Colors.white70 : Colors.black54,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -314,6 +357,7 @@ class SimpleHeatmap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     // Create a simple visual grid of last 14 days
     final now = DateTime.now();
     final last14Days = List.generate(
@@ -326,10 +370,10 @@ class SimpleHeatmap extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             "Activity (Last 14 Days)",
             style: TextStyle(
-              color: Colors.white70,
+              color: isDark ? Colors.white70 : Colors.black54,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -345,7 +389,7 @@ class SimpleHeatmap extends StatelessWidget {
               );
               final minutes = point.totalSeconds / 60;
 
-              Color color = Colors.white10;
+              Color color = isDark ? Colors.white10 : Colors.black12;
               if (minutes > 0) {
                 color = LiquidTheme.primaryAccent.withValues(alpha: 0.3);
               }

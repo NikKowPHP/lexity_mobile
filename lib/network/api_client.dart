@@ -148,31 +148,28 @@ class AuthInterceptor extends Interceptor {
 class TokenRefreshInterceptor extends Interceptor {
   final Ref _ref;
   final LoggerService _logger;
-  bool _isRefreshing = false;
-  final List<_PendingRequest> _pendingRequests = [];
+  bool _refreshInProgress = false;
+  final List<Completer<Response<dynamic>>> _pendingRequests = [];
 
   TokenRefreshInterceptor(this._ref, this._logger);
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    // Don't intercept 401s for the refresh token endpoint itself to avoid loops
     final isRefreshPath = err.requestOptions.path.contains('/api/auth/refresh');
 
     if (err.response?.statusCode == 401 && !isRefreshPath) {
-      _logger.info('TokenRefreshInterceptor: 401 detected, attempting refresh');
+      _logger.info('TokenRefreshInterceptor: 401 detected');
 
-      if (_isRefreshing) {
+      if (_refreshInProgress) {
         _logger.info(
           'TokenRefreshInterceptor: Refresh in progress, queuing request',
         );
         final completer = Completer<Response<dynamic>>();
-        _pendingRequests.add(_PendingRequest(err.requestOptions, completer));
+        _pendingRequests.add(completer);
         try {
           final response = await completer.future;
           return handler.resolve(response);
         } catch (e) {
-          // Refresh failed for a queued request - the logout has already been triggered
-          // Pass a specific error that callers can check for
           final authError = DioException(
             requestOptions: err.requestOptions,
             response: err.response,
@@ -183,8 +180,7 @@ class TokenRefreshInterceptor extends Interceptor {
         }
       }
 
-      _isRefreshing = true;
-
+      _refreshInProgress = true;
       try {
         final newToken = await _ref
             .read(authProvider.notifier)
@@ -218,7 +214,7 @@ class TokenRefreshInterceptor extends Interceptor {
         _processQueue(null);
         return handler.next(err);
       } finally {
-        _isRefreshing = false;
+        _refreshInProgress = false;
       }
     }
 
@@ -226,22 +222,15 @@ class TokenRefreshInterceptor extends Interceptor {
   }
 
   void _processQueue(Response<dynamic>? response) {
-    for (final pending in _pendingRequests) {
+    for (final completer in _pendingRequests) {
       if (response != null) {
-        pending.completer.complete(response);
+        completer.complete(response);
       } else {
-        pending.completer.completeError(Exception('Token refresh failed'));
+        completer.completeError(Exception('Token refresh failed'));
       }
     }
     _pendingRequests.clear();
   }
-}
-
-class _PendingRequest {
-  final RequestOptions options;
-  final Completer<Response<dynamic>> completer;
-
-  _PendingRequest(this.options, this.completer);
 }
 
 class _LoggingInterceptor extends Interceptor {
