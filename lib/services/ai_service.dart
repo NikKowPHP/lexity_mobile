@@ -91,12 +91,24 @@ class AIService {
 
       if (!sourceDownloaded || !targetDownloaded) {
         final missingLangs = <String>[];
-        if (!sourceDownloaded) missingLangs.add(_getLanguageName(sourceCode));
-        if (!targetDownloaded) missingLangs.add(_getLanguageName(targetCode));
+        final missingCodes = <String>[];
+        if (!sourceDownloaded) {
+          missingLangs.add(_getLanguageName(sourceCode));
+          missingCodes.add(sourceCode);
+        }
+        if (!targetDownloaded) {
+          missingLangs.add(_getLanguageName(targetCode));
+          missingCodes.add(targetCode);
+        }
         _logger.warning(
           'AIService: ML Models not downloaded for: ${missingLangs.join(', ')}',
         );
-        return 'Translation unavailable offline.\n\nTo translate without internet, please download the ${missingLangs.join(' and ')} language model in Settings.';
+        return TranslationUnavailable(
+          message:
+              'Translation unavailable offline.\n\nTo translate without internet, please download the ${missingLangs.join(' and ')} language model.',
+          missingLanguages: missingLangs,
+          missingLanguageCodes: missingCodes,
+        ).toString();
       }
 
       final translator = OnDeviceTranslator(
@@ -114,6 +126,57 @@ class AIService {
       _logger.warning('AIService: Offline ML translation setup failed: $e');
       return 'Translation failed offline. Please connect to the internet for translations.';
     }
+  }
+
+  Future<ModelDownloadResult> downloadLanguageModel(String languageCode) async {
+    final mlKitCode = _mapToMlKitCode(languageCode);
+    final lang = _getTranslateLanguage(mlKitCode);
+    final langName = _getLanguageName(languageCode);
+
+    try {
+      _logger.info('AIService: Downloading ML model for $langName...');
+
+      final modelManager = OnDeviceTranslatorModelManager();
+
+      final success = await modelManager.downloadModel(
+        lang.bcpCode,
+        isWifiRequired: false,
+      );
+
+      if (success) {
+        await _db.saveDownloadedModel(languageCode, 'offline_translation');
+        _logger.info('AIService: Successfully downloaded model for $langName');
+        return ModelDownloadResult(
+          success: true,
+          languageName: langName,
+          languageCode: languageCode,
+        );
+      } else {
+        _logger.warning('AIService: Model download failed');
+        return ModelDownloadResult(
+          success: false,
+          languageName: langName,
+          languageCode: languageCode,
+          error: 'Download failed',
+        );
+      }
+    } catch (e) {
+      _logger.error('AIService: Model download exception: $e');
+      return ModelDownloadResult(
+        success: false,
+        languageName: langName,
+        languageCode: languageCode,
+        error: 'Download failed',
+      );
+    }
+  }
+
+  Future<List<String>> getDownloadedModels() async {
+    return await _db.getDownloadedModels();
+  }
+
+  Future<bool> isModelDownloaded(String languageCode) async {
+    return await _db.isModelDownloaded(languageCode);
   }
 
   TranslateLanguage _getTranslateLanguage(String code) {

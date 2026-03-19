@@ -119,6 +119,16 @@ class AppDatabase {
           )
         ''');
       }
+
+      if (oldVersion < 6) {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS downloaded_models (
+            language_code TEXT PRIMARY KEY,
+            model_type TEXT NOT NULL,
+            downloaded_at INTEGER NOT NULL
+          )
+        ''');
+      }
     } catch (e) {
       // Ignore errors
     }
@@ -245,6 +255,14 @@ class AppDatabase {
       CREATE TABLE sync_metadata (
         key TEXT PRIMARY KEY,
         value TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE downloaded_models (
+        language_code TEXT PRIMARY KEY,
+        model_type TEXT NOT NULL,
+        downloaded_at INTEGER NOT NULL
       )
     ''');
   }
@@ -744,7 +762,11 @@ class AppDatabase {
 
   Future<Map<String, dynamic>?> getCachedTranslation(String key) async {
     final db = await database;
-    final results = await db.query('translation_cache', where: 'cache_key = ?', whereArgs: [key]);
+    final results = await db.query(
+      'translation_cache',
+      where: 'cache_key = ?',
+      whereArgs: [key],
+    );
     if (results.isEmpty) return null;
     return jsonDecode(results.first['data_json'] as String);
   }
@@ -841,6 +863,44 @@ class AppDatabase {
       'key': 'last_synced_at',
       'value': timestamp,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  // Downloaded Models Management
+  Future<void> saveDownloadedModel(
+    String languageCode,
+    String modelType,
+  ) async {
+    final db = await database;
+    await db.insert('downloaded_models', {
+      'language_code': languageCode,
+      'model_type': modelType,
+      'downloaded_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<String>> getDownloadedModels() async {
+    final db = await database;
+    final results = await db.query('downloaded_models');
+    return results.map((row) => row['language_code'] as String).toList();
+  }
+
+  Future<bool> isModelDownloaded(String languageCode) async {
+    final db = await database;
+    final results = await db.query(
+      'downloaded_models',
+      where: 'language_code = ?',
+      whereArgs: [languageCode],
+    );
+    return results.isNotEmpty;
+  }
+
+  Future<void> removeDownloadedModel(String languageCode) async {
+    final db = await database;
+    await db.delete(
+      'downloaded_models',
+      where: 'language_code = ?',
+      whereArgs: [languageCode],
+    );
   }
 
   Future<Database> getRawDatabase() async => await database;

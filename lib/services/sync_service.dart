@@ -118,7 +118,7 @@ class SyncService {
     }
 
     _logger.info(
-      'SyncService: Fetched ${mutations.length} ${mutations} mutations for bulk processing',
+      'SyncService: Fetched ${mutations.length} $mutations mutations for bulk processing',
     );
 
     final ops = await Isolate.run(() => _prepareBulkPayload(mutations));

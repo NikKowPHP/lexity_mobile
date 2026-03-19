@@ -17,3 +17,34 @@ class TranslationSegment {
     );
   }
 }
+
+class TranslationUnavailable {
+  final String message;
+  final List<String> missingLanguages;
+  final List<String> missingLanguageCodes;
+
+  TranslationUnavailable({
+    required this.message,
+    required this.missingLanguages,
+    required this.missingLanguageCodes,
+  });
+
+  @override
+  String toString() => message;
+
+  bool get needsDownload => missingLanguageCodes.isNotEmpty;
+}
+
+class ModelDownloadResult {
+  final bool success;
+  final String languageName;
+  final String languageCode;
+  final String? error;
+
+  ModelDownloadResult({
+    required this.success,
+    required this.languageName,
+    required this.languageCode,
+    this.error,
+  });
+}

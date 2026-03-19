@@ -346,10 +346,12 @@ class SimpleHeatmap extends StatelessWidget {
               final minutes = point.totalSeconds / 60;
 
               Color color = Colors.white10;
-              if (minutes > 0)
+              if (minutes > 0) {
                 color = LiquidTheme.primaryAccent.withValues(alpha: 0.3);
-              if (minutes > 15)
+              }
+              if (minutes > 15) {
                 color = LiquidTheme.primaryAccent.withValues(alpha: 0.6);
+              }
               if (minutes > 30) color = LiquidTheme.primaryAccent;
 
               return Container(
