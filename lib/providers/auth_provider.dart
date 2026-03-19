@@ -187,7 +187,9 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> logout() async {
     _logger.info('AuthNotifier: logging out');
+    // Clear both tokens to prevent the "invalid token" loop
     await _authTokenService.clearToken();
+    await _refreshTokenService.clearToken();
     _cachedToken = null;
     state = state.copyWith(
       isAuthenticated: false,

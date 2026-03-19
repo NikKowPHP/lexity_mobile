@@ -155,7 +155,10 @@ class TokenRefreshInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    if (err.response?.statusCode == 401) {
+    // Don't intercept 401s for the refresh token endpoint itself to avoid loops
+    final isRefreshPath = err.requestOptions.path.contains('/api/auth/refresh');
+
+    if (err.response?.statusCode == 401 && !isRefreshPath) {
       _logger.info('TokenRefreshInterceptor: 401 detected, attempting refresh');
 
       if (_isRefreshing) {
@@ -168,7 +171,15 @@ class TokenRefreshInterceptor extends Interceptor {
           final response = await completer.future;
           return handler.resolve(response);
         } catch (e) {
-          return handler.next(err);
+          // Refresh failed for a queued request - the logout has already been triggered
+          // Pass a specific error that callers can check for
+          final authError = DioException(
+            requestOptions: err.requestOptions,
+            response: err.response,
+            type: DioExceptionType.badResponse,
+            message: 'AUTH_EXPIRED',
+          );
+          return handler.next(authError);
         }
       }
 
@@ -191,12 +202,19 @@ class TokenRefreshInterceptor extends Interceptor {
           _processQueue(retryResponse);
           return handler.resolve(retryResponse);
         } else {
-          _logger.warning('TokenRefreshInterceptor: Token refresh failed');
+          _logger.warning(
+            'TokenRefreshInterceptor: Token refresh failed, logging out user',
+          );
+          await _ref.read(authProvider.notifier).logout();
           _processQueue(null);
           return handler.next(err);
         }
       } catch (e) {
         _logger.error('TokenRefreshInterceptor: Refresh error', e);
+        _logger.warning(
+          'TokenRefreshInterceptor: Refresh exception, logging out user',
+        );
+        await _ref.read(authProvider.notifier).logout();
         _processQueue(null);
         return handler.next(err);
       } finally {
