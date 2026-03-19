@@ -14,7 +14,7 @@ import 'daos/analytics_cache_dao.dart';
 class AppDatabase {
   static Database? _database;
   static const String _dbName = 'lexity.db';
-  static const int _dbVersion = 5;
+  static const int _dbVersion = 6;
 
   final Map<String, StreamController<List<Map<String, dynamic>>>> _controllers =
       {};
@@ -156,6 +156,17 @@ class AppDatabase {
           )
         ''');
       }
+
+      if (oldVersion < 7) {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            target_language TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )
+        ''');
+      }
     } catch (e) {
       // Ignore errors
     }
@@ -290,6 +301,15 @@ class AppDatabase {
         language_code TEXT PRIMARY KEY,
         model_type TEXT NOT NULL,
         downloaded_at INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        target_language TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       )
     ''');
   }
@@ -574,6 +594,31 @@ class AppDatabase {
 
   Future<Database> getRawDatabase() async => await database;
 
+  // Topics - Local storage for suggested topics
+  Future<int> insertTopic(Map<String, dynamic> topic) async {
+    final db = await database;
+    return await db.insert('topics', topic);
+  }
+
+  Future<List<Map<String, dynamic>>> getTopics(String language) async {
+    final db = await database;
+    return await db.query(
+      'topics',
+      where: 'target_language = ?',
+      whereArgs: [language],
+      orderBy: 'created_at DESC',
+    );
+  }
+
+  Future<int> clearTopics(String language) async {
+    final db = await database;
+    return await db.delete(
+      'topics',
+      where: 'target_language = ?',
+      whereArgs: [language],
+    );
+  }
+
   Future<void> close() async {
     for (final controller in _controllers.values) {
       await controller.close();
@@ -597,6 +642,7 @@ class AppDatabase {
       await txn.delete('sync_queue');
       await txn.delete('analytics_cache');
       await txn.delete('learning_modules');
+      await txn.delete('topics');
     });
     // Notify all watchers to refresh
     notify('users');

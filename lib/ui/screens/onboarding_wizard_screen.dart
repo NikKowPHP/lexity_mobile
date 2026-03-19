@@ -1,9 +1,6 @@
-// lib/ui/screens/onboarding_wizard_screen.dart
-// iOS 26 Style Onboarding Wizard - Fluid UI with physics-based transitions
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -11,12 +8,12 @@ import 'package:lexity_mobile/theme/liquid_theme.dart';
 import 'package:lexity_mobile/ui/widgets/liquid_components.dart';
 import 'package:lexity_mobile/utils/constants.dart';
 import 'package:lexity_mobile/models/onboarding_data.dart';
+import 'package:lexity_mobile/models/user_profile.dart';
 import 'package:lexity_mobile/services/onboarding_service.dart';
-import 'package:lexity_mobile/providers/journal_provider.dart';
-import 'package:lexity_mobile/providers/user_provider.dart';
 import 'package:lexity_mobile/providers/onboarding_provider.dart';
+import 'package:lexity_mobile/providers/user_provider.dart';
+import 'package:lexity_mobile/providers/topic_provider.dart';
 
-// Onboarding Wizard Screen - iOS 26 Fluid UI
 class OnboardingWizardScreen extends ConsumerStatefulWidget {
   const OnboardingWizardScreen({super.key});
 
@@ -30,53 +27,33 @@ class _OnboardingWizardScreenState
   late PageController _pageController;
   int _currentIndex = 0;
 
-  // STEP 1 fields
   String? _nativeLanguage;
   String? _targetLanguage;
   String? _writingStyle;
   String? _writingPurpose;
   String? _selfAssessedLevel;
 
-  bool _journalWrote = false;
-  Timer? _step3PollTimer;
-
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
-    
-    // Sync starting step based on existing data
-    Future.microtask(() {
-      final profile = ref.read(userProfileProvider).value;
-      
-      // Determine initial step from OnboardingStep enum
-      final onboardingStep = ref.read(onboardingProvider);
-      int startIndex = _mapStepToIndex(onboardingStep);
-      
-      setState(() {
-        // If we already have a native language, start at step 1
-        if (profile?.nativeLanguage != null && profile!.nativeLanguage!.isNotEmpty) {
-          startIndex = 1;
-        }
-        // If we already wrote a journal, start at step 2
-        final journals = ref.read(journalHistoryProvider).value ?? [];
-        if (journals.isNotEmpty) {
-          startIndex = 2;
-          if (journals.first.analysis != null) {
-            startIndex = 3;
-          }
-        }
-        // If onboarding is already completed, redirect
-        if (profile?.onboardingCompleted == true) {
-          if (mounted) {
-            context.go('/path');
-          }
-          return;
-        }
-        _currentIndex = startIndex;
-        _pageController = PageController(initialPage: startIndex);
-      });
-    });
+
+    // Initial setup (will likely be 0 on a cold boot/hard refresh)
+    final initialStep = ref.read(onboardingProvider);
+    _currentIndex = _mapStepToIndex(initialStep);
+    _pageController = PageController(initialPage: _currentIndex);
+
+    // Hydrate local state synchronously if profile is already cached
+    _hydrateFromProfile(ref.read(userProfileProvider).value);
+  }
+
+  void _hydrateFromProfile(UserProfile? profile) {
+    if (profile != null) {
+      _nativeLanguage ??= profile.nativeLanguage;
+      _targetLanguage ??= profile.defaultTargetLanguage;
+      _writingStyle ??= profile.writingStyle ?? 'Casual';
+      _writingPurpose ??= profile.writingPurpose ?? 'Personal';
+      _selfAssessedLevel ??= profile.selfAssessedLevel ?? 'Beginner';
+    }
   }
 
   int _mapStepToIndex(OnboardingStep step) {
@@ -89,144 +66,143 @@ class _OnboardingWizardScreenState
         return 2;
       case OnboardingStep.studyIntro:
         return 3;
-      case OnboardingStep.completed:
-        return 4; // Will redirect
       default:
         return 0;
     }
   }
 
-  @override
-  void didUpdateWidget(covariant OnboardingWizardScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_currentIndex == 2 && _step3PollTimer == null) {
-      _startStep3Polling();
-    } else if (_currentIndex != 2) {
-      _step3PollTimer?.cancel();
-      _step3PollTimer = null;
+  Future<void> _handleStep1Submit() async {
+    if (_nativeLanguage == null || _targetLanguage == null) return;
+
+    final data = OnboardingData(
+      nativeLanguage: _nativeLanguage!,
+      targetLanguage: _targetLanguage!,
+      writingStyle: _writingStyle ?? 'Casual',
+      writingPurpose: _writingPurpose ?? 'Personal',
+      selfAssessedLevel: _selfAssessedLevel ?? 'Beginner',
+    );
+
+    // Optimistically advance UI for that smooth iOS feel
+    setState(() => _currentIndex = 1);
+    if (_pageController.hasClients) {
+      _pageController.nextPage(duration: 600.ms, curve: Curves.easeOutExpo);
     }
-  }
 
-  void _startStep3Polling() {
-    _step3PollTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      final journals = ref.read(journalHistoryProvider).value ?? [];
-      if (journals.isNotEmpty && journals.first.analysis != null) {
-        timer.cancel();
-        if (mounted) {
-          _goToNextPage();
-        }
-      }
-    });
-    Future.delayed(const Duration(seconds: 30)).then((_) {
-      if (mounted && _currentIndex == 2) {
-        _goToNextPage();
-      }
-    });
-  }
-
-  void _goToNextPage() {
-    if (_currentIndex < 3) {
-      HapticFeedback.lightImpact();
-      _pageController.nextPage(
-        duration: 600.ms,
-        curve: Curves.easeOutExpo, // iOS-like curve
-      );
+    try {
+      await ref.read(onboardingServiceProvider).submitOnboarding(data);
+      // Invalidate so the provider catches up to the new state
+      ref.invalidate(userProfileProvider);
+    } catch (e) {
+      // Fallback/Error handling
     }
-  }
-
-  void _onPageChanged(int index) {
-    HapticFeedback.selectionClick();
-    setState(() => _currentIndex = index);
-  }
-
-  @override
-  void dispose() {
-    _step3PollTimer?.cancel();
-    _pageController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // -------------------------------------------------------------------------
+    // THE FIX: Listeners to sync UI automatically after DB/Network loads
+    // -------------------------------------------------------------------------
+
+    // 1. Listen for Step changes (Jumps user to Journal step automatically if profile loads)
+    ref.listen<OnboardingStep>(onboardingProvider, (previous, next) {
+      final newIndex = _mapStepToIndex(next);
+      if (newIndex != _currentIndex && _pageController.hasClients) {
+        setState(() => _currentIndex = newIndex);
+
+        // Jump instantly on app load, animate if progressing normally
+        if (previous == OnboardingStep.inactive || previous == null) {
+          _pageController.jumpToPage(newIndex);
+        } else {
+          _pageController.animateToPage(
+            newIndex,
+            duration: 600.ms,
+            curve: Curves.easeOutExpo,
+          );
+        }
+      }
+    });
+
+    // 2. Listen for Profile data to hydrate the form inputs
+    ref.listen(userProfileProvider, (previous, next) {
+      if (next.value != null && _nativeLanguage == null) {
+        setState(() => _hydrateFromProfile(next.value));
+      }
+    });
+
+    // -------------------------------------------------------------------------
+
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: LiquidBackground(
         child: Stack(
           children: [
-            // Background Content (Slightly blurred)
-            Center(
-              child: Opacity(
-                opacity: 0.15,
-                child: AppLogo(width: 150).animate().scale(
-                  begin: const Offset(0.8, 0.8),
-                  end: const Offset(1.0, 1.0),
-                  duration: 3.seconds,
-                  curve: Curves.easeInOutSine,
-                ).then().scale(
-                  begin: const Offset(1.0, 1.0),
-                  end: const Offset(0.85, 0.85),
-                  duration: 3.seconds,
-                  curve: Curves.easeInOutSine,
-                ),
+            const Positioned.fill(
+              child: Align(
+                alignment: Alignment(0, -0.6),
+                child: AppLogo(width: 120),
               ),
             ),
-            
+
             // The iOS 26 Modal Sheet
             Align(
               alignment: Alignment.bottomCenter,
-              child: Container(
-                height: MediaQuery.of(context).size.height * 0.82,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.4),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(40)),
-                  child: GlassCard(
-                    padding: 0,
-                    borderRadius: 40,
-                    child: Column(
-                      children: [
-                        _buildHandle(),
-                        _buildProgressIndicator(),
-                        Expanded(
-                          child: PageView(
-                            controller: _pageController,
-                            physics: const NeverScrollableScrollPhysics(),
-                            onPageChanged: _onPageChanged,
-                            children: [
-                              _StepLanguageSetup(
-                                nativeLanguage: _nativeLanguage,
-                                targetLanguage: _targetLanguage,
-                                writingStyle: _writingStyle,
-                                writingPurpose: _writingPurpose,
-                                selfAssessedLevel: _selfAssessedLevel,
-                                onNativeChanged: (v) => setState(() => _nativeLanguage = v),
-                                onTargetChanged: (v) => setState(() => _targetLanguage = v),
-                                onStyleChanged: (v) => setState(() => _writingStyle = v),
-                                onPurposeChanged: (v) => setState(() => _writingPurpose = v),
-                                onLevelChanged: (v) => setState(() => _selfAssessedLevel = v),
-                                onContinue: _onStep1Continue,
-                              ),
-                              _StepJournalIntro(
-                                targetLanguage: _targetLanguage,
-                                journalWrote: _journalWrote,
-                                onStartJournal: _onStartJournal,
-                              ),
-                              _StepAIAnalyzing(),
-                              _StepGoalCompletion(
-                                onSetGoals: () => context.go('/profile'),
-                                onSkip: _onFinishOnboarding,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+              child:
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(44),
                     ),
+                    child: BackdropFilter(
+                      // High-density blur for that "Liquid Glass" look
+                      filter: ImageFilter.blur(sigmaX: 55, sigmaY: 55),
+                      child: Container(
+                        height: MediaQuery.of(context).size.height * 0.88,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          // Dark tint that isn't fully opaque, allowing underlying colors to bleed through
+                          color: const Color(0xFF0D1117).withOpacity(0.75),
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(44),
+                          ),
+                          border: Border.all(
+                            // Specular highlight on the top edge
+                            color: Colors.white.withOpacity(0.12),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.5),
+                              blurRadius: 100,
+                              spreadRadius: 20,
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            _buildHandle(),
+                            _buildProgressIndicator(),
+                            Expanded(
+                              child: PageView(
+                                controller: _pageController,
+                                physics: const NeverScrollableScrollPhysics(),
+                                children: [
+                                  _buildStep1(),
+                                  _buildStep2(),
+                                  _buildStep3(),
+                                  _buildStep4(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ).animate().slideY(
+                    begin: 1,
+                    end: 0,
+                    duration: 900.ms,
+                    curve: Curves
+                        .easeOutBack, // Aggressive Apple-style entry with snap
                   ),
-                ),
-              ).animate().slideY(begin: 1, end: 0, duration: 800.ms, curve: Curves.easeOutQuart),
             ),
           ],
         ),
@@ -236,12 +212,12 @@ class _OnboardingWizardScreenState
 
   Widget _buildHandle() {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 12),
-      width: 40,
-      height: 4,
+      margin: const EdgeInsets.only(top: 12, bottom: 20),
+      width: 48,
+      height: 5,
       decoration: BoxDecoration(
         color: Colors.white24,
-        borderRadius: BorderRadius.circular(2),
+        borderRadius: BorderRadius.circular(3),
       ),
     );
   }
@@ -256,13 +232,18 @@ class _OnboardingWizardScreenState
             child: AnimatedContainer(
               duration: 400.ms,
               margin: const EdgeInsets.symmetric(horizontal: 4),
-              height: 3,
+              height: 4,
               decoration: BoxDecoration(
                 color: isActive ? LiquidTheme.primaryAccent : Colors.white10,
                 borderRadius: BorderRadius.circular(2),
-                boxShadow: isActive ? [
-                  BoxShadow(color: LiquidTheme.primaryAccent.withOpacity(0.5), blurRadius: 8)
-                ] : null,
+                boxShadow: isActive
+                    ? [
+                        BoxShadow(
+                          color: LiquidTheme.primaryAccent.withOpacity(0.5),
+                          blurRadius: 8,
+                        ),
+                      ]
+                    : null,
               ),
             ),
           );
@@ -271,179 +252,398 @@ class _OnboardingWizardScreenState
     );
   }
 
-  void _onStep1Continue() {
-    if (_nativeLanguage != null && _targetLanguage != null) {
-      final data = OnboardingData(
-        nativeLanguage: _nativeLanguage!,
-        targetLanguage: _targetLanguage!,
-        writingStyle: _writingStyle ?? 'Casual',
-        writingPurpose: _writingPurpose ?? 'Personal',
-        selfAssessedLevel: _selfAssessedLevel ?? 'Beginner',
-      );
-      final svc = ref.read(onboardingServiceProvider);
-      svc.submitOnboarding(data);
-      _goToNextPage();
-    }
-  }
+  // --- STEPS ---
 
-  void _onStartJournal() async {
-    final result = await context.push<bool>(
-      '/journal/new?topic=first-journal',
-    );
-    if (result == true || result == null) {
-      setState(() {
-        _journalWrote = true;
-      });
-      _goToNextPage();
-    }
-  }
-
-  void _onFinishOnboarding() async {
-    await ref.read(onboardingServiceProvider).completeOnboarding();
-    if (mounted) {
-      context.go('/path');
-    }
-  }
-}
-
-// Step 1: Language & Style Setup
-class _StepLanguageSetup extends StatelessWidget {
-  final String? nativeLanguage;
-  final String? targetLanguage;
-  final String? writingStyle;
-  final String? writingPurpose;
-  final String? selfAssessedLevel;
-  final ValueChanged<String> onNativeChanged;
-  final ValueChanged<String> onTargetChanged;
-  final ValueChanged<String> onStyleChanged;
-  final ValueChanged<String> onPurposeChanged;
-  final ValueChanged<String> onLevelChanged;
-  final VoidCallback onContinue;
-
-  const _StepLanguageSetup({
-    required this.nativeLanguage,
-    required this.targetLanguage,
-    required this.writingStyle,
-    required this.writingPurpose,
-    required this.selfAssessedLevel,
-    required this.onNativeChanged,
-    required this.onTargetChanged,
-    required this.onStyleChanged,
-    required this.onPurposeChanged,
-    required this.onLevelChanged,
-    required this.onContinue,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildStep1() {
     final languages = AppConstants.supportedLanguages;
-    
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(30),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
+          const Text(
             "Setup your profile",
-            style: LiquidTheme.darkTheme.textTheme.displaySmall?.copyWith(
+            style: TextStyle(
               color: Colors.white,
+              fontSize: 26,
               fontWeight: FontWeight.bold,
             ),
-          ).animate().fadeIn().moveX(begin: -20, end: 0, duration: 500.ms),
+          ).animate().fadeIn().moveX(begin: -20, end: 0),
           const SizedBox(height: 8),
           const Text(
             "Tailoring your Lexity experience.",
             style: TextStyle(color: Colors.white54, fontSize: 16),
-          ).animate().fadeIn(delay: 100.ms).moveX(begin: -20, end: 0, duration: 500.ms),
+          ),
           const SizedBox(height: 32),
-          
-          // Modern Pill Dropdowns
-          _SelectionTile(
-            title: "Native Language",
-            value: nativeLanguage ?? "Select",
-            icon: Icons.language,
-            onTap: () => _openLanguagePicker(context, languages, onNativeChanged),
-          ).animate().scale(delay: 200.ms, duration: 400.ms, curve: Curves.easeOutBack),
-          const SizedBox(height: 16),
-          _SelectionTile(
-            title: "Target Language",
-            value: targetLanguage ?? "Select",
-            icon: Icons.translate,
-            onTap: () => _openLanguagePicker(context, languages, onTargetChanged),
-          ).animate().scale(delay: 300.ms, duration: 400.ms, curve: Curves.easeOutBack),
-          
+
+          _buildSelectionTile(
+            "Native Language",
+            _nativeLanguage ?? "Select",
+            Icons.language,
+            () => _openLanguagePicker(languages, true),
+          ),
+          const SizedBox(height: 12),
+          _buildSelectionTile(
+            "Target Language",
+            _targetLanguage ?? "Select",
+            Icons.translate,
+            () => _openLanguagePicker(languages, false),
+          ),
+
           const SizedBox(height: 24),
-          
-          // Segment Rows with animations
           _buildSegmentRow(
-            "Writing Style",
+            'Writing Style',
             ['Casual', 'Formal', 'Academic'],
-            writingStyle,
-            onStyleChanged,
-          ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.2, end: 0),
-          const SizedBox(height: 16),
+            _writingStyle,
+            (v) => setState(() => _writingStyle = v),
+          ),
+          const SizedBox(height: 12),
           _buildSegmentRow(
-            "Writing Purpose",
+            'Writing Purpose',
             ['Personal', 'Professional', 'Creative'],
-            writingPurpose,
-            onPurposeChanged,
-          ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.2, end: 0),
-          const SizedBox(height: 16),
+            _writingPurpose,
+            (v) => setState(() => _writingPurpose = v),
+          ),
+          const SizedBox(height: 12),
           _buildSegmentRow(
-            "Self-Assessed Level",
+            'Self-Assessed Level',
             ['Beginner', 'Intermediate', 'Advanced'],
-            selfAssessedLevel,
-            onLevelChanged,
-          ).animate().fadeIn(delay: 600.ms).slideY(begin: 0.2, end: 0),
-          
+            _selfAssessedLevel,
+            (v) => setState(() => _selfAssessedLevel = v),
+          ),
+
           const SizedBox(height: 40),
           LiquidButton(
             text: "Continue",
-            onTap: (nativeLanguage != null && targetLanguage != null) ? onContinue : () {},
-          ).animate().fadeIn(delay: 700.ms).slideY(begin: 0.3, end: 0),
+            onTap: (_nativeLanguage != null && _targetLanguage != null)
+                ? _handleStep1Submit
+                : () {},
+          ),
+          const SizedBox(height: 40),
         ],
       ),
     );
   }
 
-  void _openLanguagePicker(
-    BuildContext context, 
-    List<dynamic> languages, 
-    ValueChanged<String> onSelect,
+  Widget _buildStep2() {
+    final topicsAsync = ref.watch(topicsProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            "Choose a Topic",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+            ),
+          ).animate().fadeIn().moveX(begin: -20, end: 0),
+          const SizedBox(height: 8),
+          const Text(
+            "Pick something that inspires you, or write freely.",
+            style: TextStyle(color: Colors.white54, fontSize: 16),
+          ),
+          const SizedBox(height: 12),
+
+          // THE FADING LIST: Expands to fill space between header and buttons
+          Expanded(
+            child: ShaderMask(
+              shaderCallback: (Rect bounds) {
+                return const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent, // Top edge fade
+                    Colors.black, // Opaque middle
+                    Colors.black, // Opaque middle
+                    Colors.transparent, // Bottom edge fade
+                  ],
+                  stops: [0.0, 0.08, 0.92, 1.0], // Fade range
+                ).createShader(bounds);
+              },
+              blendMode: BlendMode.dstIn,
+              child: topicsAsync.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(
+                    color: LiquidTheme.primaryAccent,
+                  ),
+                ),
+                error: (e, _) => Center(
+                  child: Text(
+                    "Error loading topics",
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+                data: (topics) {
+                  return ListView.separated(
+                    // Extra padding so items don't start/end under the fade
+                    padding: const EdgeInsets.only(top: 24, bottom: 40),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: topics.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 12),
+                    itemBuilder: (context, index) =>
+                        _buildTopicTile(topics[index], index),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // BOTTOM ACTION GROUP: Fixed at the bottom
+          Column(
+            children: [
+              GestureDetector(
+                onTap: () => context.push('/journal/new?topic=Free Write'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.edit_note, color: Colors.white70, size: 20),
+                      SizedBox(width: 10),
+                      Text(
+                        "Or write freely",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () => ref.read(topicsProvider.notifier).refresh(),
+                icon: const Icon(
+                  Icons.refresh,
+                  size: 14,
+                  color: LiquidTheme.primaryAccent,
+                ),
+                label: const Text(
+                  "Generate new topics",
+                  style: TextStyle(
+                    color: LiquidTheme.primaryAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  /// iOS 26 Style Topic Tile
+  Widget _buildTopicTile(String topic, int index) {
+    return GestureDetector(
+      onTap: () =>
+          context.push('/journal/new?topic=${Uri.encodeComponent(topic)}'),
+      child:
+          Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: LiquidTheme.primaryAccent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome,
+                        color: LiquidTheme.primaryAccent,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        topic,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          height: 1.4,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white24,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              )
+              .animate(delay: (100 * index).ms)
+              .fadeIn(duration: 400.ms)
+              .slideX(begin: 0.1, end: 0, curve: Curves.easeOutCubic),
+    );
+  }
+
+  Widget _buildStep3() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+                Icons.auto_awesome,
+                size: 60,
+                color: LiquidTheme.primaryAccent,
+              )
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .scale(
+                begin: const Offset(1, 1),
+                end: const Offset(1.2, 1.2),
+                duration: 1.seconds,
+              ),
+          const SizedBox(height: 24),
+          const Text(
+            "Lexi is analyzing...",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Evaluating grammar, phrasing, and vocabulary.",
+            style: TextStyle(color: Colors.white54, fontSize: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep4() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "You're all set!",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Your personalized path is ready.",
+            style: TextStyle(color: Colors.white54, fontSize: 16),
+          ),
+          const SizedBox(height: 32),
+          GlassCard(
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.greenAccent.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check, color: Colors.greenAccent),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Text(
+                    "Analysis complete. Your curriculum has been adjusted.",
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          LiquidButton(
+            text: "Start Learning",
+            onTap: () async {
+              await ref.read(onboardingServiceProvider).completeOnboarding();
+              if (mounted) context.go('/path');
+            },
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  // --- UI HELPERS ---
+
+  Widget _buildSelectionTile(
+    String title,
+    String value,
+    IconData icon,
+    VoidCallback onTap,
   ) {
-    HapticFeedback.lightImpact();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1a1c23),
-      builder: (ctx) {
-        return ListView(
-          shrinkWrap: true,
-          children: languages.map((lang) {
-            final name = _languageDisplay(lang);
-            return ListTile(
-              title: Text(name, style: const TextStyle(color: Colors.white)),
-              onTap: () => Navigator.of(ctx).pop(_languageCode(lang)),
-            );
-          }).toList(),
-        );
-      },
-    ).then((selected) {
-      if (selected != null) {
-        onSelect(selected as String);
-      }
-    });
-  }
-
-  String _languageCode(dynamic lang) {
-    if (lang is Map<String, dynamic>) return lang['code'] ?? lang['name'] ?? lang.toString();
-    if (lang is String) return lang;
-    return lang.toString();
-  }
-
-  String _languageDisplay(dynamic lang) {
-    if (lang is Map<String, dynamic>) return lang['name'] ?? lang['code'] ?? lang.toString();
-    if (lang is String) return lang;
-    return lang.toString();
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: LiquidTheme.primaryAccent, size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                color: LiquidTheme.primaryAccent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: Colors.white24, size: 18),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildSegmentRow(
@@ -453,42 +653,48 @@ class _StepLanguageSetup extends StatelessWidget {
     ValueChanged<String> onSelected,
   ) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           title,
           style: const TextStyle(
             color: Colors.white70,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Wrap(
-          spacing: 8.0,
+          spacing: 10.0,
           runSpacing: 10.0,
           children: options.map((opt) {
             final isSelected = opt == selected;
             return GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                onSelected(opt);
-              },
+              onTap: () => onSelected(opt),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                duration: 200.ms,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
-                  color: isSelected ? LiquidTheme.primaryAccent : Colors.white.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(12),
+                  color: isSelected
+                      ? LiquidTheme.primaryAccent
+                      : Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: isSelected ? Colors.white24 : Colors.white10,
+                    color: isSelected
+                        ? LiquidTheme.primaryAccent.withOpacity(0.5)
+                        : Colors.white10,
                   ),
                 ),
                 child: Text(
                   opt,
                   style: TextStyle(
                     color: isSelected ? Colors.white : Colors.white70,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                 ),
               ),
@@ -498,334 +704,65 @@ class _StepLanguageSetup extends StatelessWidget {
       ],
     );
   }
-}
 
-// Step 2: First Journal Prompt
-class _StepJournalIntro extends StatelessWidget {
-  final String? targetLanguage;
-  final bool journalWrote;
-  final VoidCallback onStartJournal;
-
-  const _StepJournalIntro({
-    required this.targetLanguage,
-    required this.journalWrote,
-    required this.onStartJournal,
-  });
-
-  String _languagePromptFor(String? lang) {
-    final key = (lang ?? '').toLowerCase();
-    const map = {
-      'spanish': 'Write about your day in Spanish. What did you learn today?',
-      'french': 'Écris sur ta journée. Qu\'as-tu appris aujourd\'hui?',
-      'german': 'Schreib über deinen Tag. Was hast du heute gelernt?',
-      'japanese': '今日のことを書いてください。今日は何を学びましたか？',
-      'korean': '오늘 하루를 적어보세요. 오늘 무엇을 배웠나요?',
-      'mandarin': '写一写你今天过得怎么样。今天学到了什么？',
-      'portuguese': 'Escreva sobre o seu dia. O que você aprendeu hoje?',
-      'italian': 'Scrivi della tua giornata. Cosa hai imparato oggi?',
-      'russian': 'Напишите о своём дне. Что вы сегодня узнали?',
-      'arabic': 'اكتب عن يومك. ماذا تعلمت اليوم؟',
-      'hindi': 'अपने दिन के बारे में लिखें। आज आपने क्या सीखा?',
-      'polish': 'Napisz o swoim dniu. Czego się dzisiaj nauczyłeś?',
-      'english': 'Write about your day. What did you learn today?',
-    };
-    return map[key] ?? 'Write about your day. What did you learn today?';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(30),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            "You're all set!",
-            style: LiquidTheme.darkTheme.textTheme.displaySmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ).animate().fadeIn().moveX(begin: -20, end: 0),
-          const SizedBox(height: 8),
-          const Text(
-            "Let's write your first journal entry.",
-            style: TextStyle(color: Colors.white54, fontSize: 16),
-          ).animate().fadeIn(delay: 100.ms).moveX(begin: -20, end: 0),
-          const SizedBox(height: 32),
-          
-          GlassCard(
-            padding: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: LiquidTheme.primaryAccent.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.auto_awesome,
-                        color: LiquidTheme.primaryAccent,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      "Today's Prompt",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _languagePromptFor(targetLanguage),
-                  style: const TextStyle(color: Colors.white70, fontSize: 15),
-                ),
-              ],
-            ),
-          ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
-          
-          const Spacer(),
-          
-          if (journalWrote)
-            LiquidButton(text: "Continue", onTap: onStartJournal)
-          else
-            LiquidButton(text: "Start First Journal", onTap: onStartJournal),
-          
-        ].animate().fadeIn(delay: 300.ms),
+  void _openLanguagePicker(List<dynamic> languages, bool isNative) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1c23),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
-    );
-  }
-}
-
-// Step 3: AI Analysis Animation
-class _StepAIAnalyzing extends StatelessWidget {
-  const _StepAIAnalyzing();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(30),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Spacer(),
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  LiquidTheme.primaryAccent.withOpacity(0.3),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-            child: Center(
-              child: Icon(
-                Icons.psychology,
-                size: 48,
-                color: LiquidTheme.primaryAccent,
-              ),
-            ),
-          ).animate(onPlay: (c) => c.repeat())
-            .scale(
-              begin: const Offset(0.9, 0.9),
-              end: const Offset(1.1, 1.1),
-              duration: 1.5.seconds,
-              curve: Curves.easeInOut,
-            )
-            .then()
-            .scale(
-              begin: const Offset(1.1, 1.1),
-              end: const Offset(0.9, 0.9),
-              duration: 1.5.seconds,
-              curve: Curves.easeInOut,
-            ),
-          
-          const SizedBox(height: 32),
-          Text(
-            "Your journal is being analyzed...",
-            style: LiquidTheme.darkTheme.textTheme.headlineSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-            textAlign: TextAlign.center,
-          ).animate().fadeIn(delay: 200.ms),
-          const SizedBox(height: 12),
-          const Text(
-            "Our AI is crafting personalized insights\njust for you.",
-            style: TextStyle(color: Colors.white54, fontSize: 15),
-            textAlign: TextAlign.center,
-          ).animate().fadeIn(delay: 400.ms),
-          
-          const Spacer(),
-          
-          // Animated dots
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(3, (i) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Container(
-                width: 8,
-                height: 8,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: LiquidTheme.primaryAccent,
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              ).animate(delay: (i * 150).ms, onPlay: (c) => c.repeat())
-                .fadeIn(duration: 300.ms)
-                .then()
-                .fadeOut(duration: 300.ms),
-            )),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: languages.map((lang) {
+                    final code =
+                        lang['value'] ?? lang['code'] ?? lang.toString();
+                    final name = lang['name'] ?? lang.toString();
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 4,
+                      ),
+                      title: Text(
+                        name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                        ),
+                      ),
+                      onTap: () => Navigator.of(ctx).pop(code),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 40),
-        ],
-      ),
-    );
-  }
-}
-
-// Step 4: Goal Completion
-class _StepGoalCompletion extends StatelessWidget {
-  final VoidCallback onSetGoals;
-  final VoidCallback onSkip;
-
-  const _StepGoalCompletion({
-    required this.onSetGoals,
-    required this.onSkip,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(30),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Spacer(),
-          
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  LiquidTheme.primaryAccent.withOpacity(0.3),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-            child: Icon(
-              Icons.celebration,
-              size: 64,
-              color: LiquidTheme.primaryAccent,
-            ),
-          ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
-          
-          const SizedBox(height: 32),
-          Text(
-            "You're ready to start!",
-            style: LiquidTheme.darkTheme.textTheme.displaySmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-            textAlign: TextAlign.center,
-          ).animate().fadeIn(delay: 200.ms),
-          const SizedBox(height: 12),
-          const Text(
-            "We will tailor a journey based on\nyour goals and journal insights.",
-            style: TextStyle(color: Colors.white54, fontSize: 15),
-            textAlign: TextAlign.center,
-          ).animate().fadeIn(delay: 300.ms),
-          
-          const Spacer(),
-          
-          LiquidButton(text: "Set Your Goals", onTap: onSetGoals)
-            .animate().fadeIn(delay: 400.ms).slideY(begin: 0.3, end: 0),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: onSkip,
-            child: Text(
-              "Skip for now",
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
-                decoration: TextDecoration.underline,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ).animate().fadeIn(delay: 500.ms),
-          const SizedBox(height: 40),
-        ],
-      ),
-    );
-  }
-}
-
-// Selection Tile Widget - Modern iOS 26 style
-class _SelectionTile extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _SelectionTile({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
+        );
       },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: LiquidTheme.primaryAccent, size: 24),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-            Text(
-              value,
-              style: TextStyle(
-                color: value == "Select" ? Colors.white54 : LiquidTheme.primaryAccent,
-                fontSize: 15,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right, color: Colors.white24),
-          ],
-        ),
-      ),
-    );
+    ).then((selected) {
+      if (selected != null && mounted) {
+        setState(() {
+          if (isNative)
+            _nativeLanguage = selected as String?;
+          else
+            _targetLanguage = selected as String?;
+        });
+      }
+    });
   }
 }

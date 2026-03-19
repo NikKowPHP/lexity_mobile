@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/journal_entry.dart';
+import '../models/writing_aids.dart';
 import '../data/repositories/journal_repository.dart';
 import '../database/app_database.dart';
 import 'user_provider.dart';
@@ -111,3 +112,9 @@ final journalNotifierProvider =
     NotifierProvider<JournalNotifier, AsyncValue<void>>(() {
       return JournalNotifier();
     });
+
+final journalAidsProvider = FutureProvider.family<WritingAids, String>((ref, topic) async {
+  final repo = ref.watch(journalRepositoryProvider);
+  final lang = ref.watch(activeLanguageProvider);
+  return repo.getWritingAids(topic, lang);
+});

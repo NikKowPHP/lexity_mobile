@@ -153,6 +153,16 @@ class SyncRepository {
       },
     );
   }
+
+  // User profile mutations
+  Future<void> enqueueProfileUpdate(Map<String, dynamic> data) async {
+    await enqueueMutation(
+      entityType: 'user',
+      action: 'update_profile',
+      entityId: 'current_user',
+      payload: data,
+    );
+  }
 }
 
 final syncRepositoryProvider = Provider<SyncRepository>((ref) {

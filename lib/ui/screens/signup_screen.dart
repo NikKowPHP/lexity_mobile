@@ -138,6 +138,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
     final bool isAuth = authState.isAuthenticated;
+
+    // Existing auto-navigation logic...
     if (!_navigatedOnAuth && isAuth) {
       _navigatedOnAuth = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -148,96 +150,149 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: LiquidBackground(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: GlassCard(
-                padding: 20,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Create your account',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ).animate().fadeIn(duration: 500.ms),
-                    const SizedBox(height: 16),
-                    GlassInput(
-                      controller: _emailController,
-                      hint: 'Email',
-                    ).animate().fadeIn(duration: 520.ms),
-                    if (_emailError != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _emailError!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    GlassInput(
-                      controller: _passwordController,
-                      hint: 'Password',
-                      isPassword: true,
-                    ).animate().fadeIn(duration: 540.ms),
-                    if (_passwordError != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _passwordError!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    _buildPasswordStrengthBar(),
-                    if (authState.error != null &&
-                        authState.error!.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        authState.error!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    LiquidButton(
-                      text: 'Get Started',
-                      isLoading: authState.isLoading,
-                      onTap: _onSubmit,
-                    ).animate().fadeIn(duration: 400.ms),
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        'Continue with Google',
-                        style: TextStyle(color: Colors.white60),
-                      ),
-                    ).animate().fadeIn(duration: 400.ms),
-                    const SizedBox(height: 14),
-                    Center(
-                      child: GestureDetector(
-                        onTap: () => context.go('/login'),
-                        child: const Text(
-                          'Already have an account? Log in',
-                          style: TextStyle(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 40.0,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 1. THE LOGO (Matching Login/Onboarding style)
+                const AppLogo(width: 160)
+                    .animate()
+                    .fadeIn(duration: 800.ms)
+                    .blur(begin: const Offset(10, 10), end: Offset.zero)
+                    .scale(
+                      begin: const Offset(0.8, 0.8),
+                      end: const Offset(1, 1),
+                      curve: Curves.easeOutBack,
+                    ),
+
+                const SizedBox(height: 32),
+
+                // 2. THE SIGNUP CARD
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: GlassCard(
+                    padding: 32,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Create account',
+                          style: const TextStyle(
                             color: Colors.white,
-                            decoration: TextDecoration.underline,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                          ),
+                        ).animate().fadeIn(delay: 200.ms),
+
+                        const SizedBox(height: 8),
+                        const Text(
+                          "Join Lexity and start your journey.",
+                          style: TextStyle(color: Colors.white54, fontSize: 15),
+                        ).animate().fadeIn(delay: 300.ms),
+
+                        const SizedBox(height: 32),
+
+                        // Email Input
+                        const Text(
+                          "EMAIL",
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
                           ),
                         ),
-                      ),
+                        GlassInput(
+                          controller: _emailController,
+                          hint: 'name@example.com',
+                        ).animate().fadeIn(delay: 400.ms),
+
+                        if (_emailError != null)
+                          Text(
+                            _emailError!,
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 12,
+                            ),
+                          ),
+
+                        const SizedBox(height: 16),
+
+                        // Password Input
+                        const Text(
+                          "PASSWORD",
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        GlassInput(
+                          controller: _passwordController,
+                          hint: '••••••••',
+                          isPassword: true,
+                        ).animate().fadeIn(delay: 500.ms),
+
+                        if (_passwordError != null)
+                          Text(
+                            _passwordError!,
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 12,
+                            ),
+                          ),
+
+                        const SizedBox(height: 12),
+                        _buildPasswordStrengthBar(),
+
+                        const SizedBox(height: 32),
+
+                        LiquidButton(
+                          text: 'Get Started',
+                          isLoading: authState.isLoading,
+                          onTap: _onSubmit,
+                        ).animate().fadeIn(delay: 600.ms),
+
+                        const SizedBox(height: 24),
+
+                        Center(
+                          child: GestureDetector(
+                            onTap: () => context.go('/login'),
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 14,
+                                ),
+                                children: [
+                                  const TextSpan(
+                                    text: "Already have an account? ",
+                                  ),
+                                  TextSpan(
+                                    text: "Log in",
+                                    style: TextStyle(
+                                      color: Theme.of(context).primaryColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1, end: 0),
                 ),
-              ).animate().fadeIn(duration: 300.ms),
+              ],
             ),
           ),
         ),
