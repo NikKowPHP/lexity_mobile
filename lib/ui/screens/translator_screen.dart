@@ -5,14 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../providers/translator_provider.dart';
 import '../../providers/user_provider.dart';
-import '../../providers/srs_provider.dart';
-import '../../providers/connectivity_provider.dart';
-import '../../models/translation_result.dart';
 import '../../theme/liquid_theme.dart';
 import '../widgets/liquid_components.dart';
 import '../widgets/glass_scaffold.dart';
-import '../widgets/tutor_chat_dialog.dart';
-import '../../services/ai_service.dart';
+import 'translator/widgets/language_selector_bar.dart';
+import 'translator/widgets/translation_result_view.dart';
+import 'translator/widgets/segment_card.dart';
 
 class TranslatorScreen extends ConsumerStatefulWidget {
   final bool isBubbleMode;
@@ -123,32 +121,13 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: LiquidDropdown<String>(
-                  label: "From",
-                  value: effectiveSource,
-                  items: availableLanguages,
-                  onChanged: (val) => setState(() => _sourceLang = val),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: IconButton(
-                  onPressed: _swapLanguages,
-                  icon: const Icon(Icons.swap_horiz, color: Colors.white54),
-                ),
-              ),
-              Expanded(
-                child: LiquidDropdown<String>(
-                  label: "To",
-                  value: effectiveTarget,
-                  items: availableLanguages,
-                  onChanged: (val) => setState(() => _targetLang = val),
-                ),
-              ),
-            ],
+          LanguageSelectorBar(
+            sourceLang: effectiveSource,
+            targetLang: effectiveTarget,
+            availableLanguages: availableLanguages,
+            onSourceChanged: (val) => setState(() => _sourceLang = val),
+            onTargetChanged: (val) => setState(() => _targetLang = val),
+            onSwap: _swapLanguages,
           ),
           const SizedBox(height: 24),
           Stack(
@@ -207,74 +186,10 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
           ),
           if (state.fullTranslation.isNotEmpty) ...[
             const SizedBox(height: 32),
-            const Text(
-              "TRANSLATION",
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 12),
-            GlassCard(
-              padding: 20,
-              child: Text(
-                state.fullTranslation,
-                style: const TextStyle(
-                  fontSize: 18,
-                  color: Colors.white,
-                  height: 1.5,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Consumer(
-              builder: (context, ref, _) {
-                final isOnline = ref.watch(connectivityProvider);
-                return Opacity(
-                  opacity: isOnline ? 1.0 : 0.5,
-                  child: Column(
-                    children: [
-                      LiquidButton(
-                        text: "Explain Nuances with Lexi",
-                        onTap: isOnline
-                            ? () => showDialog(
-                                context: context,
-                                builder: (c) => TutorChatDialog(
-                                  title: "Translation Analysis",
-                                  onSendMessage: (msg, history) => ref
-                                      .read(aiServiceProvider)
-                                      .getTutorResponse(
-                                        endpoint:
-                                            '/api/ai/translator-tutor-chat',
-                                        context: {
-                                          'sourceText': _inputController.text,
-                                          'fullTranslation':
-                                              state.fullTranslation,
-                                          'targetLanguage': effectiveTarget,
-                                        },
-                                        chatHistory: history,
-                                      ),
-                                ),
-                              )
-                            : () {},
-                      ),
-                      if (!isOnline)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text(
-                            "Requires internet connection",
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
+            TranslationResultView(
+              fullTranslation: state.fullTranslation,
+              inputText: _inputController.text,
+              targetLanguage: effectiveTarget,
             ),
           ],
         ],
@@ -322,8 +237,7 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
           ),
           const SizedBox(height: 16),
           ...state.segments.map(
-            (seg) =>
-                _SegmentCard(segment: seg, targetLanguage: effectiveTarget),
+            (seg) => SegmentCard(segment: seg, targetLanguage: effectiveTarget),
           ),
         ],
       );
@@ -363,138 +277,6 @@ class _TranslatorScreenState extends ConsumerState<TranslatorScreen> {
                     buildBreakdownContent(),
                   ],
                 ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SegmentCard extends ConsumerStatefulWidget {
-  final TranslationSegment segment;
-  final String targetLanguage;
-  const _SegmentCard({required this.segment, required this.targetLanguage});
-
-  @override
-  ConsumerState<_SegmentCard> createState() => _SegmentCardState();
-}
-
-class _SegmentCardState extends ConsumerState<_SegmentCard> {
-  bool _isAdding = false;
-  bool _isAdded = false;
-
-  Future<void> _handleAddToDeck() async {
-    setState(() => _isAdding = true);
-    final success = await ref
-        .read(srsProvider.notifier)
-        .addToDeckFromTranslation(
-          front: widget.segment.source,
-          back: widget.segment.translation,
-          language: widget.targetLanguage.toLowerCase(),
-          explanation: widget.segment.explanation,
-        );
-
-    if (mounted) {
-      setState(() {
-        _isAdding = false;
-        if (success) _isAdded = true;
-      });
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Added to Study Deck",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: LiquidTheme.primaryAccent,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: GlassCard(
-        padding: 16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.segment.source,
-                    style: const TextStyle(color: Colors.white38, fontSize: 14),
-                  ),
-                ),
-                IconButton(
-                  onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
-                  icon: _isAdding
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white24,
-                          ),
-                        )
-                      : Icon(
-                          _isAdded ? Icons.check_circle : Icons.add_circle,
-                          color: _isAdded
-                              ? Colors.greenAccent
-                              : LiquidTheme.primaryAccent,
-                          size: 24,
-                        ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              widget.segment.translation,
-              style: const TextStyle(
-                color: Color(0xFF6366F1),
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.lightbulb_outline,
-                    size: 14,
-                    color: Colors.amber,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      widget.segment.explanation,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.white54,
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );

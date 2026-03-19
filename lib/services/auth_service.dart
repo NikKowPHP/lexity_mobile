@@ -83,11 +83,24 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
-        if (data['session'] != null &&
-            data['session']['access_token'] != null) {
-          _logger.info('DATA FROM SIGNUP RESPONSE: $data');
-          await _authTokenService.saveToken(data['session']['access_token']);
+        _logger.info('DATA FROM SIGNUP RESPONSE: $data');
+
+        // Backend returns {access_token, refresh_token, user} — no session wrapper
+        final accessToken =
+            data['access_token'] ?? (data['session']?['access_token']);
+        if (accessToken != null) {
+          await _authTokenService.saveToken(accessToken);
           _logger.info('AuthService: Signup successful for user: $email');
+
+          // Also save refresh token if present
+          if (data['refresh_token'] != null) {
+            await _refreshTokenService.saveToken(data['refresh_token']);
+          }
+
+          // Sync user to local DB after registration
+          await _syncUser(accessToken);
+          await ref.read(hydrationServiceProvider).performFullSync();
+
           return true;
         }
       }

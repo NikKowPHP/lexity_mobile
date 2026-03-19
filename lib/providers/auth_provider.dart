@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 
 import '../services/user_service.dart';
 import '../services/logger_service.dart';
+import '../services/hydration_service.dart';
 import '../providers/connectivity_provider.dart';
 import '../database/app_database.dart';
 
@@ -330,6 +331,12 @@ class AuthNotifier extends Notifier<AuthState> {
       final authService = ref.read(authServiceProvider);
       await authService.signUp(email, password);
       _logger.info('AuthNotifier: signup successful for $email');
+
+      // Sync user to local DB after registration
+      final userService = ref.read(userServiceProvider);
+      await userService.fetchProfile();
+      await ref.read(hydrationServiceProvider).performFullSync();
+
       final token = await _authTokenService.getToken();
       _cachedToken = token;
       state = state.copyWith(

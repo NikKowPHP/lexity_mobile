@@ -17,7 +17,7 @@ class UserDao {
       'id': user['id'],
       'email': user['email'],
       'native_language': user['nativeLanguage'],
-      'default_target_language': user['defaultTargetLanguage'],
+      'default_target_language': user['defaultTargetLanguage'] ?? 'spanish',
       'writing_style': user['writingStyle'],
       'writing_purpose': user['writingPurpose'],
       'self_assessed_level': user['selfAssessedLevel'],

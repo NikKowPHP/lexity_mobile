@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../theme/liquid_theme.dart';
@@ -17,7 +18,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool isLogin = true;
 
   @override
   void dispose() {
@@ -32,11 +32,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     if (email.isEmpty || password.isEmpty) return;
 
-    if (isLogin) {
-      ref.read(authProvider.notifier).login(email, password);
-    } else {
-      ref.read(authProvider.notifier).signUp(email, password);
-    }
+    ref.read(authProvider.notifier).login(email, password);
   }
 
   @override
@@ -70,7 +66,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            isLogin ? "Welcome Back" : "Create Account",
+                            "Welcome Back",
                             style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.w900,
@@ -80,9 +76,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            isLogin
-                                ? "Enter your credentials to continue"
-                                : "Join Lexity and start your journey",
+                            "Enter your credentials to continue",
                             style: TextStyle(
                               fontSize: 14,
                               color: isDark ? Colors.white60 : Colors.black54,
@@ -105,28 +99,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                           const SizedBox(height: 12),
 
-                          if (isLogin)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () {}, // Future: Forgot password
-                                child: Text(
-                                  "Forgot Password?",
-                                  style: TextStyle(
-                                    color: LiquidTheme.primaryAccent.withValues(
-                                      alpha: 0.8,
-                                    ),
-                                    fontSize: 13,
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () => context.go('/forgot-password'),
+                              child: Text(
+                                "Forgot Password?",
+                                style: TextStyle(
+                                  color: LiquidTheme.primaryAccent.withValues(
+                                    alpha: 0.8,
                                   ),
+                                  fontSize: 13,
                                 ),
                               ),
                             ),
+                          ),
 
                           const SizedBox(height: 24),
 
                           // Sign In Button
                           LiquidButton(
-                            text: isLogin ? "Sign In" : "Get Started",
+                            text: "Sign In",
                             isLoading: authState.isLoading,
                             onTap: _submit,
                           ),
@@ -181,13 +174,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 32),
 
-                // 3. Toggle Authentication Mode (Clean TextButton)
+                // 3. Navigate to Signup
                 TextButton(
-                  onPressed: () => setState(() => isLogin = !isLogin),
+                  onPressed: () => context.go('/signup'),
                   child: Text(
-                    isLogin
-                        ? "New here? Create account"
-                        : "Have an account? Log in",
+                    "Create account",
                     style: TextStyle(
                       color: isDark ? Colors.white70 : Colors.black87,
                       fontWeight: FontWeight.w600,

@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/onboarding_data.dart';
+import '../services/onboarding_service.dart';
 import 'user_provider.dart';
 import 'journal_provider.dart';
+import '../services/logger_service.dart';
 
 enum OnboardingStep {
   profileSetup,
@@ -54,6 +57,35 @@ class OnboardingNotifier extends Notifier<OnboardingStep> {
       state = OnboardingStep.viewAnalysis;
     } else {
       state = OnboardingStep.studyIntro;
+    }
+  }
+
+  // Call this after user completes language setup (Step 1)
+  Future<void> completeLanguageSetup(OnboardingData data) async {
+    try {
+      final onboardingService = ref.read(onboardingServiceProvider);
+      await onboardingService.submitOnboarding(data);
+      // Invalidate user profile to refresh data
+      ref.invalidate(userProfileProvider);
+      determineStep();
+    } catch (e) {
+      final logger = ref.read(loggerProvider);
+      logger.error('OnboardingNotifier: Failed to submit language setup', e);
+      rethrow;
+    }
+  }
+
+  // Call this after user finishes onboarding (Step 4 - skip goals)
+  Future<void> finishOnboarding() async {
+    try {
+      final onboardingService = ref.read(onboardingServiceProvider);
+      await onboardingService.completeOnboarding();
+      ref.invalidate(userProfileProvider);
+      determineStep();
+    } catch (e) {
+      final logger = ref.read(loggerProvider);
+      logger.error('OnboardingNotifier: Failed to complete onboarding', e);
+      rethrow;
     }
   }
 }

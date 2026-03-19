@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_provider.dart';
 import '../ui/screens/login_screen.dart';
+import '../ui/screens/signup_screen.dart';
+import '../ui/screens/forgot_password_screen.dart';
+import '../ui/screens/onboarding_wizard_screen.dart';
 import '../ui/screens/home_shell.dart';
 import '../ui/screens/path_screen.dart';
 import '../ui/screens/study_screen.dart';
@@ -33,26 +36,32 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/path', // Default tab
     debugLogDiagnostics: true,
-    
+
     // Refresh the router when auth state changes
     refreshListenable: _RiverpodRouterRefreshStream(ref),
-    
+
     // 3. AUTO-REDIRECT LOGIC
     redirect: (context, state) {
       final authState = ref.read(authProvider);
-      
+
       // If we haven't finished checking the disk yet, stay on current page
       if (!authState.isInitialized) return null;
 
       final isLoggedIn = authState.isAuthenticated;
       final path = state.uri.toString();
-      
-      // Allow the bubble route and login route even if not logged in
-      if (!isLoggedIn && path != '/login' && path != '/bubble-translator') {
+
+      // Allow public auth routes even if not logged in
+      final publicRoutes = [
+        '/login',
+        '/signup',
+        '/forgot-password',
+        '/bubble-translator',
+      ];
+      if (!isLoggedIn && !publicRoutes.contains(path)) {
         return '/login';
       }
-      
-      if (isLoggedIn && (path == '/login')) {
+
+      if (isLoggedIn && (path == '/login' || path == '/signup')) {
         return '/path';
       }
       return null;
@@ -60,9 +69,14 @@ final routerProvider = Provider<GoRouter>((ref) {
 
     routes: [
       // LOGIN ROUTE
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
+        path: '/signup',
+        builder: (context, state) => const SignupScreen(),
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        builder: (context, state) => const ForgotPasswordScreen(),
       ),
       GoRoute(
         path: '/billing-complete',
@@ -71,9 +85,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           // We don't need a UI here, just a trigger to refresh and redirect
           WidgetsBinding.instance.addPostFrameCallback((_) {
             ref.read(userProfileProvider.notifier).refresh();
-            context.go('/path'); 
+            context.go('/path');
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Subscription updated successfully!"))
+              const SnackBar(
+                content: Text("Subscription updated successfully!"),
+              ),
             );
           });
           return const Scaffold(
@@ -90,6 +106,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/srs-items',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const SrsItemsScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        builder: (context, state) => const OnboardingWizardScreen(),
       ),
 
       // standalone STANDALONE ROUTE for the Bubble
@@ -113,9 +133,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/journal/:id',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => JournalDetailScreen(
-          journalId: state.pathParameters['id']!,
-        ),
+        builder: (context, state) =>
+            JournalDetailScreen(journalId: state.pathParameters['id']!),
       ),
 
       // APPLICATION SHELL (The Liquid UI)
@@ -129,7 +148,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/path',
-                pageBuilder: (context, state) => _buildFadePage(const PathScreen(), state),
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const PathScreen(), state),
                 routes: [
                   // NEW: Module Detail Route
                   GoRoute(
@@ -185,7 +205,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/study',
-                pageBuilder: (context, state) => _buildFadePage(const StudyScreen(), state),
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const StudyScreen(), state),
               ),
             ],
           ),
@@ -202,7 +223,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) {
                       final id = state.pathParameters['id']!;
-                      final progressStr = state.uri.queryParameters['progress'] ?? '0.0';
+                      final progressStr =
+                          state.uri.queryParameters['progress'] ?? '0.0';
                       final progress = double.tryParse(progressStr) ?? 0.0;
                       return BookReaderScreen(
                         bookId: id,
@@ -239,7 +261,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/progress',
-                pageBuilder: (context, state) => _buildFadePage(const ProgressScreen(), state),
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const ProgressScreen(), state),
               ),
             ],
           ),
@@ -248,7 +271,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/profile',
-                pageBuilder: (context, state) => _buildFadePage(const ProfileScreen(), state),
+                pageBuilder: (context, state) =>
+                    _buildFadePage(const ProfileScreen(), state),
               ),
             ],
           ),
@@ -268,10 +292,7 @@ CustomTransitionPage _buildFadePage(Widget child, GoRouterState state) {
       const end = Offset.zero;
       const curve = Curves.easeInOut;
       var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-      return SlideTransition(
-        position: animation.drive(tween),
-        child: child,
-      );
+      return SlideTransition(position: animation.drive(tween), child: child);
     },
     transitionDuration: const Duration(milliseconds: 300),
   );
