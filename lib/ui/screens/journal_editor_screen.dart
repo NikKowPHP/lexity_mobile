@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -213,62 +214,88 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                 const SizedBox(height: 24),
               ],
 
-              const Text(
-                "Topic Suggestions",
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 40,
-                child: topicsAsync.when(
-                  loading: () => const Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 2,
-                      child: LinearProgressIndicator(),
+              // TOPIC SUGGESTIONS (Only show if we DON'T have an initial topic)
+              if (widget.initialTopic == null) ...[
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          "TOPIC SUGGESTIONS",
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => ref
+                              .read(journalNotifierProvider.notifier)
+                              .refreshTopics(activeLang),
+                          child: const Text(
+                            "Refresh",
+                            style: TextStyle(
+                              color: LiquidTheme.primaryAccent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  error: (_, _) => const SizedBox(),
-                  data: (topics) => ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: topics.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(width: 8),
-                    itemBuilder: (context, index) => ActionChip(
-                      label: Text(topics[index]),
-                      backgroundColor: Colors.white10,
-                      labelStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
+                    const SizedBox(height: 8),
+
+                    // THE HORIZONTAL FADING LIST
+                    SizedBox(
+                      height: 48,
+                      child: ShaderMask(
+                        shaderCallback: (Rect bounds) {
+                          return const LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [
+                              Colors.transparent, // Left fade
+                              Colors.black, // Opaque middle
+                              Colors.black, // Opaque middle
+                              Colors.transparent, // Right fade
+                            ],
+                            stops: [
+                              0.0,
+                              0.05,
+                              0.95,
+                              1.0,
+                            ], // Tight fades at edges
+                          ).createShader(bounds);
+                        },
+                        blendMode: BlendMode.dstIn,
+                        child: topicsAsync.when(
+                          loading: () => const Center(
+                            child: LinearProgressIndicator(minHeight: 2),
+                          ),
+                          error: (_, __) => const SizedBox.shrink(),
+                          data: (topics) => ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            // Start padding inside the scrollview so chips don't start under the fade
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: topics.length,
+                            separatorBuilder: (context, index) =>
+                                const SizedBox(width: 10),
+                            itemBuilder: (context, index) =>
+                                _buildSuggestionChip(topics[index]),
+                          ),
+                        ),
                       ),
-                      onPressed: () => _titleController.text = topics[index],
                     ),
-                  ),
+                  ],
                 ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => ref
-                      .read(journalNotifierProvider.notifier)
-                      .refreshTopics(activeLang),
-                  child: const Text(
-                    "Refresh Topics",
-                    style: TextStyle(
-                      color: LiquidTheme.primaryAccent,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
+                const SizedBox(height: 24),
+              ],
 
-              const SizedBox(height: 16),
-
-              // FIXED: Move NUDGE to the top (above writing aids)
+              // WRITING AIDS (Starters / Vocab specific to the chosen topic)
               if (_hints != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
@@ -377,7 +404,7 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (aids) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
             "WRITING AIDS",
@@ -392,7 +419,7 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
           GlassCard(
             padding: 16,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (aids.sentenceStarter.isNotEmpty) ...[
                   const Text(
@@ -400,46 +427,96 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                     style: TextStyle(color: Colors.white38, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () => _insertText(aids.sentenceStarter),
-                    child: Text(
-                      '"${aids.sentenceStarter}..."',
-                      style: const TextStyle(
-                        color: LiquidTheme.primaryAccent,
-                        fontStyle: FontStyle.italic,
-                        fontWeight: FontWeight.w600,
+
+                  // NEW: Horizontal Fade Shader for overflowing starter text
+                  SizedBox(
+                    height: 28,
+                    child: ShaderMask(
+                      shaderCallback: (Rect bounds) {
+                        return const LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Colors.black,
+                            Colors.black,
+                            Colors.transparent,
+                          ],
+                          stops: [0.0, 0.85, 1.0],
+                        ).createShader(bounds);
+                      },
+                      blendMode: BlendMode.dstIn,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            _insertText(aids.sentenceStarter);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 40),
+                            child: Text(
+                              '"${aids.sentenceStarter}..."',
+                              style: const TextStyle(
+                                color: LiquidTheme.primaryAccent,
+                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
                 ],
+
                 const Text(
                   "Useful Vocabulary:",
                   style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: aids.suggestedVocab
-                      .map(
-                        (vocab) => ActionChip(
-                          label: Text(vocab),
-                          backgroundColor: Colors.white.withValues(alpha: 0.1),
-                          side: BorderSide.none,
-                          labelStyle: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                          onPressed: () => _insertText(vocab),
-                        ),
-                      )
-                      .toList(),
-                ),
+
+                _buildVocabScroll(aids.suggestedVocab),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildVocabScroll(List<String> suggestedVocab) {
+    return SizedBox(
+      height: 40,
+      child: ShaderMask(
+        shaderCallback: (Rect bounds) {
+          return const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [Colors.black, Colors.black, Colors.transparent],
+            stops: [0.0, 0.9, 1.0],
+          ).createShader(bounds);
+        },
+        blendMode: BlendMode.dstIn,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: suggestedVocab.length,
+          padding: const EdgeInsets.only(right: 30),
+          separatorBuilder: (context, index) => const SizedBox(width: 8),
+          itemBuilder: (context, index) => ActionChip(
+            label: Text(suggestedVocab[index]),
+            backgroundColor: Colors.white.withOpacity(0.08),
+            side: BorderSide.none,
+            labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              _insertText(suggestedVocab[index]);
+            },
+          ),
+        ),
       ),
     );
   }
@@ -455,6 +532,44 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
           hintText: "Start writing...",
           hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2)),
           border: InputBorder.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestionChip(String topic) {
+    final isSelected = _titleController.text == topic;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() {
+          _titleController.text = topic;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? LiquidTheme.primaryAccent.withOpacity(0.3)
+              : Colors.white.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected
+                ? LiquidTheme.primaryAccent.withOpacity(0.5)
+                : Colors.white.withOpacity(0.12),
+            width: 1,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            topic,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.white70,
+              fontSize: 14,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            ),
+          ),
         ),
       ),
     );
