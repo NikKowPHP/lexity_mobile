@@ -46,3 +46,4 @@ app.*.map.json
 ./app_logs.txt
 a.md
 TASKS.md
+repomix-output.xml
