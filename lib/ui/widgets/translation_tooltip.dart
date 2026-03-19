@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/srs_provider.dart';
 import '../../providers/vocabulary_provider.dart';
-import '../../services/ai_service.dart';
+import '../../services/translation_service.dart';
 import '../../theme/liquid_theme.dart';
 
 class TranslationTooltip extends ConsumerStatefulWidget {
   final String selectedText;
   final String contextText;
-  final String sourceLang; 
-  final String targetLang; 
+  final String sourceLang;
+  final String targetLang;
   final double x;
   final double y;
   final VoidCallback onClose;
@@ -44,8 +44,8 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
 
   Future<void> _fetchTranslation() async {
     try {
-      final aiService = ref.read(aiServiceProvider);
-      final result = await aiService.contextualTranslate(
+      final translationService = ref.read(translationServiceProvider);
+      final result = await translationService.contextualTranslate(
         selectedText: widget.selectedText,
         context: widget.contextText,
         sourceLanguage: widget.sourceLang,
@@ -71,7 +71,9 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
 
   Future<void> _handleAddToDeck() async {
     setState(() => _isAdding = true);
-    final success = await ref.read(srsProvider.notifier).addToDeckFromTranslation(
+    final success = await ref
+        .read(srsProvider.notifier)
+        .addToDeckFromTranslation(
           front: widget.selectedText,
           back: _translation!,
           language: widget.sourceLang,
@@ -84,8 +86,13 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
         if (success) {
           _isAdded = true;
           // Instantly update vocabulary state locally and remotely
-          ref.read(vocabularyProvider.notifier).updateWordStatus(
-              widget.selectedText, 'learning', widget.sourceLang);
+          ref
+              .read(vocabularyProvider.notifier)
+              .updateWordStatus(
+                widget.selectedText,
+                'learning',
+                widget.sourceLang,
+              );
         }
       });
     }
@@ -95,11 +102,12 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final tooltipWidth = 280.0;
-    
+
     double left = widget.x - (tooltipWidth / 2);
     if (left < 16) left = 16;
-    if (left + tooltipWidth > screenWidth - 16) left = screenWidth - tooltipWidth - 16;
-    
+    if (left + tooltipWidth > screenWidth - 16)
+      left = screenWidth - tooltipWidth - 16;
+
     double top = widget.y + 10;
     if (top > MediaQuery.of(context).size.height - 200) {
       top = widget.y - 180;
@@ -116,33 +124,40 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
             color: const Color(0xFF1A1A1A).withValues(alpha: 0.98),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white24),
-            boxShadow: const[
+            boxShadow: const [
               BoxShadow(
                 color: Colors.black54,
                 blurRadius: 20,
                 offset: Offset(0, 10),
-              )
+              ),
             ],
           ),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
-            children:[
+            children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children:[
+                children: [
                   Expanded(
                     child: Text(
                       widget.selectedText,
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   GestureDetector(
                     onTap: widget.onClose,
-                    child: const Icon(Icons.close, size: 18, color: Colors.white54),
+                    child: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Colors.white54,
+                    ),
                   ),
                 ],
               ),
@@ -167,13 +182,20 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children:[
-                        const Icon(Icons.lightbulb, size: 14, color: Colors.amber),
+                      children: [
+                        const Icon(
+                          Icons.lightbulb,
+                          size: 14,
+                          color: Colors.amber,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _explanation!,
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ],
@@ -185,15 +207,27 @@ class _TranslationTooltipState extends ConsumerState<TranslationTooltip> {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isAdded ? Colors.green.withValues(alpha: 0.2) : LiquidTheme.primaryAccent.withValues(alpha: 0.2),
-                      foregroundColor: _isAdded ? Colors.greenAccent : LiquidTheme.primaryAccent,
+                      backgroundColor: _isAdded
+                          ? Colors.green.withValues(alpha: 0.2)
+                          : LiquidTheme.primaryAccent.withValues(alpha: 0.2),
+                      foregroundColor: _isAdded
+                          ? Colors.greenAccent
+                          : LiquidTheme.primaryAccent,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                    onPressed: (_isAdded || _isAdding) ? null : _handleAddToDeck,
-                    icon: _isAdding 
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Icon(_isAdded ? Icons.check : Icons.add, size: 16),
+                    onPressed: (_isAdded || _isAdding)
+                        ? null
+                        : _handleAddToDeck,
+                    icon: _isAdding
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(_isAdded ? Icons.check : Icons.add, size: 16),
                     label: Text(_isAdded ? "Added" : "Add to Deck"),
                   ),
                 ),

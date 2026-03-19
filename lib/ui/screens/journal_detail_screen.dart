@@ -8,7 +8,7 @@ import '../widgets/analysis_widgets.dart';
 import '../widgets/tutor_chat_dialog.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/connectivity_provider.dart';
-import '../../services/ai_service.dart';
+import '../../services/tutor_chat_service.dart';
 
 class JournalDetailScreen extends ConsumerWidget {
   final String journalId;
@@ -43,7 +43,7 @@ class JournalDetailScreen extends ConsumerWidget {
                     builder: (c) => TutorChatDialog(
                       title: "Discussing: ${entry.title}",
                       onSendMessage: (msg, history) => ref
-                          .read(aiServiceProvider)
+                          .read(tutorChatServiceProvider)
                           .getTutorResponse(
                             endpoint: '/api/ai/journal-tutor-chat',
                             context: {'journalId': entry.id},

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../widgets/liquid_components.dart';
 import '../../../widgets/tutor_chat_dialog.dart';
 import '../../../../providers/connectivity_provider.dart';
-import '../../../../services/ai_service.dart';
+import '../../../../services/tutor_chat_service.dart';
 
 /// Displays the translation result with explain button.
 class TranslationResultView extends ConsumerWidget {
@@ -61,7 +61,7 @@ class TranslationResultView extends ConsumerWidget {
                         builder: (c) => TutorChatDialog(
                           title: "Translation Analysis",
                           onSendMessage: (msg, history) => ref
-                              .read(aiServiceProvider)
+                              .read(tutorChatServiceProvider)
                               .getTutorResponse(
                                 endpoint: '/api/ai/translator-tutor-chat',
                                 context: {

@@ -282,9 +282,8 @@ class BookCoverImage extends ConsumerWidget {
     final bookService = ref.watch(bookRepositoryProvider);
     final coverUrl = bookService.getCoverProxyUrl(book.id);
 
-    // Use cached token from authProvider instead of async disk read
-    final authState = ref.watch(authProvider);
-    final token = authState.accessToken;
+    // Watch only the token — avoids full auth state rebuilds on every change
+    final token = ref.watch(authProvider.select((s) => s.accessToken));
 
     if (token == null) {
       return const Center(

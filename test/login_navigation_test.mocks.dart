@@ -3,11 +3,12 @@
 // Do not manually edit this file.
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
-import 'dart:async' as _i4;
+import 'dart:async' as _i5;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart' as _i2;
-import 'package:lexity_mobile/services/auth_service.dart' as _i3;
+import 'package:flutter_riverpod/flutter_riverpod.dart' as _i3;
+import 'package:lexity_mobile/services/auth_service.dart' as _i2;
 import 'package:mockito/mockito.dart' as _i1;
+import 'package:mockito/src/dummies.dart' as _i4;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -24,52 +25,48 @@ import 'package:mockito/mockito.dart' as _i1;
 // ignore_for_file: subtype_of_sealed_class
 // ignore_for_file: invalid_use_of_internal_member
 
-class _FakeRef_0<State extends Object?> extends _i1.SmartFake
-    implements _i2.Ref<State> {
-  _FakeRef_0(Object parent, Invocation parentInvocation)
-    : super(parent, parentInvocation);
-}
-
 /// A class which mocks [AuthService].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockAuthService extends _i1.Mock implements _i3.AuthService {
+class MockAuthService extends _i1.Mock implements _i2.AuthService {
   @override
-  _i2.Ref<Object?> get ref =>
+  _i3.Ref get ref =>
       (super.noSuchMethod(
             Invocation.getter(#ref),
-            returnValue: _FakeRef_0<Object?>(this, Invocation.getter(#ref)),
-            returnValueForMissingStub: _FakeRef_0<Object?>(
+            returnValue: _i4.dummyValue<_i3.Ref>(this, Invocation.getter(#ref)),
+            returnValueForMissingStub: _i4.dummyValue<_i3.Ref>(
               this,
               Invocation.getter(#ref),
             ),
           )
-          as _i2.Ref<Object?>);
+          as _i3.Ref);
 
   @override
-  _i4.Future<void> saveToken(String? token) =>
-      (super.noSuchMethod(
-            Invocation.method(#saveToken, [token]),
-            returnValue: _i4.Future<void>.value(),
-            returnValueForMissingStub: _i4.Future<void>.value(),
-          )
-          as _i4.Future<void>);
-
-  @override
-  _i4.Future<bool> login(String? email, String? password) =>
+  _i5.Future<bool> login(String? email, String? password) =>
       (super.noSuchMethod(
             Invocation.method(#login, [email, password]),
-            returnValue: _i4.Future<bool>.value(false),
-            returnValueForMissingStub: _i4.Future<bool>.value(false),
+            returnValue: _i5.Future<bool>.value(false),
+            returnValueForMissingStub: _i5.Future<bool>.value(false),
           )
-          as _i4.Future<bool>);
+          as _i5.Future<bool>);
 
   @override
-  _i4.Future<bool> signUp(String? email, String? password) =>
+  _i5.Future<bool> signUp(String? email, String? password) =>
       (super.noSuchMethod(
             Invocation.method(#signUp, [email, password]),
-            returnValue: _i4.Future<bool>.value(false),
-            returnValueForMissingStub: _i4.Future<bool>.value(false),
+            returnValue: _i5.Future<bool>.value(false),
+            returnValueForMissingStub: _i5.Future<bool>.value(false),
           )
-          as _i4.Future<bool>);
+          as _i5.Future<bool>);
+
+  @override
+  _i5.Future<List<String>> refreshToken(String? refreshToken) =>
+      (super.noSuchMethod(
+            Invocation.method(#refreshToken, [refreshToken]),
+            returnValue: _i5.Future<List<String>>.value(<String>[]),
+            returnValueForMissingStub: _i5.Future<List<String>>.value(
+              <String>[],
+            ),
+          )
+          as _i5.Future<List<String>>);
 }

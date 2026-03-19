@@ -7,7 +7,7 @@ import '../widgets/glass_scaffold.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/path_provider.dart';
-import '../../services/ai_service.dart';
+import '../../services/writing_assist_service.dart';
 import '../widgets/audio_recorder_widget.dart';
 import 'dart:async';
 import '../../data/repositories/journal_repository.dart';
@@ -27,7 +27,8 @@ class JournalEditorScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<JournalEditorScreen> createState() => _JournalEditorScreenState();
+  ConsumerState<JournalEditorScreen> createState() =>
+      _JournalEditorScreenState();
 }
 
 class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
@@ -46,10 +47,12 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
 
     // SPECULATIVE PRE-FETCH: Load Writing Aids immediately on entry
     if (widget.initialTopic != null) {
-      ref.read(journalRepositoryProvider).getWritingAids(
-        widget.initialTopic!,
-        ref.read(activeLanguageProvider)
-      );
+      ref
+          .read(journalRepositoryProvider)
+          .getWritingAids(
+            widget.initialTopic!,
+            ref.read(activeLanguageProvider),
+          );
     }
   }
 
@@ -61,12 +64,14 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
       if (_contentController.text.isNotEmpty && mounted) {
         // Show "Thinking" state in UI immediately
         setState(() => _hints = ["Lexi is thinking..."]);
-        
-        final suggestions = await ref.read(aiServiceProvider).generateStuckWriterSuggestions(
-          _titleController.text,
-          _contentController.text,
-          ref.read(activeLanguageProvider)
-        );
+
+        final suggestions = await ref
+            .read(writingAssistServiceProvider)
+            .generateStuckWriterSuggestions(
+              _titleController.text,
+              _contentController.text,
+              ref.read(activeLanguageProvider),
+            );
         _showNudge(suggestions);
       }
     });
@@ -143,7 +148,14 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
               const SizedBox(height: 24),
             ],
 
-            const Text("Topic Suggestions", style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+            const Text(
+              "Topic Suggestions",
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 40,
@@ -173,13 +185,24 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                 ),
               ),
             ),
-             Align(alignment: Alignment.centerRight, child: TextButton(
-                onPressed: () => ref.read(journalNotifierProvider.notifier).refreshTopics(activeLang),
-                child: const Text("Refresh Topics", style: TextStyle(color: LiquidTheme.primaryAccent, fontSize: 12))
-             )),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => ref
+                    .read(journalNotifierProvider.notifier)
+                    .refreshTopics(activeLang),
+                child: const Text(
+                  "Refresh Topics",
+                  style: TextStyle(
+                    color: LiquidTheme.primaryAccent,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
 
             const SizedBox(height: 16),
-            
+
             if (_hints != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -189,23 +212,44 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text("Need a nudge?", style: TextStyle(color: LiquidTheme.primaryAccent, fontWeight: FontWeight.bold)),
-                          IconButton(icon: const Icon(Icons.close, size: 16, color: Colors.white54), onPressed: () => setState(() => _hints = null)),
+                          const Text(
+                            "Need a nudge?",
+                            style: TextStyle(
+                              color: LiquidTheme.primaryAccent,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.white54,
+                            ),
+                            onPressed: () => setState(() => _hints = null),
+                          ),
                         ],
                       ),
-                      ..._hints!.map((h) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4.0),
-                        child: Text("• $h", style: const TextStyle(fontSize: 13, color: Colors.white70)),
-                      )),
+                      ..._hints!.map(
+                        (h) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4.0),
+                          child: Text(
+                            "• $h",
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-            
+
             GlassInput(controller: _titleController, hint: "Title / Topic"),
-            
+
             const SizedBox(height: 16),
-            
+
             if (!isAudioMode) ...[
               _buildTextInterface(),
               const SizedBox(height: 24),
@@ -226,7 +270,7 @@ class _JournalEditorScreenState extends ConsumerState<JournalEditorScreen> {
                       activeLang,
                       moduleId: widget.moduleId,
                     );
-                 
+
                 if (widget.moduleId != null) {
                   // Mark module activity done
                   final key = widget.initialMode ?? 'writing';

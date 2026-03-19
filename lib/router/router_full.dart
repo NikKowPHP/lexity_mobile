@@ -31,11 +31,18 @@ import '../ui/screens/more_screen.dart';
 // 1. Create a Key for the root navigator
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
+Widget _buildSignupScreen(BuildContext context, GoRouterState state) {
+  // ignore: invalid_use_of_visible_for_testing_member
+  return const SignupScreen();
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/path',
+    initialLocation: '/path', // Default tab
     debugLogDiagnostics: true,
+
+    // Refresh the router when auth state changes
     refreshListenable: _RiverpodRouterRefreshStream(ref),
 
     // 3. AUTO-REDIRECT LOGIC
@@ -59,22 +66,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/login';
       }
 
-      if (isLoggedIn) {
-        // Get the user profile to check onboarding status
-        final userProfileAsync = ref.read(userProfileProvider);
-        final userProfile = userProfileAsync.value;
-
-        // NEW: If logged in but onboarding is not done, force them to onboarding
-        // unless they are already there or on journal routes.
-        final onboardingDone = userProfile?.onboardingCompleted ?? false;
-        if (!onboardingDone && path != '/onboarding' && !path.startsWith('/journal')) {
-          return '/onboarding';
-        }
-
-        // Standard redirect for logged in users trying to access login/signup
-        if (path == '/login' || path == '/signup') {
-          return '/path';
-        }
+      if (isLoggedIn && (path == '/login' || path == '/signup')) {
+        return '/path';
       }
       return null;
     },
@@ -82,10 +75,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       // LOGIN ROUTE
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-      GoRoute(
-        path: '/signup',
-        builder: (context, state) => const SignupScreen(),
-      ),
+      GoRoute(path: '/signup', builder: (context, state) => SignupScreen.new()),
       GoRoute(
         path: '/forgot-password',
         builder: (context, state) => const ForgotPasswordScreen(),

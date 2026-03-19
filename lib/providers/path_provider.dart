@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/learning_module.dart';
 import '../services/learning_path_service.dart';
 import 'user_provider.dart';
-import '../services/journal_service.dart';
+import '../data/repositories/journal_repository.dart';
 
 final learningPathProvider = FutureProvider.autoDispose<List<LearningModule>>((
   ref,
@@ -64,7 +64,7 @@ class PathNotifier extends Notifier<AsyncValue<void>> {
   void startSelfHealing(String journalId) {
     Future.delayed(const Duration(seconds: 60), () async {
       try {
-        await ref.read(journalServiceProvider).analyzeEntry(journalId);
+        await ref.read(journalRepositoryProvider).analyzeEntry(journalId);
         ref.invalidate(learningPathProvider);
       } catch (e) {}
     });

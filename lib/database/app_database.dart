@@ -8,6 +8,8 @@ import 'daos/book_dao.dart';
 import 'daos/journal_dao.dart';
 import 'daos/srs_dao.dart';
 import 'daos/vocabulary_dao.dart';
+import 'daos/sync_queue_dao.dart';
+import 'daos/analytics_cache_dao.dart';
 
 class AppDatabase {
   static Database? _database;
@@ -23,6 +25,8 @@ class AppDatabase {
   late final JournalDao journalDao;
   late final SrsDao srsDao;
   late final VocabularyDao vocabularyDao;
+  late final SyncQueueDao syncQueueDao;
+  late final AnalyticsCacheDao analyticsCacheDao;
 
   AppDatabase() {
     // Initialize DAOs
@@ -31,6 +35,8 @@ class AppDatabase {
     journalDao = JournalDao(this);
     srsDao = SrsDao(this);
     vocabularyDao = VocabularyDao(this);
+    syncQueueDao = SyncQueueDao(this);
+    analyticsCacheDao = AnalyticsCacheDao(this);
   }
 
   StreamController<List<Map<String, dynamic>>> getController(String key) {
@@ -377,157 +383,41 @@ class AppDatabase {
   Future<List<String>> getVocabularyLanguages() =>
       vocabularyDao.getVocabularyLanguages();
 
-  // Sync Queue operations (remain inline as they are cross-cutting)
-  Future<void> compactSyncQueue() async {
-    final db = await database;
-    await db.transaction((txn) async {
-      // For book progress updates, keep only the most recent entry per book_id
-      await txn.execute('''
-        DELETE FROM sync_queue
-        WHERE id NOT IN (
-          SELECT MAX(id)
-          FROM sync_queue
-          WHERE entity_type = 'book' AND action = 'update_progress'
-          GROUP BY entity_id
-        )
-        AND entity_type = 'book' AND action = 'update_progress'
-      ''');
+  // Sync Queue operations - delegates to SyncQueueDao
+  Future<void> compactSyncQueue() => syncQueueDao.compactSyncQueue();
 
-      // For vocabulary updates, keep only the most recent entry per word
-      await txn.execute('''
-        DELETE FROM sync_queue
-        WHERE id NOT IN (
-          SELECT MAX(id)
-          FROM sync_queue
-          WHERE entity_type = 'vocabulary' AND action = 'update'
-          GROUP BY entity_id
-        )
-        AND entity_type = 'vocabulary' AND action = 'update'
-      ''');
-    });
-    notify('sync_queue');
-  }
-
-  // Sync Queue
-  Future<int> enqueueMutation(Map<String, dynamic> mutation) async {
-    final db = await database;
-
-    if (mutation['entity_type'] == 'book' &&
-        mutation['action'] == 'update_progress') {
-      await db.delete(
-        'sync_queue',
-        where: 'entity_type = ? AND action = ? AND entity_id = ?',
-        whereArgs: ['book', 'update_progress', mutation['entity_id']],
-      );
-    }
-
-    final result = await db.insert('sync_queue', {
-      ...mutation,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-    notify('sync_queue');
-    return result;
-  }
+  Future<int> enqueueMutation(Map<String, dynamic> mutation) =>
+      syncQueueDao.enqueueMutation(mutation);
 
   Future<List<Map<String, dynamic>>> getPendingMutations({
     int limit = 50,
     int offset = 0,
-  }) async {
-    final db = await database;
-    return await db.query(
-      'sync_queue',
-      orderBy: 'created_at ASC',
-      limit: limit,
-      offset: offset,
-    );
-  }
+  }) => syncQueueDao.getPendingMutations(limit: limit, offset: offset);
 
-  Stream<List<Map<String, dynamic>>> watchPendingMutations() async* {
-    yield await getPendingMutations();
-    yield* getController('sync_queue').stream;
-  }
+  Stream<List<Map<String, dynamic>>> watchPendingMutations() =>
+      syncQueueDao.watchPendingMutations();
 
-  Future<int> getPendingMutationsCount() async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM sync_queue',
-    );
-    return Sqflite.firstIntValue(result) ?? 0;
-  }
+  Future<int> getPendingMutationsCount() =>
+      syncQueueDao.getPendingMutationsCount();
 
-  Future<int> removeMutation(int id) async {
-    final db = await database;
-    final result = await db.delete(
-      'sync_queue',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    notify('sync_queue');
-    return result;
-  }
+  Future<int> removeMutation(int id) => syncQueueDao.removeMutation(id);
 
-  Future<int> removeMutations(List<int> ids) async {
-    if (ids.isEmpty) return 0;
-    final db = await database;
-    final placeholders = List.filled(ids.length, '?').join(',');
-    final result = await db.delete(
-      'sync_queue',
-      where: 'id IN ($placeholders)',
-      whereArgs: ids,
-    );
-    notify('sync_queue');
-    return result;
-  }
+  Future<int> removeMutations(List<int> ids) =>
+      syncQueueDao.removeMutations(ids);
 
-  Future<int> incrementRetryCount(int id) async {
-    final db = await database;
-    return await db.rawUpdate(
-      'UPDATE sync_queue SET retry_count = retry_count + 1 WHERE id = ?',
-      [id],
-    );
-  }
+  Future<int> incrementRetryCount(int id) =>
+      syncQueueDao.incrementRetryCount(id);
 
-  Future<void> clearSyncQueue() async {
-    final db = await database;
-    await db.delete('sync_queue');
-    notify('sync_queue');
-  }
+  Future<void> clearSyncQueue() => syncQueueDao.clearSyncQueue();
 
   // Analytics Cache
   Future<void> cacheAnalytics(
     String targetLanguage,
     Map<String, dynamic> data,
-  ) async {
-    try {
-      final db = await database;
-      await db.insert('analytics_cache', {
-        'target_language': targetLanguage,
-        'data_json': jsonEncode(data),
-        'fetched_at': DateTime.now().millisecondsSinceEpoch,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-    } catch (e) {
-      // Table doesn't exist yet
-    }
-  }
+  ) => analyticsCacheDao.cacheAnalytics(targetLanguage, data);
 
-  Future<Map<String, dynamic>?> getCachedAnalytics(
-    String targetLanguage,
-  ) async {
-    try {
-      final db = await database;
-      final results = await db.query(
-        'analytics_cache',
-        where: 'target_language = ?',
-        whereArgs: [targetLanguage],
-        orderBy: 'fetched_at DESC',
-        limit: 1,
-      );
-      if (results.isEmpty) return null;
-      return jsonDecode(results.first['data_json'] as String);
-    } catch (e) {
-      return null;
-    }
-  }
+  Future<Map<String, dynamic>?> getCachedAnalytics(String targetLanguage) =>
+      analyticsCacheDao.getCachedAnalytics(targetLanguage);
 
   // Translation Cache
   Future<void> cacheTranslation(String key, Map<String, dynamic> data) async {

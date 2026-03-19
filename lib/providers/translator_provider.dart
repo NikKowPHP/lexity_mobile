@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/translation_result.dart';
-import '../services/ai_service.dart';
+import '../services/translation_service.dart';
 
 class TranslatorState {
   final String fullTranslation;
@@ -40,11 +40,19 @@ class TranslatorNotifier extends Notifier<TranslatorState> {
     state = TranslatorState(isTranslating: true, isBreakingDown: true);
 
     try {
-      final aiService = ref.read(aiServiceProvider);
-      final fastResult = await aiService.translate(text, source, target);
+      final translationService = ref.read(translationServiceProvider);
+      final fastResult = await translationService.translate(
+        text,
+        source,
+        target,
+      );
       state = state.copyWith(fullTranslation: fastResult, isTranslating: false);
 
-      final segments = await aiService.translateBreakdown(text, source, target);
+      final segments = await translationService.translateBreakdown(
+        text,
+        source,
+        target,
+      );
       state = state.copyWith(segments: segments, isBreakingDown: false);
     } catch (e) {
       state = state.copyWith(isTranslating: false, isBreakingDown: false);

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lexity_mobile/utils/constants.dart';
 
 class OnboardingData {
   final String nativeLanguage;
